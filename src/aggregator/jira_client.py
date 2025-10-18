@@ -379,32 +379,6 @@ class JiraClient:
             custom_fields=custom_fields,
         )
 
-    def _extract_text_from_adf(self, adf: Dict[str, Any]) -> str:
-        """
-        Extract plain text from Atlassian Document Format.
-
-        Args:
-            adf: ADF document structure
-
-        Returns:
-            Plain text string
-        """
-        if not isinstance(adf, dict):
-            return str(adf)
-
-        content = adf.get("content", [])
-        text_parts = []
-
-        for node in content:
-            if node.get("type") == "paragraph":
-                para_content = node.get("content", [])
-                for text_node in para_content:
-                    if text_node.get("type") == "text":
-                        text_parts.append(text_node.get("text", ""))
-            elif node.get("type") == "text":
-                text_parts.append(node.get("text", ""))
-
-        return " ".join(text_parts)
 
     def _parse_datetime(self, date_str: Optional[str]) -> datetime:
         """Parse Jira datetime string."""
