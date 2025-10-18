@@ -22,22 +22,8 @@ COPY upload_to_zephyr.py .
 COPY evaluate_quality.py .
 COPY setup_env.py .
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\n\
-if [ "$1" = "generate" ]; then\n\
-    python3 generate_test_plan.py "$2"\n\
-elif [ "$1" = "upload" ]; then\n\
-    python3 upload_to_zephyr.py "$2"\n\
-elif [ "$1" = "evaluate" ]; then\n\
-    python3 evaluate_quality.py "$2"\n\
-else\n\
-    exec "$@"\n\
-fi' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
-
-# Set entrypoint
-ENTRYPOINT ["/app/entrypoint.sh"]
-
-# Default command
+# No entrypoint - let Render use its startCommand from render.yaml
+# Default CMD will be overridden by Render's startCommand
 CMD ["bash"]
 
 # Labels
