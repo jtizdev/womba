@@ -32,7 +32,7 @@ class ZephyrIntegration:
             api_key: Zephyr API key (defaults to settings)
             base_url: Zephyr base URL (defaults to settings)
         """
-        self.api_key = api_key or settings.zephyr_api_key
+        self.api_key = api_key or settings.zephyr_api_token
         self.base_url = (base_url or settings.zephyr_base_url).rstrip("/")
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",

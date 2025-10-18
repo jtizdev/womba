@@ -35,9 +35,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "womba-generate=generate_test_plan:main",
-            "womba-upload=upload_to_zephyr:main",
-            "womba-evaluate=evaluate_quality:main",
+            "womba=womba_cli:main",
         ],
     },
     include_package_data=True,

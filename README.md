@@ -30,14 +30,16 @@ cp .env.example .env
 ## Quick Start
 
 ```bash
-# Generate test plan for a Jira story
-python3 generate_test_plan.py PLAT-12991
+# Interactive setup (first time only)
+womba configure
 
-# Upload to Zephyr
-python3 upload_to_zephyr.py PLAT-12991
+# Generate and upload test plan (one command!)
+womba generate PLAT-12991 --upload
 
-# Evaluate quality (optional)
-python3 evaluate_quality.py PLAT-12991
+# Or step by step:
+womba generate PLAT-12991   # Generate test plan
+womba evaluate PLAT-12991   # Check quality (optional)
+womba upload PLAT-12991     # Upload to Zephyr
 ```
 
 ## Configuration
@@ -58,8 +60,8 @@ CONFLUENCE_API_TOKEN=your-confluence-token
 # Zephyr Scale
 ZEPHYR_API_TOKEN=your-zephyr-token
 
-# OpenAI
-OPENAI_API_KEY=sk-proj-...
+# OpenAI (required)
+OPENAI_API_KEY=your-openai-api-key
 
 # Optional: API Documentation
 API_DOCS_URL=https://docs.your-company.com/api

@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     confluence_api_token: Optional[str] = Field(default=None, description="Confluence API token")
 
     # Zephyr Configuration
-    zephyr_api_key: str = Field(description="Zephyr Scale API key")
+    zephyr_api_token: str = Field(description="Zephyr Scale API token")
     zephyr_base_url: str = Field(
         default="https://api.zephyrscale.smartbear.com/v2",
         description="Zephyr Scale base URL",
