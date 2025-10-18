@@ -1,0 +1,2 @@
+"""Aggregator module initialization."""
+
