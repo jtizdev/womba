@@ -37,6 +37,7 @@ class JiraClient:
     def _extract_text_from_adf(self, adf_content: Any) -> str:
         """
         Extract plain text and URLs from Atlassian Document Format (ADF) JSON.
+        Handles text nodes, link marks, and inlineCard nodes (for Confluence links).
         
         Args:
             adf_content: ADF content (dict or str)
