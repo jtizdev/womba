@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     # API Configuration
     api_host: str = Field(default="0.0.0.0", description="API host")
     api_port: int = Field(default=8000, description="API port")
-    environment: str = Field(default="development", description="Environment (development/production)")
-    secret_key: str = Field(description="Secret key for signing tokens")
+    environment: str = Field(default="production", description="Environment (development/production)")
+    secret_key: str = Field(default="change-me-in-production", description="Secret key for signing tokens")
     log_level: str = Field(default="INFO", description="Logging level")
 
     # AI Provider Keys
@@ -28,13 +28,13 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key (optional)")
 
     # Atlassian Configuration
-    jira_base_url: str = Field(description="Jira base URL")
-    jira_email: str = Field(description="Jira user email")
-    jira_api_token: str = Field(description="Jira API token")
+    jira_base_url: str = Field(default="https://example.atlassian.net", description="Jira base URL")
+    jira_email: str = Field(default="user@example.com", description="Jira user email")
+    jira_api_token: str = Field(default="", description="Jira API token")
     confluence_api_token: Optional[str] = Field(default=None, description="Confluence API token")
 
     # Zephyr Configuration
-    zephyr_api_token: str = Field(description="Zephyr Scale API token")
+    zephyr_api_token: str = Field(default="", description="Zephyr Scale API token")
     zephyr_base_url: str = Field(
         default="https://api.zephyrscale.smartbear.com/v2",
         description="Zephyr Scale base URL",
