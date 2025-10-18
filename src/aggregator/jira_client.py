@@ -45,6 +45,8 @@ class JiraClient:
         Returns:
             Plain text extracted from ADF with URLs included
         """
+        logger.debug(f"Extracting text from ADF (type: {type(adf_content).__name__})")
+        
         if isinstance(adf_content, str):
             return adf_content
         
@@ -55,8 +57,10 @@ class JiraClient:
         
         def extract_recursive(node):
             if isinstance(node, dict):
+                node_type = node.get('type')
+                
                 # Extract text node
-                if node.get('type') == 'text':
+                if node_type == 'text':
                     text = node.get('text', '')
                     if text:
                         text_parts.append(text)
@@ -70,14 +74,15 @@ class JiraClient:
                                     # Add the URL right after the link text
                                     text_parts.append(f' [{href}] ')
                 
-                # Extract inlineCard nodes (Confluence/Jira links)
-                if node.get('type') == 'inlineCard':
+                # Extract inlineCard nodes (Confluence/Jira links) - CRITICAL FOR CONFLUENCE!
+                elif node_type == 'inlineCard':
                     url = node.get('attrs', {}).get('url', '')
                     if url:
+                        logger.info(f"Found inlineCard URL: {url}")
                         text_parts.append(f' {url} ')
                 
                 # Add newlines for paragraphs
-                if node.get('type') == 'paragraph':
+                if node_type == 'paragraph':
                     text_parts.append('\n')
                 
                 # Recurse into content
