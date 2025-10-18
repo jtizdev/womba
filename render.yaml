@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: womba-api
+    runtime: python
+    region: oregon
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements-minimal.txt && pip install -e .
+    startCommand: cd src/api && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: WOMBA_API_KEY
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: JIRA_BASE_URL
+        sync: false
+      - key: JIRA_EMAIL
+        sync: false
+      - key: JIRA_API_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ZEPHYR_API_TOKEN
+        sync: false
+      - key: ZEPHYR_BASE_URL
+        sync: false
+      - key: CONFLUENCE_API_TOKEN
+        sync: false
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
