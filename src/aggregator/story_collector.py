@@ -213,17 +213,46 @@ class StoryCollector:
         try:
             # Extract Confluence links from story description
             import re
+            import httpx
             confluence_links = []
             if story.description:
-                # Find all Confluence page URLs in description
-                links = re.findall(
+                # Find full Confluence page URLs: /wiki/spaces/SPACE/pages/12345
+                full_links = re.findall(
                     r'https://[^/]+/wiki/spaces/([^/]+)/pages/([^/#\s]+)(?:/([^#\s]+))?',
                     story.description
                 )
-                for match in links:
+                for match in full_links:
                     space_key = match[0]
                     page_id = match[1]
                     confluence_links.append((space_key, page_id))
+                
+                # Find short Confluence URLs: /wiki/x/ABC123
+                short_links = re.findall(
+                    r'https://([^/]+)/wiki/x/([a-zA-Z0-9_-]+)',
+                    story.description
+                )
+                for domain, short_id in short_links:
+                    # Resolve short URL to get page ID
+                    try:
+                        short_url = f"https://{domain}/wiki/x/{short_id}"
+                        logger.info(f"Resolving short Confluence URL: {short_url}")
+                        async with httpx.AsyncClient(follow_redirects=True) as client:
+                            response = await client.get(
+                                short_url,
+                                auth=(self.confluence_client.email, self.confluence_client.api_token),
+                                timeout=10.0
+                            )
+                            # Extract page ID from final URL
+                            final_url = str(response.url)
+                            page_id_match = re.search(r'/pages/(\d+)', final_url)
+                            space_match = re.search(r'/spaces/([^/]+)', final_url)
+                            if page_id_match:
+                                page_id = page_id_match.group(1)
+                                space_key = space_match.group(1) if space_match else "UNKNOWN"
+                                confluence_links.append((space_key, page_id))
+                                logger.info(f"Resolved {short_url} to page ID: {page_id}")
+                    except Exception as e:
+                        logger.warning(f"Failed to resolve short URL {short_url}: {e}")
             
             logger.info(f"Found {len(confluence_links)} Confluence links in story description")
             
