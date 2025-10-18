@@ -1,3 +1,4 @@
+# Womba API Service - Native Python Runtime (no Docker)
 services:
   - type: web
     name: womba-api
