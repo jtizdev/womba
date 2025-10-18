@@ -91,6 +91,12 @@ def parse_adf_to_text(adf_content: Any) -> str:
                             if href:
                                 text_parts.append(f' [{href}] ')
             
+            # Extract inlineCard nodes (Confluence/Jira links)
+            if node.get('type') == 'inlineCard':
+                url = node.get('attrs', {}).get('url', '')
+                if url:
+                    text_parts.append(f' {url} ')
+            
             # Add newlines for paragraphs
             if node.get('type') == 'paragraph':
                 text_parts.append('\n')
