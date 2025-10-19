@@ -21,6 +21,9 @@ Examples:
   womba evaluate PLAT-12991              # Check quality score
   womba configure                        # Interactive setup
   
+  # Full end-to-end workflow:
+  womba all PLAT-12991                   # Generate + Upload + Create tests + PR
+  
   # Automation (generate executable test code):
   womba automate PLAT-12991 --repo /path/to/test/repo
   womba automate PLAT-12991 --repo /path/to/test/repo --framework playwright
@@ -30,7 +33,7 @@ Examples:
     
     parser.add_argument(
         'command',
-        choices=['generate', 'upload', 'evaluate', 'configure', 'automate'],
+        choices=['generate', 'upload', 'evaluate', 'configure', 'automate', 'all'],
         help='Command to execute'
     )
     
@@ -88,9 +91,13 @@ Examples:
     
     # Handle configure command (no story key needed)
     if args.command == 'configure':
-        from setup_env import main as setup_main
-        setup_main()
+        from src.config.interactive_setup import ensure_config
+        ensure_config(force_setup=True)
         return
+    
+    # Ensure config exists for other commands
+    from src.config.interactive_setup import ensure_config
+    config = ensure_config()
     
     # All other commands need a story key
     if not args.story_key:
@@ -128,6 +135,34 @@ Examples:
             args.ai_tool,
             args.create_pr
         ))
+    
+    elif args.command == 'all':
+        # Full end-to-end workflow
+        print(f"\n🚀 Running full Womba workflow for {args.story_key}")
+        print("=" * 80)
+        
+        import asyncio
+        from src.workflows.full_workflow import run_full_workflow
+        
+        result = asyncio.run(run_full_workflow(
+            story_key=args.story_key,
+            config=config,
+            repo_path=args.repo
+        ))
+        
+        # Display summary
+        print("\n" + "=" * 80)
+        print("✅ Workflow Complete!")
+        print("=" * 80)
+        print(f"\n📋 Story: {result['story_key']} - {result['story_title']}")
+        print(f"🧪 Test Cases: {result['test_cases_generated']}")
+        if result['zephyr_test_ids']:
+            print(f"📤 Zephyr IDs: {', '.join(result['zephyr_test_ids'][:5])}")
+        print(f"📁 Files Generated: {len(result['generated_files'])}")
+        print(f"🌿 Branch: {result['branch_name']}")
+        if result['pr_url']:
+            print(f"🔗 PR/MR: {result['pr_url']}")
+        print("\n" + "=" * 80 + "\n")
 
 
 if __name__ == '__main__':

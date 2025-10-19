@@ -8,17 +8,21 @@ from typing import List, Optional
 from loguru import logger
 
 from src.models.test_plan import TestPlan
+from src.models.story import JiraStory
+from src.automation.git_provider import create_pr_for_repo
 
 
 class PRCreator:
     """Creates pull requests with generated test code."""
 
-    def __init__(self, repo_path: str):
+    def __init__(self, repo_path: str, story: Optional[JiraStory] = None):
         """
         Args:
             repo_path: Path to the test repository
+            story: Jira story (optional, for better PR descriptions)
         """
         self.repo_path = Path(repo_path)
+        self.story = story
         if not self.repo_path.exists():
             raise ValueError(f"Repository path does not exist: {repo_path}")
 
@@ -138,33 +142,24 @@ class PRCreator:
             PR URL if successful, None otherwise
         """
         try:
-            story_key = test_plan.story.key
-            pr_title = f"🤖 AI-Generated Tests for {story_key}"
+            story_key = test_plan.story.key if test_plan.story else "Unknown"
+            pr_title = f"feat({story_key}): Add AI-generated test cases"
             pr_body = self._build_pr_description(test_plan)
 
-            result = subprocess.run(
-                [
-                    "gh", "pr", "create",
-                    "--title", pr_title,
-                    "--body", pr_body,
-                    "--base", base_branch,
-                    "--head", branch_name,
-                    "--label", "ai-generated",
-                    "--label", "tests"
-                ],
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-                check=True
+            # Use new git provider abstraction
+            pr_url = create_pr_for_repo(
+                repo_path=self.repo_path,
+                branch_name=branch_name,
+                title=pr_title,
+                description=pr_body,
+                base_branch=base_branch
             )
 
-            pr_url = result.stdout.strip()
             logger.info(f"Created PR: {pr_url}")
             return pr_url
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.error(f"Failed to create PR: {e}")
-            logger.error(f"Error output: {e.stderr}")
             return None
 
     def _build_pr_description(self, test_plan: TestPlan) -> str:
