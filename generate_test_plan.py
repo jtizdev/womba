@@ -183,30 +183,28 @@ async def test_story_key(story_key: str, auto_upload: bool = False):
             print("This may take 30-60 seconds...")
             print("")
             
-            # Upload to Zephyr
+            # Upload to Zephyr using subprocess
             try:
-                from upload_to_zephyr import upload_test_plan
-                
-                result = await upload_test_plan(
-                    test_plan_file=output_file,
-                    project_key=project_key,
-                    story_key=story_key,
-                    dry_run=False
+                import subprocess
+                result = subprocess.run(
+                    ['python3', 'upload_to_zephyr.py', story_key],
+                    cwd=Path(__file__).parent,
+                    capture_output=True,
+                    text=True
                 )
                 
-                print("")
-                print("=" * 80)
-                print("✅ Successfully uploaded to Zephyr!")
-                print("=" * 80)
-                print(f"📊 Uploaded test cases:")
-                
-                if 'zephyr_ids' in result:
-                    for i, zephyr_id in enumerate(result['zephyr_ids'], 1):
-                        print(f"   {i}. {zephyr_id}")
-                
-                print("")
-                print(f"🔗 View in Zephyr: https://plainid.atlassian.net/browse/{story_key}")
-                print("")
+                if result.returncode == 0:
+                    print("")
+                    print("=" * 80)
+                    print("✅ Successfully uploaded to Zephyr!")
+                    print("=" * 80)
+                    print("")
+                    print(result.stdout)
+                else:
+                    logger.error(f"Upload failed: {result.stderr}")
+                    print(f"\n❌ Upload failed")
+                    print(f"\nYou can upload manually later with:")
+                    print(f"   womba upload {story_key}")
                 
             except Exception as e:
                 logger.error(f"Failed to upload to Zephyr: {e}")
@@ -221,18 +219,19 @@ async def test_story_key(story_key: str, auto_upload: bool = False):
         # Auto-upload mode (from CLI --upload flag)
         logger.info("\n📤 Auto-uploading to Zephyr...")
         try:
-            from upload_to_zephyr import upload_test_plan
-            
-            result = await upload_test_plan(
-                test_plan_file=output_file,
-                project_key=project_key,
-                story_key=story_key,
-                dry_run=False
+            import subprocess
+            result = subprocess.run(
+                ['python3', 'upload_to_zephyr.py', story_key],
+                cwd=Path(__file__).parent,
+                capture_output=True,
+                text=True
             )
             
-            logger.info("✅ Successfully uploaded to Zephyr!")
-            if 'zephyr_ids' in result:
-                logger.info(f"   Zephyr IDs: {', '.join(result['zephyr_ids'])}")
+            if result.returncode == 0:
+                logger.info("✅ Successfully uploaded to Zephyr!")
+                logger.info(result.stdout)
+            else:
+                logger.error(f"Upload failed: {result.stderr}")
         except Exception as e:
             logger.error(f"Failed to upload to Zephyr: {e}")
 
