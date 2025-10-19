@@ -252,9 +252,16 @@ Each file should be production-ready and follow repository conventions.
             logger.info(f"Repo: {self.repo_path}")
 
             # Run aider in customer's repo - it will analyze their patterns automatically
+            # Try python3 -m aider first, fallback to aider command
+            aider_cmd = ["python3", "-m", "aider"]
+            try:
+                subprocess.run(["aider", "--version"], capture_output=True, check=True)
+                aider_cmd = ["aider"]
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                pass  # Use python3 -m aider
+            
             result = subprocess.run(
-                [
-                    "aider",
+                aider_cmd + [
                     "--yes",  # Auto-accept changes
                     "--no-git",  # We'll handle git ourselves
                     "--message-file", str(prompt_file)
