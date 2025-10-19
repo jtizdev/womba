@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Womba - AI Test Generation Platform</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="sidebar">
+        <div class="logo">
+            <h1>🤖 Womba</h1>
+            <p>AI Test Generator</p>
+        </div>
+        
+        <ul class="nav-menu">
+            <li><a href="#dashboard" class="nav-link active" data-page="dashboard">
+                <span class="icon">📊</span> Dashboard
+            </a></li>
+            <li><a href="#generate" class="nav-link" data-page="generate">
+                <span class="icon">✨</span> Generate Tests
+            </a></li>
+            <li><a href="#history" class="nav-link" data-page="history">
+                <span class="icon">📜</span> History
+            </a></li>
+            <li><a href="#config" class="nav-link" data-page="config">
+                <span class="icon">⚙️</span> Configuration
+            </a></li>
+        </ul>
+        
+        <div class="nav-footer">
+            <div class="status-badge" id="apiStatus">
+                <span class="status-dot"></span>
+                <span>API Connected</span>
+            </div>
+        </div>
+    </nav>
+    
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Dashboard Page -->
+        <div id="dashboard-page" class="page active">
+            <div class="page-header">
+                <h1>Dashboard</h1>
+                <p>Overview of your AI test generation activity</p>
+            </div>
+            
+            <!-- Stats Cards -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon">📝</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Total Test Cases</div>
+                        <div class="stat-value" id="totalTests">0</div>
+                        <div class="stat-change positive">+0 this week</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">🚀</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Stories Processed</div>
+                        <div class="stat-value" id="totalStories">0</div>
+                        <div class="stat-change positive">+0 this week</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">⏱️</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Time Saved</div>
+                        <div class="stat-value" id="timeSaved">0h</div>
+                        <div class="stat-change">~2h per story</div>
+                    </div>
+                </div>
+                
+                <div class="stat-card">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-content">
+                        <div class="stat-label">Success Rate</div>
+                        <div class="stat-value" id="successRate">100%</div>
+                        <div class="stat-change positive">Excellent</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Charts -->
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Test Generation Over Time</h3>
+                    <canvas id="testsOverTimeChart"></canvas>
+                </div>
+                
+                <div class="chart-card">
+                    <h3>Test Types Distribution</h3>
+                    <canvas id="testTypesChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Recent Activity -->
+            <div class="activity-section">
+                <h2>Recent Activity</h2>
+                <div class="activity-list" id="recentActivity">
+                    <div class="activity-empty">
+                        <p>No recent activity. Generate your first test plan!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Generate Tests Page -->
+        <div id="generate-page" class="page">
+            <div class="page-header">
+                <h1>Generate Test Cases</h1>
+                <p>Create AI-powered test plans from Jira stories</p>
+            </div>
+            
+            <div class="generate-container">
+                <form id="generateForm" class="generate-form">
+                    <div class="form-group">
+                        <label for="storyKey">Jira Story Key</label>
+                        <input type="text" id="storyKey" placeholder="PLAT-12345" required>
+                        <small>Enter the Jira story key to generate tests for</small>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="uploadToZephyr" checked>
+                                Upload to Zephyr Scale
+                            </label>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="generateCode">
+                                Generate Test Code
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" id="repoPathGroup" style="display: none;">
+                        <label for="repoPathInput">Repository Path</label>
+                        <input type="text" id="repoPathInput" placeholder="/path/to/repo">
+                        <small>Path to your automation repository</small>
+                    </div>
+                    
+                    <button type="submit" class="btn-primary btn-large">
+                        ✨ Generate Test Plan
+                    </button>
+                </form>
+                
+                <!-- Progress Section -->
+                <div id="generateProgress" class="progress-section" style="display: none;">
+                    <div class="progress-steps">
+                        <div class="progress-step" id="step1">
+                            <div class="step-icon">1</div>
+                            <div class="step-content">
+                                <div class="step-title">Collecting Context</div>
+                                <div class="step-status">Pending</div>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-step" id="step2">
+                            <div class="step-icon">2</div>
+                            <div class="step-content">
+                                <div class="step-title">Generating Tests</div>
+                                <div class="step-status">Pending</div>
+                            </div>
+                        </div>
+                        
+                        <div class="progress-step" id="step3">
+                            <div class="step-icon">3</div>
+                            <div class="step-content">
+                                <div class="step-title">Uploading to Zephyr</div>
+                                <div class="step-status">Pending</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                </div>
+                
+                <!-- Results Section -->
+                <div id="generateResults" class="results-section" style="display: none;">
+                    <h3>✅ Test Plan Generated Successfully!</h3>
+                    <div id="resultsContent"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- History Page -->
+        <div id="history-page" class="page">
+            <div class="page-header">
+                <h1>Generation History</h1>
+                <p>View your past test generation sessions</p>
+            </div>
+            
+            <div class="history-filters">
+                <input type="text" id="searchHistory" placeholder="Search by story key..." class="search-input">
+                <select id="filterStatus" class="filter-select">
+                    <option value="all">All Status</option>
+                    <option value="success">Success</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
+            
+            <div class="history-table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>Story Key</th>
+                            <th>Date</th>
+                            <th>Test Cases</th>
+                            <th>Status</th>
+                            <th>Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr class="empty-row">
+                            <td colspan="6">No history available</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Configuration Page -->
+        <div id="config-page" class="page">
+            <div class="page-header">
+                <h1>Configuration</h1>
+                <p>Manage your Womba settings and integrations</p>
+            </div>
+            
+            <iframe src="config.html" class="config-iframe" id="configIframe"></iframe>
+        </div>
+    </main>
+    
+    <script src="app.js"></script>
+</body>
+</html>
+

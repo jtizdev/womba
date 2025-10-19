@@ -49,6 +49,9 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         Generated test plan with optional Zephyr upload results
     """
     logger.info(f"API: Generating test plan for {request.issue_key}")
+    
+    import time
+    start_time = time.time()
 
     try:
         # Step 1: Collect story context
@@ -67,6 +70,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
 
         # Step 3: Upload to Zephyr if requested
         zephyr_results = None
+        zephyr_ids = []
         if request.upload_to_zephyr:
             if not request.project_key:
                 raise HTTPException(
@@ -82,6 +86,21 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
                 folder_id=request.folder_id,
             )
             logger.info("Successfully uploaded test plan to Zephyr")
+            
+            # Extract Zephyr IDs from results
+            if zephyr_results and 'test_case_ids' in zephyr_results:
+                zephyr_ids = zephyr_results['test_case_ids']
+        
+        # Track in history
+        duration = int(time.time() - start_time)
+        from .ui import track_test_generation
+        track_test_generation(
+            story_key=request.issue_key,
+            test_count=len(test_plan.test_cases),
+            status='success',
+            duration=duration,
+            zephyr_ids=zephyr_ids if zephyr_ids else None
+        )
 
         return GenerateTestPlanResponse(
             test_plan=test_plan, zephyr_results=zephyr_results
@@ -91,6 +110,17 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         raise
     except Exception as e:
         logger.error(f"Failed to generate test plan for {request.issue_key}: {e}")
+        
+        # Track failure
+        duration = int(time.time() - start_time)
+        from .ui import track_test_generation
+        track_test_generation(
+            story_key=request.issue_key,
+            test_count=0,
+            status='failed',
+            duration=duration
+        )
+        
         raise HTTPException(status_code=500, detail=str(e))
 
 

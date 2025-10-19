@@ -6,11 +6,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from loguru import logger
+from pathlib import Path
 
 from src.config.settings import settings
 
-from .routes import stories, test_plans
+from .routes import stories, test_plans, ui
 
 
 @asynccontextmanager
@@ -41,6 +43,12 @@ app.add_middleware(
 # Include routers
 app.include_router(stories.router, prefix="/api/v1/stories", tags=["stories"])
 app.include_router(test_plans.router, prefix="/api/v1/test-plans", tags=["test-plans"])
+app.include_router(ui.router, prefix="/api/v1", tags=["ui"])
+
+# Mount static files for web UI
+static_path = Path(__file__).parent.parent / "web" / "static"
+if static_path.exists():
+    app.mount("/ui", StaticFiles(directory=str(static_path), html=True), name="static")
 
 
 @app.get("/")
