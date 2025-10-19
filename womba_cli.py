@@ -47,6 +47,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='Auto-confirm prompts (for automation)'
+    )
+    
+    parser.add_argument(
         '--no-cache',
         action='store_true',
         help='Bypass cache, fetch fresh data'

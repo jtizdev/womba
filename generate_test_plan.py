@@ -16,7 +16,7 @@ from src.ai.test_plan_generator import TestPlanGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
 
 
-async def test_story_key(story_key: str):
+async def test_story_key(story_key: str, auto_upload: bool = False):
     """Test comprehensive test generation for a story with ALL Zephyr context."""
     
     logger.info("=" * 80)
@@ -145,18 +145,113 @@ async def test_story_key(story_key: str):
     logger.info("✅ Enhanced test generation completed successfully!")
     logger.info("=" * 80)
     
-    logger.info("\n📤 Next steps:")
-    logger.info(f"   1. Review the generated test plan")
-    logger.info(f"   2. Upload to Zephyr: python3 upload_to_zephyr.py {story_key}")
+    # Interactive upload prompt (unless auto_upload is True)
+    if not auto_upload:
+        print("\n")
+        print("=" * 80)
+        print(f"📋 Generated {len(test_plan.test_cases)} test cases for {story_key}")
+        print("=" * 80)
+        print("")
+        
+        # Show brief summary of test cases
+        for i, tc in enumerate(test_plan.test_cases, 1):
+            priority_icon = {
+                "critical": "🔴",
+                "high": "🟠",
+                "medium": "🟡",
+                "low": "⚪"
+            }.get(str(tc.priority), "⚪")
+            
+            type_icon = {
+                "functional": "⚙️",
+                "integration": "🔗",
+                "negative": "❌",
+                "regression": "🔄",
+                "ui": "🖥️",
+                "api": "📡"
+            }.get(str(tc.test_type), "✅")
+            
+            print(f"{i}. {priority_icon} {type_icon} {tc.title}")
+            print(f"   Priority: {tc.priority} | Type: {tc.test_type} | Steps: {len(tc.steps)}")
+        
+        print("")
+        print("=" * 80)
+        upload_choice = input("📤 Upload these test cases to Zephyr? (y/n): ").lower().strip()
+        
+        if upload_choice in ['y', 'yes']:
+            print("\n🚀 Uploading to Zephyr...")
+            print("This may take 30-60 seconds...")
+            print("")
+            
+            # Upload to Zephyr
+            try:
+                from upload_to_zephyr import upload_test_plan
+                
+                result = await upload_test_plan(
+                    test_plan_file=output_file,
+                    project_key=project_key,
+                    story_key=story_key,
+                    dry_run=False
+                )
+                
+                print("")
+                print("=" * 80)
+                print("✅ Successfully uploaded to Zephyr!")
+                print("=" * 80)
+                print(f"📊 Uploaded test cases:")
+                
+                if 'zephyr_ids' in result:
+                    for i, zephyr_id in enumerate(result['zephyr_ids'], 1):
+                        print(f"   {i}. {zephyr_id}")
+                
+                print("")
+                print(f"🔗 View in Zephyr: https://plainid.atlassian.net/browse/{story_key}")
+                print("")
+                
+            except Exception as e:
+                logger.error(f"Failed to upload to Zephyr: {e}")
+                print(f"\n❌ Upload failed: {e}")
+                print(f"\nYou can upload manually later with:")
+                print(f"   womba upload {story_key}")
+        else:
+            print("\n⏭️  Skipping upload. You can upload later with:")
+            print(f"   womba upload {story_key}")
+            print("")
+    else:
+        # Auto-upload mode (from CLI --upload flag)
+        logger.info("\n📤 Auto-uploading to Zephyr...")
+        try:
+            from upload_to_zephyr import upload_test_plan
+            
+            result = await upload_test_plan(
+                test_plan_file=output_file,
+                project_key=project_key,
+                story_key=story_key,
+                dry_run=False
+            )
+            
+            logger.info("✅ Successfully uploaded to Zephyr!")
+            if 'zephyr_ids' in result:
+                logger.info(f"   Zephyr IDs: {', '.join(result['zephyr_ids'])}")
+        except Exception as e:
+            logger.error(f"Failed to upload to Zephyr: {e}")
 
 
 if __name__ == "__main__":
     import sys
-    if len(sys.argv) < 2:
-        print("Usage: python3 generate_test_plan.py <STORY-KEY>")
-        print("Example: python3 generate_test_plan.py PLAT-11907")
-        sys.exit(1)
+    import argparse
     
-    story_key = sys.argv[1]
-    asyncio.run(test_story_key(story_key))
+    parser = argparse.ArgumentParser(
+        description="Generate AI-powered test plan for a Jira story"
+    )
+    parser.add_argument('story_key', help='Jira story key (e.g., PLAT-12991)')
+    parser.add_argument(
+        '--yes', '-y',
+        action='store_true',
+        help='Auto-upload to Zephyr without prompting'
+    )
+    
+    args = parser.parse_args()
+    
+    asyncio.run(test_story_key(args.story_key, auto_upload=args.yes))
 
