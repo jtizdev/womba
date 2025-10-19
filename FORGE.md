@@ -487,13 +487,26 @@ async def generate_tests(
 
 ## Next Steps
 
-1. ✅ Finish CLI tool (womba repo)
-2. ⏳ Create womba-forge repo
-3. ⏳ Build SaaS API wrapper
-4. ⏳ Implement Forge plugin
-5. ⏳ Submit to Marketplace
+1. ✅ Finish CLI tool (womba repo) - **COMPLETE**
+2. ✅ Build SaaS API wrapper (womba-api on Render.com) - **COMPLETE**
+3. ⏳ Create womba-forge repo - **PHASE 3**
+4. ⏳ Implement Forge plugin - **PHASE 3**
+5. ⏳ Submit to Marketplace - **PHASE 3**
 
 ---
 
-**Status**: Planning Complete | Implementation Pending
+**Status**: Planning Complete | **Implementation: Phase 3 (After CLI Stabilization)**
+
+**Important**: The Forge app implementation is scheduled for **Phase 3**, after the CLI tool has been deployed and proven stable in production for 2-3 weeks. This ensures:
+- CLI logic is battle-tested before wrapping it in Forge
+- API endpoints are stable and performant
+- Authentication and security patterns are validated
+- No breaking changes impact Forge customers
+
+**Estimated Timeline**:
+- Phase 1: CLI Development - ✅ Complete
+- Phase 2: Production Enhancements (performance, automation) - 🔄 In Progress
+- Phase 3: Forge Plugin - 📅 Planned (2-3 weeks after Phase 2)
+
+For setup instructions when ready, see `FORGE_SETUP_CHECKLIST.md`.
 
