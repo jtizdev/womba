@@ -95,42 +95,155 @@ class JiraClient(AtlassianClient):
         return ' '.join(text_parts)
     
     async def get_issue_comments(self, issue_key: str) -> List[Dict]:
-        """
-        Fetch all comments for a Jira issue.
+        """Fetch all comments for a Jira issue using SDK."""
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            return []
         
-        Args:
-            issue_key: Jira issue key (e.g., 'PROJ-123')
-            
-        Returns:
-            List of comment objects with author, body, and created timestamp
-        """
-        logger.info(f"Fetching comments for: {issue_key}")
-        
-        url = f"{self.base_url}/rest/api/2/issue/{issue_key}/comment"
-        
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(url, auth=self.auth)
-            response.raise_for_status()
-            data = response.json()
-            
+        try:
+            issue = jira.issue(issue_key, expand='comments')
             comments = []
-            for comment in data.get('comments', []):
-                author = comment.get('author', {}).get('displayName', 'Unknown')
-                body = comment.get('body', '')
-                created = comment.get('created', '')
-                
-                # Extract text from ADF if body is a dict
-                if isinstance(body, dict):
-                    body = self._extract_text_from_adf(body)
-                
-                comments.append({
-                    'author': author,
-                    'body': body,
-                    'created': created
-                })
+            
+            if hasattr(issue.fields, 'comment') and issue.fields.comment:
+                for comment in issue.fields.comment.comments:
+                    comments.append({
+                        'author': comment.author.displayName if comment.author else 'Unknown',
+                        'body': self._extract_text_from_adf(comment.body) if comment.body else '',
+                        'created': comment.created
+                    })
             
             logger.info(f"Found {len(comments)} comments for {issue_key}")
             return comments
+        except Exception as e:
+            logger.error(f"Error fetching comments with SDK: {e}")
+            return []
+
+    def _get_jira_sdk_client(self):
+        """Get Jira SDK client instance."""
+        try:
+            from jira import JIRA
+            return JIRA(
+                server=self.base_url,
+                basic_auth=(self.email, self.api_token)
+            )
+        except ImportError:
+            logger.warning("Jira SDK not installed. Install with: pip install jira")
+            return None
+
+
+    def _parse_sdk_issue(self, issue) -> JiraStory:
+        """
+        Parse Jira SDK Issue object into JiraStory model.
+        
+        Args:
+            issue: Jira SDK Issue object
+            
+        Returns:
+            JiraStory object
+        """
+        # Extract basic fields from SDK Issue object
+        key = issue.key
+        summary = issue.fields.summary or ""
+        
+        # Extract description (handle ADF format)
+        description_raw = issue.fields.description
+        description = self._extract_text_from_adf(description_raw) if description_raw else ""
+        
+        # Extract issue type, status, priority
+        issue_type = issue.fields.issuetype.name if issue.fields.issuetype else "Unknown"
+        status = issue.fields.status.name if issue.fields.status else "Unknown"
+        priority = issue.fields.priority.name if issue.fields.priority else "Medium"
+        
+        # Extract people
+        assignee = issue.fields.assignee.emailAddress if issue.fields.assignee else None
+        reporter = issue.fields.reporter.emailAddress if issue.fields.reporter else "unknown@example.com"
+        
+        # Extract dates
+        created = self._parse_datetime(issue.fields.created)
+        updated = self._parse_datetime(issue.fields.updated)
+        
+        # Extract arrays
+        labels = list(issue.fields.labels) if issue.fields.labels else []
+        components = [c.name for c in issue.fields.components] if issue.fields.components else []
+        
+        # Extract attachments
+        attachments = [att.content for att in issue.fields.attachment] if issue.fields.attachment else []
+        
+        # Extract linked issues
+        linked_issues = []
+        if hasattr(issue.fields, 'issuelinks') and issue.fields.issuelinks:
+            for link in issue.fields.issuelinks:
+                if hasattr(link, 'inwardIssue') and link.inwardIssue:
+                    linked_issues.append(link.inwardIssue.key)
+                elif hasattr(link, 'outwardIssue') and link.outwardIssue:
+                    linked_issues.append(link.outwardIssue.key)
+        
+        # Extract custom fields
+        custom_fields = {}
+        for field_name in dir(issue.fields):
+            if field_name.startswith('customfield_') and not field_name.startswith('_'):
+                field_value = getattr(issue.fields, field_name, None)
+                if field_value is not None:
+                    custom_fields[field_name] = field_value
+        
+        # Try to find acceptance criteria
+        acceptance_criteria = self._extract_acceptance_criteria_from_sdk(issue.fields, description)
+        
+        return JiraStory(
+            key=key,
+            summary=summary,
+            description=description,
+            issue_type=issue_type,
+            status=status,
+            priority=priority,
+            assignee=assignee,
+            reporter=reporter,
+            created=created,
+            updated=updated,
+            labels=labels,
+            components=components,
+            acceptance_criteria=acceptance_criteria,
+            linked_issues=linked_issues,
+            attachments=attachments,
+            custom_fields=custom_fields,
+        )
+
+    def _extract_acceptance_criteria_from_sdk(self, fields, description: str) -> Optional[str]:
+        """
+        Try to extract acceptance criteria from SDK fields.
+        
+        Args:
+            fields: SDK issue fields object
+            description: Issue description
+            
+        Returns:
+            Acceptance criteria string or None
+        """
+        # Check common custom field names for acceptance criteria
+        ac_field_names = [
+            "customfield_10100",  # Common AC field
+            "customfield_10200",
+            "Acceptance Criteria",
+        ]
+
+        for field_name in ac_field_names:
+            if hasattr(fields, field_name):
+                ac_value = getattr(fields, field_name)
+                if ac_value:
+                    if isinstance(ac_value, str):
+                        return ac_value
+                    elif isinstance(ac_value, dict):
+                        return self._extract_text_from_adf(ac_value)
+
+        # Try to find AC in description
+        if description and "acceptance criteria" in description.lower():
+            parts = description.lower().split("acceptance criteria")
+            if len(parts) > 1:
+                # Get the part after "acceptance criteria"
+                ac_part = parts[1].split("\n\n")[0]  # Until next paragraph
+                return ac_part.strip()
+
+        return None
 
     async def get_issue_with_subtasks(self, issue_key: str) -> tuple[JiraStory, List[JiraStory]]:
         """
@@ -142,174 +255,94 @@ class JiraClient(AtlassianClient):
         Returns:
             Tuple of (main_story, subtasks)
         """
-        try:
-            from jira import JIRA
-            
-            # Create Jira SDK client
-            jira = JIRA(
-                server=self.base_url,
-                basic_auth=(self.email, self.api_token)
-            )
-            
-            # Get the issue with subtasks
-            issue = jira.issue(issue_key)
-            
-            # Convert main issue to JiraStory
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            # Fallback to REST API
             main_story = await self.get_issue(issue_key)
+            return main_story, []
+        
+        try:
+            issue = jira.issue(issue_key, expand='subtasks')
+            main_story = self._parse_sdk_issue(issue)
             
-            # Get subtasks if they exist
             subtasks = []
             if hasattr(issue.fields, 'subtasks') and issue.fields.subtasks:
                 logger.info(f"Found {len(issue.fields.subtasks)} subtasks for {issue_key}")
                 for subtask in issue.fields.subtasks:
                     try:
-                        subtask_story = await self.get_issue(subtask.key)
-                        subtasks.append(subtask_story)
+                        # Fetch subtask with full data
+                        full_subtask = jira.issue(subtask.key)
+                        subtasks.append(self._parse_sdk_issue(full_subtask))
                     except Exception as e:
                         logger.warning(f"Could not fetch subtask {subtask.key}: {e}")
             
             return main_story, subtasks
             
-        except ImportError:
-            logger.warning("Jira SDK not installed. Install with: pip install jira")
-            main_story = await self.get_issue(issue_key)
-            return main_story, []
         except Exception as e:
-            logger.error(f"Error fetching subtasks with SDK: {e}")
+            logger.error(f"Error fetching with SDK: {e}")
+            # Fallback to REST API
             main_story = await self.get_issue(issue_key)
             return main_story, []
 
     async def get_issue(self, issue_key: str) -> JiraStory:
-        """
-        Fetch a single Jira issue by key.
-
-        Args:
-            issue_key: Jira issue key (e.g., PROJ-123)
-
-        Returns:
-            JiraStory object
-
-        Raises:
-            httpx.HTTPError: If the request fails
-        """
-        logger.info(f"Fetching Jira issue: {issue_key}")
-
-        url = f"{self.base_url}/rest/api/3/issue/{issue_key}"
-        params = {
-            "expand": "renderedFields,changelog",
-            "fields": "summary,description,issuetype,status,priority,assignee,reporter,created,updated,labels,components,attachment,issuelinks,customfield_*",
-        }
-
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, auth=self.auth, params=params, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
-
-        return self._parse_issue(data)
+        """Fetch a single Jira issue by key using SDK."""
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            return None
+        
+        try:
+            issue = jira.issue(issue_key)
+            return self._parse_sdk_issue(issue)
+        except Exception as e:
+            logger.error(f"Error fetching issue with SDK: {e}")
+            return None
 
     async def get_linked_issues(self, issue_key: str) -> List[JiraStory]:
-        """
-        Fetch all issues linked to the given issue.
-
-        Args:
-            issue_key: Jira issue key
-
-        Returns:
-            List of linked JiraStory objects
-        """
-        logger.info(f"Fetching linked issues for: {issue_key}")
-
-        # First get the main issue to get link information
-        main_issue_data = await self._get_issue_raw(issue_key)
-        links = main_issue_data.get("fields", {}).get("issuelinks", [])
-
-        linked_stories = []
-        for link in links:
-            # Links can be inward or outward
-            linked_issue_data = link.get("inwardIssue") or link.get("outwardIssue")
-            if linked_issue_data:
-                linked_key = linked_issue_data["key"]
-                try:
-                    story = await self.get_issue(linked_key)
-                    linked_stories.append(story)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch linked issue {linked_key}: {e}")
-
-        return linked_stories
-
-    async def search_issues(
-        self, jql: str, max_results: int = 50, start_at: int = 0
-    ) -> List[JiraStory]:
-        """
-        Search for issues using JQL.
-
-        Args:
-            jql: JQL query string
-            max_results: Maximum number of results to return
-            start_at: Starting index for pagination
-
-        Returns:
-            List of JiraStory objects
-        """
-        logger.info(f"Searching Jira issues with JQL: {jql}")
-
-        import requests
-        from requests.auth import HTTPBasicAuth
-        import json
-
-        url = f"{self.base_url}/rest/api/3/search/jql"
+        """Fetch all issues linked to the given issue using SDK."""
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            return []
         
-        auth = HTTPBasicAuth(self.email, self.api_token)
-        
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-        }
-        
-        payload = json.dumps({
-            "expand": "schema,names",
-            "fields": [
-                "summary",
-                "description", 
-                "issuetype",
-                "status",
-                "priority",
-                "assignee",
-                "reporter",
-                "created",
-                "updated",
-                "labels",
-                "components",
-                "attachment",
-                "issuelinks",
-            ],
-            "fieldsByKeys": True,
-            "jql": jql,
-            "maxResults": max_results,
-            "properties": []
-        })
+        try:
+            issue = jira.issue(issue_key, expand='issuelinks')
+            linked_stories = []
+            
+            if hasattr(issue.fields, 'issuelinks') and issue.fields.issuelinks:
+                for link in issue.fields.issuelinks:
+                    linked_issue = None
+                    if hasattr(link, 'inwardIssue') and link.inwardIssue:
+                        linked_issue = link.inwardIssue
+                    elif hasattr(link, 'outwardIssue') and link.outwardIssue:
+                        linked_issue = link.outwardIssue
+                    
+                    if linked_issue:
+                        try:
+                            # Fetch linked issue with full data
+                            full_linked = jira.issue(linked_issue.key)
+                            story = self._parse_sdk_issue(full_linked)
+                            linked_stories.append(story)
+                        except Exception as e:
+                            logger.warning(f"Could not fetch linked issue {linked_issue.key}: {e}")
+            
+            return linked_stories
+        except Exception as e:
+            logger.error(f"Error fetching linked issues with SDK: {e}")
+            return []
 
-        response = requests.request(
-            "POST",
-            url,
-            data=payload,
-            headers=headers,
-            auth=auth
-        )
+    async def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0) -> List[JiraStory]:
+        """Search for issues using JQL with SDK."""
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            return []
         
-        response.raise_for_status()
-        data = response.json()
+        try:
+            logger.info(f"Searching Jira issues with SDK JQL: {jql}")
+            issues = jira.search_issues(jql, maxResults=max_results)
+            return [self._parse_sdk_issue(issue) for issue in issues]
+        except Exception as e:
+            logger.error(f"Error searching with SDK: {e}")
+            return []
 
-        issues = data.get("issues", [])
-        return [self._parse_issue(issue) for issue in issues]
-
-    async def _get_issue_raw(self, issue_key: str) -> Dict[str, Any]:
-        """Get raw issue data from Jira API."""
-        url = f"{self.base_url}/rest/api/3/issue/{issue_key}"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, auth=self.auth, timeout=30.0)
-            response.raise_for_status()
-            return response.json()
 
     def _parse_issue(self, issue_data: Dict[str, Any]) -> JiraStory:
         """
