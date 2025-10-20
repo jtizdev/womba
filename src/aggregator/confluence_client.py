@@ -7,10 +7,10 @@ from typing import Dict, List, Optional
 import httpx
 from loguru import logger
 
-from src.config.settings import settings
+from src.core.atlassian_client import AtlassianClient
 
 
-class ConfluenceClient:
+class ConfluenceClient(AtlassianClient):
     """Client for interacting with Confluence API."""
 
     def __init__(
@@ -23,14 +23,11 @@ class ConfluenceClient:
         Initialize Confluence client.
 
         Args:
-            base_url: Confluence base URL (defaults to Jira base URL)
-            email: Confluence user email (defaults to Jira email)
-            api_token: Confluence API token (defaults to Jira token or confluence token)
+            base_url: Atlassian base URL (defaults to settings)
+            email: Atlassian user email (defaults to settings)
+            api_token: Atlassian API token (defaults to settings)
         """
-        self.base_url = (base_url or settings.jira_base_url).rstrip("/")
-        self.email = email or settings.jira_email
-        self.api_token = api_token or settings.confluence_api_token or settings.jira_api_token
-        self.auth = (self.email, self.api_token)
+        super().__init__(base_url=base_url, email=email, api_token=api_token)
 
     async def get_page(self, page_id: str) -> Dict:
         """

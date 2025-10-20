@@ -8,11 +8,11 @@ from typing import Any, Dict, List, Optional
 import httpx
 from loguru import logger
 
-from src.config.settings import settings
+from src.core.atlassian_client import AtlassianClient
 from src.models.story import JiraStory
 
 
-class JiraClient:
+class JiraClient(AtlassianClient):
     """Client for interacting with Jira API."""
 
     def __init__(
@@ -29,10 +29,7 @@ class JiraClient:
             email: Jira user email (defaults to settings)
             api_token: Jira API token (defaults to settings)
         """
-        self.base_url = (base_url or settings.jira_base_url).rstrip("/")
-        self.email = email or settings.jira_email
-        self.api_token = api_token or settings.jira_api_token
-        self.auth = (self.email, self.api_token)
+        super().__init__(base_url=base_url, email=email, api_token=api_token)
 
     def _extract_text_from_adf(self, adf_content: Any) -> str:
         """
@@ -256,14 +253,24 @@ class JiraClient:
         """
         logger.info(f"Searching Jira issues with JQL: {jql}")
 
-        url = f"{self.base_url}/rest/api/2/search"  # Use API v2 for better compatibility
-        payload = {
-            "jql": jql,
-            "maxResults": max_results,
-            "startAt": start_at,
+        import requests
+        from requests.auth import HTTPBasicAuth
+        import json
+
+        url = f"{self.base_url}/rest/api/3/search/jql"
+        
+        auth = HTTPBasicAuth(self.email, self.api_token)
+        
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+        
+        payload = json.dumps({
+            "expand": "schema,names",
             "fields": [
                 "summary",
-                "description",
+                "description", 
                 "issuetype",
                 "status",
                 "priority",
@@ -276,14 +283,22 @@ class JiraClient:
                 "attachment",
                 "issuelinks",
             ],
-        }
+            "fieldsByKeys": True,
+            "jql": jql,
+            "maxResults": max_results,
+            "properties": []
+        })
 
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                url, auth=self.auth, json=payload, timeout=30.0
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = requests.request(
+            "POST",
+            url,
+            data=payload,
+            headers=headers,
+            auth=auth
+        )
+        
+        response.raise_for_status()
+        data = response.json()
 
         issues = data.get("issues", [])
         return [self._parse_issue(issue) for issue in issues]

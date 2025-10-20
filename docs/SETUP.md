@@ -56,17 +56,17 @@ Now edit `.env` with your actual credentials:
 
 #### Atlassian (Jira) Configuration
 
-**Jira Base URL:**
-- This is your Jira Cloud URL (e.g., `https://yourcompany.atlassian.net`)
-- Set `JIRA_BASE_URL` in `.env`
+**Atlassian Base URL:**
+- This is your Atlassian Cloud URL (e.g., `https://yourcompany.atlassian.net`)
+- Set `ATLASSIAN_BASE_URL` in `.env`
 
-**Jira API Token:**
+**Atlassian API Token:**
 1. Go to https://id.atlassian.com/manage-profile/security/api-tokens
 2. Click "Create API token"
 3. Give it a name (e.g., "Womba Integration")
 4. Copy the token immediately (you won't see it again)
-5. Set `JIRA_API_TOKEN` in `.env`
-6. Set `JIRA_EMAIL` to your Jira account email
+5. Set `ATLASSIAN_API_TOKEN` in `.env`
+6. Set `ATLASSIAN_EMAIL` to your Atlassian account email
 
 **Required Jira Permissions:**
 - Browse Projects
@@ -214,7 +214,7 @@ To use the automated test code generation feature with your repository:
 ### Jira Connection Issues
 
 **Error: "Unauthorized" or "401"**
-- Verify `JIRA_EMAIL` matches your Atlassian account
+- Verify `ATLASSIAN_EMAIL` matches your Atlassian account
 - Regenerate API token and update `.env`
 - Check that API tokens haven't expired
 

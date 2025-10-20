@@ -15,17 +15,17 @@ def prompt_for_config() -> WombaConfig:
     print("\n" + "=" * 80)
     print("🚀 Womba First-Time Setup")
     print("=" * 80)
-    print("\nLet's configure Womba to work with your Jira, Zephyr, and repositories.")
+    print("\nLet's configure Womba to work with your Atlassian (Jira/Confluence), Zephyr, and repositories.")
     print("You can skip optional fields by pressing Enter.\n")
     
     config = WombaConfig()
     
-    # Jira settings
-    print("📋 Jira Configuration")
+    # Atlassian settings
+    print("📋 Atlassian Configuration (Jira & Confluence)")
     print("-" * 40)
-    config.jira_url = input("Jira URL (e.g., https://yourcompany.atlassian.net): ").strip()
-    config.jira_email = input("Jira email: ").strip()
-    config.jira_api_token = input("Jira API token: ").strip()
+    config.atlassian_url = input("Atlassian URL (e.g., https://yourcompany.atlassian.net): ").strip()
+    config.atlassian_email = input("Atlassian email: ").strip()
+    config.atlassian_api_token = input("Atlassian API token: ").strip()
     
     # Zephyr settings
     print("\n🧪 Zephyr Scale Configuration")
@@ -134,9 +134,9 @@ def show_config() -> None:
     print("=" * 80)
     
     print("\n🔐 Credentials")
-    print(f"  Jira URL:         {config.jira_url or '(not set)'}")
-    print(f"  Jira Email:       {config.jira_email or '(not set)'}")
-    print(f"  Jira API Token:   {'*' * 20 if config.jira_api_token else '(not set)'}")
+    print(f"  Atlassian URL:    {config.atlassian_url or '(not set)'}")
+    print(f"  Atlassian Email:  {config.atlassian_email or '(not set)'}")
+    print(f"  Atlassian Token:  {'*' * 20 if config.atlassian_api_token else '(not set)'}")
     print(f"  Zephyr Token:     {'*' * 20 if config.zephyr_api_token else '(not set)'}")
     print(f"  OpenAI API Key:   {'*' * 20 if config.openai_api_key else '(not set)'}")
     

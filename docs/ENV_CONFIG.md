@@ -4,11 +4,11 @@ This file documents all environment variables used by Womba.
 
 ## Required Configuration
 
-### Jira
+### Atlassian (Jira & Confluence)
 ```bash
-JIRA_BASE_URL=https://your-company.atlassian.net
-JIRA_EMAIL=your-email@company.com
-JIRA_API_TOKEN=your-jira-token
+ATLASSIAN_BASE_URL=https://your-company.atlassian.net
+ATLASSIAN_EMAIL=your-email@company.com
+ATLASSIAN_API_TOKEN=your-atlassian-token
 ```
 
 ### Zephyr Scale
@@ -24,11 +24,6 @@ OPENAI_API_KEY=your-openai-api-key
 
 ## Optional Configuration
 
-### Confluence
-```bash
-CONFLUENCE_API_TOKEN=your-confluence-token
-# Falls back to JIRA_API_TOKEN if not set
-```
 
 ### Anthropic (Claude)
 ```bash
@@ -74,7 +69,7 @@ WOMBA_API_URL=https://womba.onrender.com
    ```
 
 3. **Get API tokens**:
-   - **Jira**: https://id.atlassian.com/manage-profile/security/api-tokens
+   - **Atlassian**: https://id.atlassian.com/manage-profile/security/api-tokens
    - **Zephyr**: Settings → API Tokens in Zephyr Scale
    - **OpenAI**: https://platform.openai.com/api-keys
    - **GitHub**: `gh auth login` (automatic)
@@ -97,14 +92,14 @@ WOMBA_API_URL=https://womba.onrender.com
 ### Development
 ```bash
 # .env.development
-JIRA_BASE_URL=https://your-dev.atlassian.net
+ATLASSIAN_BASE_URL=https://your-dev.atlassian.net
 WOMBA_API_URL=http://localhost:8000
 ```
 
 ### Production
 ```bash
 # .env.production
-JIRA_BASE_URL=https://your-company.atlassian.net
+ATLASSIAN_BASE_URL=https://your-company.atlassian.net
 WOMBA_API_URL=https://womba.onrender.com
 ```
 
@@ -115,7 +110,7 @@ Ensure `.env` is in the project root and properly formatted.
 
 ### "Permission denied"
 Check that API tokens have correct permissions:
-- Jira: Read issues, browse projects
+- Atlassian: Read issues, browse projects
 - Zephyr: Read and write test cases
 - OpenAI: Full API access
 

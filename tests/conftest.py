@@ -12,9 +12,9 @@ from httpx import AsyncClient
 # Set test environment
 os.environ["ENVIRONMENT"] = "test"
 os.environ["ANTHROPIC_API_KEY"] = "test-key"
-os.environ["JIRA_BASE_URL"] = "https://test.atlassian.net"
-os.environ["JIRA_EMAIL"] = "test@example.com"
-os.environ["JIRA_API_TOKEN"] = "test-token"
+os.environ["ATLASSIAN_BASE_URL"] = "https://test.atlassian.net"
+os.environ["ATLASSIAN_EMAIL"] = "test@example.com"
+os.environ["ATLASSIAN_API_TOKEN"] = "test-token"
 os.environ["ZEPHYR_API_KEY"] = "test-zephyr-key"
 os.environ["GITHUB_TOKEN"] = "test-github-token"
 os.environ["SECRET_KEY"] = "test-secret-key"

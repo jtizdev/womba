@@ -17,10 +17,10 @@ class WombaConfig:
     git_remote_url: Optional[str] = None
     default_branch: str = "master"
     
-    # Jira settings
-    jira_url: str = ""
-    jira_email: str = ""
-    jira_api_token: str = ""
+    # Atlassian settings (unified for Jira and Confluence)
+    atlassian_url: str = ""
+    atlassian_email: str = ""
+    atlassian_api_token: str = ""
     
     # Zephyr settings
     zephyr_api_token: str = ""
@@ -42,8 +42,8 @@ class WombaConfig:
     def is_complete(self) -> bool:
         """Check if all required fields are set"""
         required_fields = [
-            self.jira_url,
-            self.jira_api_token,
+            self.atlassian_url,
+            self.atlassian_api_token,
             self.zephyr_api_token,
             self.openai_api_key,
         ]
@@ -52,10 +52,10 @@ class WombaConfig:
     def get_missing_fields(self) -> list[str]:
         """Get list of missing required fields"""
         missing = []
-        if not self.jira_url:
-            missing.append("jira_url")
-        if not self.jira_api_token:
-            missing.append("jira_api_token")
+        if not self.atlassian_url:
+            missing.append("atlassian_url")
+        if not self.atlassian_api_token:
+            missing.append("atlassian_api_token")
         if not self.zephyr_api_token:
             missing.append("zephyr_api_token")
         if not self.openai_api_key:
@@ -69,9 +69,9 @@ class WombaConfig:
             "git_provider": self.git_provider,
             "git_remote_url": self.git_remote_url,
             "default_branch": self.default_branch,
-            "jira_url": self.jira_url,
-            "jira_email": self.jira_email,
-            "jira_api_token": self.jira_api_token,
+            "atlassian_url": self.atlassian_url,
+            "atlassian_email": self.atlassian_email,
+            "atlassian_api_token": self.atlassian_api_token,
             "zephyr_api_token": self.zephyr_api_token,
             "project_key": self.project_key,
             "openai_api_key": self.openai_api_key,

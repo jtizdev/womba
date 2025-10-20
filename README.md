@@ -47,15 +47,10 @@ womba upload PLAT-12991     # Upload to Zephyr
 Create a `.env` file with your credentials:
 
 ```bash
-# Jira
-JIRA_BASE_URL=https://your-company.atlassian.net
-JIRA_EMAIL=your-email@company.com
-JIRA_API_TOKEN=your-jira-token
-
-# Confluence
-CONFLUENCE_BASE_URL=https://your-company.atlassian.net/wiki
-CONFLUENCE_EMAIL=your-email@company.com
-CONFLUENCE_API_TOKEN=your-confluence-token
+# Atlassian (Jira & Confluence)
+ATLASSIAN_BASE_URL=https://your-company.atlassian.net
+ATLASSIAN_EMAIL=your-email@company.com
+ATLASSIAN_API_TOKEN=your-atlassian-token
 
 # Zephyr Scale
 ZEPHYR_API_TOKEN=your-zephyr-token

@@ -39,8 +39,8 @@ class HistoryItem(BaseModel):
 
 class ConfigResponse(BaseModel):
     """Configuration response model."""
-    jira_url: Optional[str] = None
-    jira_email: Optional[str] = None
+    atlassian_url: Optional[str] = None
+    atlassian_email: Optional[str] = None
     project_key: Optional[str] = None
     ai_model: str = "gpt-4o"
     repo_path: Optional[str] = None
@@ -165,8 +165,8 @@ async def get_config():
         
         if config:
             return ConfigResponse(
-                jira_url=config.jira_url,
-                jira_email=config.jira_email,
+                atlassian_url=config.atlassian_url,
+                atlassian_email=config.atlassian_email,
                 project_key=config.project_key,
                 ai_model=config.model,
                 repo_path=config.repo_path,
@@ -197,12 +197,11 @@ async def save_config(config: dict):
         
         # Create WombaConfig from dict
         womba_config = WombaConfig(
-            jira_url=config.get('jira_url', ''),
-            jira_email=config.get('jira_email', ''),
-            jira_api_token=config.get('jira_api_token', ''),
+            atlassian_url=config.get('atlassian_url', ''),
+            atlassian_email=config.get('atlassian_email', ''),
+            atlassian_api_token=config.get('atlassian_api_token', ''),
             zephyr_api_token=config.get('zephyr_api_token', ''),
             openai_api_key=config.get('openai_api_key', ''),
-            confluence_url=config.get('jira_url', ''),  # Same as Jira
             project_key=config.get('project_key'),
             model=config.get('ai_model', 'gpt-4o'),
             use_openai=True,
@@ -234,10 +233,10 @@ async def validate_config(validation_request: dict):
         if service == 'jira':
             # Validate Jira connection
             from src.aggregator.jira_client import JiraClient
-            jira_url = validation_request.get('jira_url')
-            jira_token = validation_request.get('jira_api_token')
+            atlassian_url = validation_request.get('atlassian_url')
+            atlassian_token = validation_request.get('atlassian_api_token')
             
-            client = JiraClient(base_url=jira_url, api_token=jira_token)
+            client = JiraClient(base_url=atlassian_url, api_token=atlassian_token)
             # Try to fetch a test issue or projects
             # For now, just return success if client created
             return {"valid": True, "message": "Jira connection successful"}

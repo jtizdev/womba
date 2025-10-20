@@ -27,11 +27,10 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None, description="Anthropic (Claude) API key (optional)")
     openai_api_key: Optional[str] = Field(default=None, description="OpenAI API key (optional)")
 
-    # Atlassian Configuration
-    jira_base_url: str = Field(default="https://example.atlassian.net", description="Jira base URL")
-    jira_email: str = Field(default="user@example.com", description="Jira user email")
-    jira_api_token: str = Field(default="", description="Jira API token")
-    confluence_api_token: Optional[str] = Field(default=None, description="Confluence API token")
+    # Atlassian Configuration (unified URL for both Jira and Confluence)
+    atlassian_base_url: str = Field(default="https://example.atlassian.net", description="Atlassian base URL (used for both Jira and Confluence)")
+    atlassian_email: str = Field(default="user@example.com", description="Atlassian user email")
+    atlassian_api_token: str = Field(default="", description="Atlassian API token")
 
     # Zephyr Configuration
     zephyr_api_token: str = Field(default="", description="Zephyr Scale API token")
