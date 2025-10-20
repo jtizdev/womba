@@ -141,51 +141,217 @@ class TestCodeGenerator:
         """Build detailed prompt for AI code generation tool."""
         story = test_plan.story
         test_cases = test_plan.test_cases
+        
+        # Analyze what kind of tests these are
+        test_types = set(tc.test_type for tc in test_cases)
+        feature_area = self._extract_feature_area(story.summary, story.description)
 
-        prompt = f"""# Task: Generate Automated Test Files
+        prompt = f"""# Task: Analyze Repository and Generate Automated Test Files
 
-## Context
-You are an expert test automation engineer. You need to generate executable test files based on the following test plan.
+You are an expert test automation engineer working on a Java/TestNG/REST Assured automation repository.
 
-## Story Information
-- **Key**: {story.key}
+## CRITICAL INSTRUCTIONS - READ FIRST
+
+**BEFORE WRITING ANY CODE:**
+1. **ANALYZE the repository** to find existing test infrastructure for "{feature_area}"
+2. **SEARCH** for similar test files (Policy, Authorization, Management, etc.)
+3. **IDENTIFY** existing base classes, utilities, builders, and helpers
+4. **CHECK** if infrastructure exists for this feature area
+
+**IF infrastructure EXISTS:**
+- Add test methods to the appropriate existing test class
+- Follow the exact pattern of existing tests in that class
+- Use existing builders and utilities
+
+**IF infrastructure DOES NOT exist:**
+- Create NEW infrastructure (test class, builder, helper) following repository patterns
+- Study similar feature areas (e.g., if creating Policy tests, look at how Application tests are structured)
+- Copy the architectural pattern (BaseTest, Builder pattern, utility classes)
+- Create all necessary infrastructure files before writing tests
+
+## Story Context
+- **Story Key**: {story.key}
 - **Summary**: {story.summary}
-- **Description**: {story.description[:500]}...
+- **Feature Area**: {feature_area}
+- **Description**: 
+{story.description[:800] if story.description else 'No description'}
 
-## Repository Analysis
-- **Framework**: {repo_analysis['framework']}
-- **File naming pattern**: {repo_analysis['naming_pattern']}
-- **Test directories**: {', '.join(repo_analysis['directory_structure'].get('test_directories', ['tests/']))}
-- **Common imports**:
+## Repository Information
+- **Framework**: {repo_analysis['framework']} (Java/TestNG/REST Assured/Maven)
+- **Architecture Pattern**: Page Object Model with Builder pattern
+- **Base Classes**: Look for BaseTest, BaseBuilder, BaseHelper
+- **Test Location**: `src/test/java/com/plainid/auto/test/`
+- **Builders Location**: `src/main/java/com/plainid/auto/builders/`
+- **Utilities**: RestAssuredManager, AllureStepLogger, TestContext
+
+## Common Repository Patterns (FOLLOW THESE EXACTLY)
+
+### 1. Test Class Structure
+```java
+@Epic("Feature Area")
+@Feature("Specific Feature")
+public class FeatureNameTest extends BaseTest {{
+    
+    @Test(description = "Test description")
+    @Severity(SeverityLevel.CRITICAL)
+    @Story("Story Key")
+    public void testMethodName() {{
+        // Arrange
+        // Act  
+        // Assert
+    }}
+}}
 ```
-{chr(10).join(repo_analysis['import_patterns'][:5])}
+
+### 2. Builder Pattern (if needed)
+```java
+public class FeatureBuilder extends BaseBuilder {{
+    public FeatureBuilder(RestAssuredManager manager) {{
+        super(manager);
+    }}
+    
+    public String createFeature(FeatureRequest request) {{
+        // Implementation
+    }}
+}}
+```
+
+### 3. Common Imports (ALWAYS USE THESE)
+```java
+import io.qameta.allure.*;
+import io.restassured.response.Response;
+import org.testng.annotations.Test;
+import static org.testng.Assert.*;
+import com.plainid.auto.utils.RestAssuredManager;
 ```
 
 ## Test Cases to Implement
 
 {self._format_test_cases_for_prompt(test_cases)}
 
-## Requirements
+## Step-by-Step Instructions
 
-1. **Match existing patterns**: Analyze existing test files in the repository and match their structure, naming, and style.
-2. **Framework-specific**: Use {repo_analysis['framework']} best practices and conventions.
-3. **File organization**: Place tests in appropriate directories based on test type.
-4. **Test data**: Use realistic test data as specified in the test cases.
-5. **Assertions**: Write clear, specific assertions that validate expected behavior.
-6. **Error handling**: Include appropriate error handling and timeout configurations.
-7. **Documentation**: Add comments explaining complex test logic.
-8. **Independence**: Each test should be independent and not rely on execution order.
+### Step 1: Repository Analysis (REQUIRED)
+```
+Search for existing files containing: "{feature_area}"
+Look for patterns in: src/test/java/com/plainid/auto/test/
+Check builders in: src/main/java/com/plainid/auto/builders/
+Identify similar feature test structure
+```
 
-## Naming Convention
-Follow the pattern: `{repo_analysis['naming_pattern']}` (e.g., `feature_name{repo_analysis['naming_pattern']}`)
+### Step 2: Decision Point
+**ASK YOURSELF:** "Does infrastructure for '{feature_area}' already exist?"
 
-## Output
-Generate complete, executable test files that implement ALL test cases above.
-Each file should be production-ready and follow repository conventions.
+**IF YES (infrastructure exists):**
+- Open the existing test class
+- Add new @Test methods following exact same pattern
+- Use existing builders and utilities
+- Match the coding style exactly
+
+**IF NO (new infrastructure needed):**
+- Create test class: `src/test/java/com/plainid/auto/test/{feature_area.lower()}/{story.key.replace('-', '')}Test.java`
+- Create builder: `src/main/java/com/plainid/auto/builders/{feature_area.lower()}/{feature_area}Builder.java`
+- Follow the exact pattern from similar features
+- Extend BaseTest, use Allure annotations
+- Use RestAssuredManager for API calls
+
+### Step 3: Implementation Requirements
+
+1. **File Naming**: Use story key + descriptive name (e.g., `PLAT15596VendorCompareViewTest.java`)
+2. **Package**: Place in appropriate package under `com.plainid.auto.test`
+3. **Annotations**: 
+   - @Epic for feature area
+   - @Feature for specific capability
+   - @Story for story key
+   - @Severity for priority
+4. **Test Methods**:
+   - Descriptive names (e.g., `testVendorCompareViewDisplaysSyncStatus`)
+   - Clear Arrange-Act-Assert pattern
+   - Proper assertions with messages
+5. **Builders**: Create request builders if API calls are needed
+6. **Utilities**: Use existing RestAssuredManager, don't create new HTTP clients
+7. **Test Data**: Use realistic data from test case specifications
+8. **Assertions**: Specific assertions (assertEquals, assertTrue, assertNotNull)
+
+### Step 4: Code Quality Checklist
+- [ ] Follows repository conventions (file structure, naming, imports)
+- [ ] Uses existing infrastructure (builders, utilities, base classes)
+- [ ] Has proper Allure annotations for reporting
+- [ ] Includes clear test descriptions
+- [ ] Has appropriate assertions with error messages
+- [ ] Is independent (doesn't rely on test execution order)
+- [ ] Compiles successfully with Maven
+- [ ] Follows Java best practices
+
+## Important Notes
+
+⚠️ **DO NOT:**
+- Create generic test files without analyzing the repository
+- Ignore existing patterns and infrastructure
+- Use different naming conventions
+- Skip Allure annotations
+- Create standalone tests without using BaseTest
+- Hardcode URLs or credentials (use config/properties)
+
+✅ **DO:**
+- Search and analyze existing code first
+- Reuse existing builders and utilities
+- Follow exact patterns from similar tests
+- Use proper annotations for test reporting
+- Make tests independent and reliable
+- Add meaningful assertions
+- Consider both positive and negative scenarios
+- Handle edge cases mentioned in test cases
+
+## Expected Output
+
+Create production-ready test file(s) that:
+1. Implement ALL {len(test_cases)} test cases specified above
+2. Follow repository patterns exactly
+3. Use existing infrastructure where available
+4. Create new infrastructure only if necessary (following existing patterns)
+5. Are ready to run with `mvn test`
+6. Generate proper Allure reports
+
+**Remember**: Quality over quantity. One well-structured test following repository patterns is better than multiple generic tests that don't match the codebase.
 """
 
         return prompt
 
+    def _extract_feature_area(self, summary: str, description: str = "") -> str:
+        """Extract the feature area from story summary/description."""
+        # Common feature areas in the automation repo
+        feature_keywords = {
+            'policy': 'Policy',
+            'authorization': 'Authorization',
+            'application': 'Application',
+            'identity': 'Identity',
+            'template': 'IdentityTemplate',
+            'pop': 'POP',
+            'vendor': 'Vendor',
+            'compare': 'Compare',
+            'porch': 'PORCH',
+            'pap': 'PAP',
+            'pdp': 'PDP',
+            'audit': 'Audit',
+            'management': 'Management',
+            '360': 'Policy360'
+        }
+        
+        text = (summary + " " + (description or "")).lower()
+        
+        # Look for matches
+        for keyword, area in feature_keywords.items():
+            if keyword in text:
+                return area
+        
+        # Default to extracting from summary
+        parts = summary.split('-')
+        if len(parts) >= 2:
+            return parts[1].strip().replace(' ', '')
+        
+        return "General"
+    
     def _format_test_cases_for_prompt(self, test_cases: List[TestCase]) -> str:
         """Format test cases for the AI prompt."""
         formatted = []
