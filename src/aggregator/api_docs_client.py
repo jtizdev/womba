@@ -131,11 +131,11 @@ class APIDocsClient:
         - /openapi.json
         - /api-docs
         """
-        if not settings.jira_base_url:
+        if not settings.atlassian_base_url:
             return None
         
-        # Extract base domain from Jira URL
-        base_domain = settings.jira_base_url.split('.atlassian.net')[0]
+        # Extract base domain from Atlassian URL
+        base_domain = settings.atlassian_base_url.split('.atlassian.net')[0]
         if '://' in base_domain:
             base_domain = base_domain.split('://')[1]
         

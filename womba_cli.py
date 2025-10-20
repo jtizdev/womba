@@ -105,21 +105,37 @@ Examples:
     
     # Route to appropriate handler
     if args.command == 'generate':
-        from generate_test_plan import main as generate_main
-        generate_main(args.story_key)
+        import asyncio
+        from src.workflows.full_workflow import FullWorkflowOrchestrator
+        
+        orchestrator = FullWorkflowOrchestrator(config)
+        orchestrator.story_key = args.story_key
+        result = asyncio.run(orchestrator._generate_test_plan())
+        print(f"✅ Generated test plan for {args.story_key}")
         
         if args.upload:
             print("\n🚀 Auto-uploading to Zephyr...")
-            from upload_to_zephyr import main as upload_main
-            upload_main(args.story_key)
+            upload_result = asyncio.run(orchestrator._upload_to_zephyr())
+            print(f"✅ Uploaded to Zephyr: {upload_result}")
     
     elif args.command == 'upload':
-        from upload_to_zephyr import main as upload_main
-        upload_main(args.story_key)
+        import asyncio
+        from src.workflows.full_workflow import FullWorkflowOrchestrator
+        
+        orchestrator = FullWorkflowOrchestrator(config)
+        orchestrator.story_key = args.story_key
+        # First generate test plan, then upload
+        asyncio.run(orchestrator._generate_test_plan())
+        result = asyncio.run(orchestrator._upload_to_zephyr())
+        print(f"✅ Uploaded to Zephyr: {result}")
     
     elif args.command == 'evaluate':
-        from evaluate_quality import main as evaluate_main
-        evaluate_main(args.story_key)
+        import asyncio
+        from src.ai.quality_scorer import QualityScorer
+        
+        scorer = QualityScorer()
+        result = asyncio.run(scorer.evaluate_test_plan(args.story_key))
+        print(f"✅ Quality evaluation: {result}")
     
     elif args.command == 'automate':
         # Validate requirements
@@ -127,14 +143,14 @@ Examples:
             parser.error("--repo is required for 'automate' command")
         
         import asyncio
-        from automate_tests import main as automate_main
-        asyncio.run(automate_main(
+        from src.workflows.full_workflow import FullWorkflowOrchestrator
+        
+        orchestrator = FullWorkflowOrchestrator(config)
+        result = asyncio.run(orchestrator.run(
             args.story_key,
-            args.repo,
-            args.framework,
-            args.ai_tool,
-            args.create_pr
+            args.repo
         ))
+        print(f"✅ Automation complete: {result}")
     
     elif args.command == 'all':
         # Full end-to-end workflow

@@ -198,28 +198,28 @@
             <div id="notification" class="notification"></div>
             
             <form id="configForm">
-                <!-- Jira Settings -->
+                <!-- Atlassian Settings -->
                 <div class="form-section">
-                    <h2>📋 Jira Configuration</h2>
+                    <h2>📋 Atlassian Configuration (Jira & Confluence)</h2>
                     
                     <div class="form-group">
-                        <label for="jiraUrl">
-                            Jira URL
-                            <span class="status-indicator unknown" id="jiraStatus"></span>
+                        <label for="atlassianUrl">
+                            Atlassian URL
+                            <span class="status-indicator unknown" id="atlassianStatus"></span>
                         </label>
-                        <input type="text" id="jiraUrl" name="jira_url" placeholder="https://yourcompany.atlassian.net" required>
-                        <small>Your Atlassian Jira instance URL</small>
+                        <input type="text" id="atlassianUrl" name="atlassian_url" placeholder="https://yourcompany.atlassian.net" required>
+                        <small>Your Atlassian instance URL (used for both Jira and Confluence)</small>
                     </div>
                     
                     <div class="form-group">
-                        <label for="jiraEmail">Jira Email</label>
-                        <input type="text" id="jiraEmail" name="jira_email" placeholder="you@company.com">
+                        <label for="atlassianEmail">Atlassian Email</label>
+                        <input type="text" id="atlassianEmail" name="atlassian_email" placeholder="you@company.com">
                     </div>
                     
                     <div class="form-group">
-                        <label for="jiraApiToken">Jira API Token</label>
-                        <input type="password" id="jiraApiToken" name="jira_api_token" placeholder="••••••••••••••••••••" required>
-                        <button type="button" class="test" onclick="testJiraConnection()">Test Connection</button>
+                        <label for="atlassianApiToken">Atlassian API Token</label>
+                        <input type="password" id="atlassianApiToken" name="atlassian_api_token" placeholder="••••••••••••••••••••" required>
+                        <button type="button" class="test" onclick="testAtlassianConnection()">Test Connection</button>
                     </div>
                 </div>
                 
@@ -388,31 +388,31 @@
             }
         });
         
-        async function testJiraConnection() {
-            const jiraUrl = document.getElementById('jiraUrl').value;
-            const jiraToken = document.getElementById('jiraApiToken').value;
+        async function testAtlassianConnection() {
+            const atlassianUrl = document.getElementById('atlassianUrl').value;
+            const atlassianToken = document.getElementById('atlassianApiToken').value;
             
-            if (!jiraUrl || !jiraToken) {
-                showNotification('Please enter Jira URL and API token', 'error');
+            if (!atlassianUrl || !atlassianToken) {
+                showNotification('Please enter Atlassian URL and API token', 'error');
                 return;
             }
             
-            const indicator = document.getElementById('jiraStatus');
+            const indicator = document.getElementById('atlassianStatus');
             indicator.className = 'status-indicator unknown';
             
             try {
                 const response = await fetch('/api/v1/config/validate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ service: 'jira', jira_url: jiraUrl, jira_api_token: jiraToken })
+                    body: JSON.stringify({ service: 'jira', atlassian_url: atlassianUrl, atlassian_api_token: atlassianToken })
                 });
                 
                 if (response.ok) {
                     indicator.className = 'status-indicator valid';
-                    showNotification('✅ Jira connection successful!', 'success');
+                    showNotification('✅ Atlassian connection successful!', 'success');
                 } else {
                     indicator.className = 'status-indicator invalid';
-                    showNotification('❌ Jira connection failed', 'error');
+                    showNotification('❌ Atlassian connection failed', 'error');
                 }
             } catch (error) {
                 indicator.className = 'status-indicator invalid';

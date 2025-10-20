@@ -438,7 +438,7 @@ class ZephyrIntegration:
         import base64
         
         # Get Jira issue to extract its ID
-        jira_auth = base64.b64encode(f"{settings.jira_email}:{settings.jira_api_token}".encode()).decode()
+        jira_auth = base64.b64encode(f"{settings.atlassian_email}:{settings.atlassian_api_token}".encode()).decode()
         
         async with httpx.AsyncClient() as client:
             # Get Jira issue details
