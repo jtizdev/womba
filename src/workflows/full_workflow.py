@@ -126,8 +126,8 @@ class FullWorkflowOrchestrator:
             project_key=project_key
         )
         
-        self.zephyr_ids = results.get('test_case_ids', [])
-        logger.info(f"Uploaded {len(self.zephyr_ids)} test cases to Zephyr")
+        logger.info(f"Uploaded {len(results)} test cases to Zephyr")
+        return results
     
     def _create_feature_branch(self, repo_path: Path):
         """Step 3: Create feature branch"""

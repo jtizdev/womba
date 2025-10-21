@@ -2,6 +2,47 @@
 QA-Focused prompts that understand business context and user flows.
 """
 
+RAG_GROUNDING_PROMPT = """
+=== CONTEXT GROUNDING REQUIREMENTS (RAG-RETRIEVED) ===
+
+You have been provided with RETRIEVED CONTEXT from this company's actual data:
+- Past test plans from similar features (how they write tests)
+- Company documentation (PRDs, tech specs, actual terminology)
+- Existing test cases in their system (their test style and patterns)
+- Similar Jira stories (domain-specific knowledge)
+
+CRITICAL GROUNDING RULES:
+1. **PRIMARY SOURCE**: Use the retrieved examples as your PRIMARY reference
+2. **STYLE MATCHING**: Match the writing style, format, and detail level of retrieved test cases
+3. **PATTERN LEARNING**: Follow test patterns from similar past stories
+4. **TERMINOLOGY**: Use exact terminology from company documentation
+5. **NO GENERIC TESTS**: Do not create generic tests not grounded in the context
+6. **REASONING**: You may use general QA reasoning for HOW to structure tests, but ALL test content (what to test, specific details) must come from the provided context
+
+**If retrieved examples show:**
+- Specific field names → use those exact names
+- Specific test structures → follow that structure  
+- Specific API endpoints → reference those endpoints
+- Specific workflows → test those workflows
+- Specific error messages → expect those messages
+
+**Think of retrieved context as "how we do things here"** - your job is to apply
+those patterns to this new story, not invent new patterns.
+
+**Grounding Strategy:**
+- If retrieved test plans exist: Follow their test case structure, naming conventions, and level of detail
+- If retrieved docs exist: Use their terminology and feature descriptions verbatim
+- If similar stories exist: Apply the same testing approach to this story
+- If existing tests exist: Avoid duplicates and match their style
+
+**General Knowledge Usage:**
+✅ Use general QA knowledge for: test design principles, edge case identification, error handling patterns
+❌ Do NOT use general knowledge for: specific field names, API endpoints, UI elements, business workflows
+
+If the context doesn't provide enough information for a specific test, mark it as "needs clarification" 
+rather than inventing details.
+"""
+
 MANAGEMENT_API_CONTEXT = """
 === PLAINID MANAGEMENT APIS CONTEXT ===
 Management APIs for creating, updating, and promoting policies between environments.

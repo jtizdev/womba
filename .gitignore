@@ -53,6 +53,11 @@ logs/
 *.db
 *.sqlite3
 
+# RAG / ChromaDB data (vector embeddings - too large for git)
+data/
+data/chroma/
+*.chroma
+
 # Temporary files
 tmp/
 temp/

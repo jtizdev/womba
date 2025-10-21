@@ -17,6 +17,7 @@ from .prompts_qa_focused import (
     USER_FLOW_GENERATION_PROMPT,
     BUSINESS_CONTEXT_PROMPT,
     MANAGEMENT_API_CONTEXT,
+    RAG_GROUNDING_PROMPT,
 )
 
 
@@ -54,7 +55,8 @@ class TestPlanGenerator:
         self, 
         context: StoryContext, 
         existing_tests: list = None,
-        folder_structure: list = None
+        folder_structure: list = None,
+        use_rag: bool = None
     ) -> TestPlan:
         """
         Generate a comprehensive test plan from story context.
@@ -63,6 +65,7 @@ class TestPlanGenerator:
             context: Story context with all aggregated information
             existing_tests: List of existing test cases from Zephyr (for duplicate detection)
             folder_structure: Zephyr folder structure (for suggesting test location)
+            use_rag: Whether to use RAG for context retrieval (defaults to settings)
 
         Returns:
             TestPlan object with generated test cases
@@ -72,13 +75,47 @@ class TestPlanGenerator:
         """
         main_story = context.main_story
         logger.info(f"Generating test plan for {main_story.key}: {main_story.summary}")
+        
+        # Determine if RAG should be used
+        if use_rag is None:
+            use_rag = settings.enable_rag
+        
+        # Step 1: Retrieve relevant context from RAG if enabled
+        rag_context_section = ""
+        if use_rag:
+            try:
+                from src.ai.rag_retriever import RAGRetriever
+                
+                logger.info("Retrieving RAG context...")
+                rag_retriever = RAGRetriever()
+                project_key = main_story.key.split('-')[0]
+                retrieved_context = await rag_retriever.retrieve_for_story(
+                    story=main_story,
+                    project_key=project_key
+                )
+                
+                if retrieved_context.has_context():
+                    rag_context_section = self._build_rag_context(retrieved_context)
+                    logger.info(f"RAG context retrieved: {retrieved_context.get_summary()}")
+                else:
+                    logger.info("No RAG context found (database may be empty)")
+            except Exception as e:
+                logger.warning(f"RAG retrieval failed (will continue without RAG): {e}")
+                use_rag = False
 
         # Build the prompt with full context
         full_context = context.get("full_context_text", "")
         
         # Add existing tests context to check for duplicates
+        # OPTIMIZATION: If RAG is enabled, we'll use RAG's semantic search instead of keyword matching
+        # This is much more accurate and doesn't require fetching all tests via API
         existing_tests_context = ""
-        if existing_tests:
+        if use_rag and rag_context_section:
+            # RAG will provide similar existing tests via semantic search (see rag_context_section)
+            logger.info("Using RAG for existing tests (skipping redundant Zephyr API call)")
+        elif existing_tests:
+            # Fallback to keyword-based matching if RAG is disabled
+            logger.info(f"RAG disabled, using keyword matching on {len(existing_tests)} tests")
             existing_tests_context = "\n=== EXISTING TEST CASES IN ZEPHYR (Check for Duplicates!) ===\n"
             existing_tests_context += "(IMPORTANT: DO NOT create tests that already exist. If a test already covers the flow, mention it in 'related_existing_tests'.)\n\n"
             
@@ -137,7 +174,14 @@ class TestPlanGenerator:
         # TODO: Integrate Figma client to extract UI elements
         # For now, placeholder
         
-        prompt = USER_FLOW_GENERATION_PROMPT.format(
+        # Build the final prompt with RAG grounding if available
+        if use_rag and rag_context_section:
+            # Add RAG grounding at the top for emphasis
+            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context_section + "\n\n"
+        else:
+            prompt = ""
+        
+        prompt += USER_FLOW_GENERATION_PROMPT.format(
             business_context=BUSINESS_CONTEXT_PROMPT,
             management_api_context=MANAGEMENT_API_CONTEXT,
             context=full_context,
@@ -190,6 +234,20 @@ class TestPlanGenerator:
             logger.info(
                 f"Successfully generated {len(test_plan.test_cases)} test cases for {main_story.key}"
             )
+            
+            # Auto-index test plan for future RAG retrieval if enabled
+            if use_rag and settings.rag_auto_index:
+                try:
+                    from src.ai.context_indexer import ContextIndexer
+                    
+                    logger.info("Auto-indexing test plan for future RAG retrieval...")
+                    indexer = ContextIndexer()
+                    # Run indexing in background (don't block test generation)
+                    import asyncio
+                    asyncio.create_task(indexer.index_test_plan(test_plan, context))
+                except Exception as e:
+                    logger.warning(f"Auto-indexing failed (non-critical): {e}")
+            
             return test_plan
 
         except Exception as e:
@@ -312,6 +370,63 @@ class TestPlanGenerator:
 
         return test_plan
 
+    def _build_rag_context(self, retrieved_context) -> str:
+        """
+        Build RAG context section from retrieved documents.
+        
+        Args:
+            retrieved_context: RetrievedContext object from RAG retriever
+            
+        Returns:
+            Formatted RAG context string
+        """
+        sections = []
+        sections.append("=" * 80)
+        sections.append("=== RETRIEVED COMPANY-SPECIFIC CONTEXT (RAG) ===")
+        sections.append("=" * 80)
+        sections.append("\nThe following context has been retrieved from your company's actual data.")
+        sections.append("Use this as your PRIMARY reference for generating tests.\n")
+        
+        # Similar test plans
+        if retrieved_context.similar_test_plans:
+            sections.append("\n--- SIMILAR PAST TEST PLANS (Learn patterns from these) ---\n")
+            for i, doc in enumerate(retrieved_context.similar_test_plans[:3], 1):
+                sections.append(f"\n{i}. Test Plan Example:")
+                sections.append(f"   Similarity: {1 - doc.get('distance', 0):.2f}")
+                sections.append(f"   {doc.get('document', '')[:800]}")  # First 800 chars
+                sections.append("   " + "-" * 70)
+        
+        # Similar Confluence docs
+        if retrieved_context.similar_confluence_docs:
+            sections.append("\n--- COMPANY DOCUMENTATION (Use this terminology) ---\n")
+            for i, doc in enumerate(retrieved_context.similar_confluence_docs[:5], 1):
+                sections.append(f"\n{i}. Document: {doc.get('metadata', {}).get('title', 'Unknown')}")
+                sections.append(f"   Similarity: {1 - doc.get('distance', 0):.2f}")
+                sections.append(f"   {doc.get('document', '')[:600]}")  # First 600 chars
+                sections.append("   " + "-" * 70)
+        
+        # Similar stories
+        if retrieved_context.similar_jira_stories:
+            sections.append("\n--- SIMILAR PAST STORIES (Apply same approach) ---\n")
+            for i, doc in enumerate(retrieved_context.similar_jira_stories[:5], 1):
+                sections.append(f"\n{i}. Story: {doc.get('metadata', {}).get('story_key', 'Unknown')}")
+                sections.append(f"   {doc.get('document', '')[:400]}")  # First 400 chars
+                sections.append("   " + "-" * 70)
+        
+        # Similar existing tests
+        if retrieved_context.similar_existing_tests:
+            sections.append("\n--- EXISTING TESTS (Match this style, avoid duplicates) ---\n")
+            for i, doc in enumerate(retrieved_context.similar_existing_tests[:10], 1):
+                sections.append(f"\n{i}. Test: {doc.get('metadata', {}).get('test_name', 'Unknown')}")
+                sections.append(f"   {doc.get('document', '')[:300]}")  # First 300 chars
+                sections.append("   " + "-" * 70)
+        
+        sections.append("\n" + "=" * 80)
+        sections.append("END OF RETRIEVED CONTEXT - Use the patterns above as your guide")
+        sections.append("=" * 80 + "\n")
+        
+        return "\n".join(sections)
+    
     def _extract_folder_from_story(
         self, main_story: any, folder_structure: List[Dict]
     ) -> str:
