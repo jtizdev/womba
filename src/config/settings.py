@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     )
     temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
     max_tokens: int = Field(default=10000, description="Max tokens for AI responses")
+    
+    # RAG Configuration
+    enable_rag: bool = Field(default=True, description="Enable RAG for context retrieval")
+    rag_collection_path: str = Field(default="./data/chroma", description="ChromaDB storage path")
+    embedding_model: str = Field(default="text-embedding-3-small", description="OpenAI embedding model")
+    rag_top_k_tests: int = Field(default=5, description="Number of similar test plans to retrieve")
+    rag_top_k_docs: int = Field(default=10, description="Number of similar docs to retrieve")
+    rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
+    rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
+    rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
 
 
 # Global settings instance

@@ -74,6 +74,18 @@ def prompt_for_config() -> WombaConfig:
     if ai_tool:
         config.ai_tool = ai_tool
     
+    # RAG Settings
+    print("\n🧠 RAG (Retrieval-Augmented Generation) Configuration")
+    print("-" * 40)
+    print("RAG ensures test generation uses your company's context and past patterns.")
+    print("This improves consistency and prevents generic tests.")
+    rag_choice = input("Enable RAG? (y/n) [y]: ").strip().lower()
+    config.enable_rag = rag_choice != 'n'
+    
+    if config.enable_rag:
+        rag_auto = input("Auto-index test plans after generation? (y/n) [y]: ").strip().lower()
+        config.rag_auto_index = rag_auto != 'n'
+    
     # Womba API (optional)
     print("\n🌐 Womba Cloud (Optional)")
     print("-" * 40)
@@ -150,6 +162,8 @@ def show_config() -> None:
     print(f"  AI Tool:          {config.ai_tool}")
     print(f"  Auto Upload:      {config.auto_upload}")
     print(f"  Auto Create PR:   {config.auto_create_pr}")
+    print(f"  RAG Enabled:      {config.enable_rag}")
+    print(f"  RAG Auto-Index:   {config.rag_auto_index}")
     
     print("\n☁️  Cloud Sync")
     print(f"  Womba API Key:    {'*' * 20 if config.womba_api_key else '(not configured)'}")

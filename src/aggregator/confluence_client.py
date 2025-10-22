@@ -52,13 +52,14 @@ class ConfluenceClient(AtlassianClient):
             response.raise_for_status()
             return response.json()
 
-    async def search_pages(self, cql: str, limit: int = 25) -> List[Dict]:
+    async def search_pages(self, cql: str, limit: int = 25, start: int = 0) -> List[Dict]:
         """
-        Search for Confluence pages using CQL.
+        Search for Confluence pages using CQL with pagination support.
 
         Args:
             cql: Confluence Query Language string
-            limit: Maximum results
+            limit: Maximum results per page
+            start: Start index for pagination
 
         Returns:
             List of page data
@@ -66,10 +67,10 @@ class ConfluenceClient(AtlassianClient):
         Raises:
             httpx.HTTPError: If the request fails
         """
-        logger.info(f"Searching Confluence with CQL: {cql}")
+        logger.info(f"Searching Confluence with CQL: {cql} (limit={limit}, start={start})")
 
         url = f"{self.base_url}/wiki/rest/api/content/search"
-        params = {"cql": cql, "limit": limit, "expand": "body.storage"}
+        params = {"cql": cql, "limit": limit, "start": start, "expand": "body.storage,space"}
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url, auth=self.auth, params=params, timeout=30.0)

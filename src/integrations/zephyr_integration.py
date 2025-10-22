@@ -207,7 +207,7 @@ class ZephyrIntegration:
     async def get_test_cases_for_project(
         self, 
         project_key: str, 
-        max_results: int = 5000,
+        max_results: Optional[int] = 5000,
         use_cache: bool = True,
         search_query: Optional[str] = None
     ) -> List[Dict]:
@@ -216,7 +216,7 @@ class ZephyrIntegration:
 
         Args:
             project_key: Jira project key
-            max_results: Maximum number of test cases to retrieve (default 5000)
+            max_results: Maximum number of test cases to retrieve (default 5000, None for unlimited)
             use_cache: Use cached results if available (default True)
             search_query: Optional search query to filter by keywords (for scalability)
 
@@ -245,13 +245,16 @@ class ZephyrIntegration:
             logger.info(f"Searching Zephyr for tests matching: {search_query} (scalable mode)")
             return await self.search_test_cases(project_key, search_query)
         
-        logger.info(f"Fetching existing test cases for project: {project_key} (max: {max_results})")
+        if max_results is None:
+            logger.info(f"Fetching ALL existing test cases for project: {project_key} (unlimited)")
+        else:
+            logger.info(f"Fetching existing test cases for project: {project_key} (max: {max_results})")
 
         all_tests = []
         start_at = 0
         page_size = 100
         
-        while len(all_tests) < max_results:
+        while max_results is None or len(all_tests) < max_results:
             url = f"{self.base_url}/testcases"
             params = {
                 "projectKey": project_key, 

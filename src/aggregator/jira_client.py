@@ -154,9 +154,9 @@ class JiraClient(AtlassianClient):
         status = issue.fields.status.name if issue.fields.status else "Unknown"
         priority = issue.fields.priority.name if issue.fields.priority else "Medium"
         
-        # Extract people
-        assignee = issue.fields.assignee.emailAddress if issue.fields.assignee else None
-        reporter = issue.fields.reporter.emailAddress if issue.fields.reporter else "unknown@example.com"
+        # Extract people (SDK User objects have displayName, not emailAddress)
+        assignee = issue.fields.assignee.displayName if issue.fields.assignee else None
+        reporter = issue.fields.reporter.displayName if issue.fields.reporter else "Unknown"
         
         # Extract dates
         created = self._parse_datetime(issue.fields.created)
@@ -336,10 +336,13 @@ class JiraClient(AtlassianClient):
             return []
         
         try:
-            logger.info(f"Searching Jira issues with SDK JQL: {jql}")
-            issues = jira.search_issues(jql, maxResults=max_results)
+            logger.info(f"Searching Jira issues with SDK JQL: {jql} (startAt={start_at}, maxResults={max_results})")
+            # Use enhanced_search_issues for Jira Cloud (old search is deprecated)
+            # CRITICAL: Must pass startAt parameter, otherwise returns same results forever!
+            issues = jira.search_issues(jql, maxResults=max_results, startAt=start_at)
             return [self._parse_sdk_issue(issue) for issue in issues]
         except Exception as e:
+            # If old method fails, we still return empty (don't want infinite loop!)
             logger.error(f"Error searching with SDK: {e}")
             return []
 

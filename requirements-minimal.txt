@@ -26,6 +26,11 @@ pyyaml==6.0.1
 # Logging
 loguru==0.7.2
 
+# RAG / Vector Database
+chromadb>=0.4.22
+sentence-transformers>=2.3.0
+numpy>=1.22.0,<2.0  # ChromaDB requires numpy<2.0 for compatibility
+
 # Testing
 pytest==8.0.0
 pytest-asyncio==0.23.3

@@ -12,7 +12,7 @@ from pathlib import Path
 
 from src.config.settings import settings
 
-from .routes import stories, test_plans, ui
+from .routes import stories, test_plans, ui, rag
 
 
 @asynccontextmanager
@@ -44,6 +44,7 @@ app.add_middleware(
 app.include_router(stories.router, prefix="/api/v1/stories", tags=["stories"])
 app.include_router(test_plans.router, prefix="/api/v1/test-plans", tags=["test-plans"])
 app.include_router(ui.router, prefix="/api/v1", tags=["ui"])
+app.include_router(rag.router, tags=["rag"])
 
 # Mount static files for web UI
 static_path = Path(__file__).parent.parent / "web" / "static"

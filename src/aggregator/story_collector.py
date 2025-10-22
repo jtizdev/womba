@@ -96,20 +96,24 @@ class StoryCollector:
             logger.warning(f"Failed to fetch comments: {e}")
 
         # 2. Fetch linked issues
+        linked_stories = []
         try:
             linked_stories = await self.jira_client.get_linked_issues(issue_key)
             context["linked_stories"] = linked_stories
             logger.info(f"Found {len(linked_stories)} linked issues")
         except Exception as e:
             logger.warning(f"Failed to fetch linked issues: {e}")
+            context["linked_stories"] = []
 
         # 3. Fetch related bugs (issues that might be related)
+        related_bugs = []
         try:
             related_bugs = await self._fetch_related_bugs(main_story)
             context["related_bugs"] = related_bugs
             logger.info(f"Found {len(related_bugs)} related bugs")
         except Exception as e:
             logger.warning(f"Failed to fetch related bugs: {e}")
+            context["related_bugs"] = []
 
         # 4. Fetch related Confluence documentation (PRD, tech design, etc.)
         try:
@@ -118,6 +122,7 @@ class StoryCollector:
             logger.info(f"Found {len(confluence_docs)} related Confluence pages")
         except Exception as e:
             logger.warning(f"Failed to fetch Confluence docs: {e}")
+            context["confluence_docs"] = []
 
         # 5. Build context graph (relationships between items)
         context["context_graph"] = self._build_context_graph(

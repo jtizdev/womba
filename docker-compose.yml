@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  womba:
+    build:
+      context: .
+      dockerfile: Dockerfile.cli
+    image: womba:latest
+    container_name: womba
+    volumes:
+      # Persist RAG database between container restarts
+      - ./data:/app/data
+      # Mount .env for configuration
+      - ./.env:/app/.env:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+    # Keep container running for CLI commands
+    command: tail -f /dev/null
+    networks:
+      - womba-network
+
+networks:
+  womba-network:
+    driver: bridge
+

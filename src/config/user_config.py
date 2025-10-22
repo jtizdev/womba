@@ -39,6 +39,10 @@ class WombaConfig:
     auto_create_pr: bool = True
     ai_tool: str = "aider"  # "aider" or "cursor"
     
+    # RAG settings
+    enable_rag: bool = True  # Enable RAG by default
+    rag_auto_index: bool = True  # Auto-index new test plans
+    
     def is_complete(self) -> bool:
         """Check if all required fields are set"""
         required_fields = [
@@ -81,6 +85,8 @@ class WombaConfig:
             "auto_upload": self.auto_upload,
             "auto_create_pr": self.auto_create_pr,
             "ai_tool": self.ai_tool,
+            "enable_rag": self.enable_rag,
+            "rag_auto_index": self.rag_auto_index,
         }
     
     @classmethod
