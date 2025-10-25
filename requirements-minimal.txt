@@ -26,6 +26,10 @@ pyyaml==6.0.1
 # Logging
 loguru==0.7.2
 
+# JWT Authentication for Atlassian Connect
+PyJWT==2.8.0
+cryptography==41.0.7
+
 # RAG / Vector Database
 chromadb>=0.4.22
 sentence-transformers>=2.3.0
