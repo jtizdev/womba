@@ -136,7 +136,23 @@ class FullWorkflowOrchestrator:
         feature_name = feature_name.replace(' ', '-')[:50]
         feature_name = ''.join(c for c in feature_name if c.isalnum() or c == '-')
         
-        self.branch_name = f"feature/{self.story_key}-{feature_name}"
+        base_branch_name = f"feature/{self.story_key}-{feature_name}"
+        
+        # Check if branch already exists
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", base_branch_name],
+            cwd=repo_path,
+            capture_output=True
+        )
+        
+        if result.returncode == 0:
+            # Branch exists, add timestamp to make it unique
+            import time
+            timestamp = int(time.time())
+            self.branch_name = f"{base_branch_name}-{timestamp}"
+            logger.info(f"Branch {base_branch_name} exists, using {self.branch_name}")
+        else:
+            self.branch_name = base_branch_name
         
         # Create and checkout branch
         subprocess.run(
