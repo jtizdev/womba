@@ -5,6 +5,7 @@ Handles: generate → upload → branch → code → commit → PR
 
 import asyncio
 import subprocess
+import time
 from pathlib import Path
 from typing import Optional
 from loguru import logger
@@ -15,6 +16,7 @@ from src.ai.test_plan_generator import TestPlanGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
 from src.automation.code_generator import TestCodeGenerator
 from src.automation.pr_creator import PRCreator
+from src.monitoring.telemetry import get_telemetry
 
 
 class FullWorkflowOrchestrator:
@@ -58,40 +60,73 @@ class FullWorkflowOrchestrator:
         
         logger.info(f"Starting full workflow for {story_key}")
         
+        # Initialize telemetry
+        telemetry = get_telemetry()
+        run_id = await telemetry.start_run(story_key)
+        
         try:
             # Step 1: Generate test plan
             logger.info("Step 1/7: Generating test plan...")
+            step_start = time.time()
             await self._generate_test_plan()
+            await telemetry.track_operation("generate_test_plan", time.time() - step_start, "success")
+            
+            # Update context stats
+            telemetry.update_context_stats(
+                subtasks=len(self.story_data.get("subtasks", [])),
+                linked_issues=len(self.story_data.get("linked_stories", [])),
+                confluence_docs=len(self.story_data.get("confluence_docs", []))
+            )
             
             # Step 2: Upload to Zephyr
             logger.info("Step 2/7: Uploading to Zephyr...")
+            step_start = time.time()
             await self._upload_to_zephyr()
+            await telemetry.track_operation("upload_to_zephyr", time.time() - step_start, "success")
+            
+            # Update test case stats
+            num_tests = len(self.test_plan.test_cases) if self.test_plan else 0
+            telemetry.update_test_case_stats(generated=num_tests, uploaded=len(self.zephyr_ids))
             
             # Step 3: Create feature branch
             logger.info("Step 3/7: Creating feature branch...")
+            step_start = time.time()
             self._create_feature_branch(repo_path)
+            await telemetry.track_operation("create_feature_branch", time.time() - step_start, "success")
             
             # Step 4: Generate test code
             logger.info("Step 4/7: Generating test code...")
+            step_start = time.time()
             await self._generate_test_code(repo_path)
+            await telemetry.track_operation("generate_test_code", time.time() - step_start, "success")
             
             # Step 5: Compile tests (optional validation)
             logger.info("Step 5/7: Validating tests...")
+            step_start = time.time()
             self._validate_tests(repo_path)
+            await telemetry.track_operation("validate_tests", time.time() - step_start, "success")
             
             # Step 6: Commit & push
             logger.info("Step 6/7: Committing and pushing...")
+            step_start = time.time()
             self._commit_and_push(repo_path)
+            await telemetry.track_operation("commit_and_push", time.time() - step_start, "success")
             
             # Step 7: Create MR/PR
             logger.info("Step 7/7: Creating merge request...")
+            step_start = time.time()
             self._create_pr(repo_path)
+            await telemetry.track_operation("create_merge_request", time.time() - step_start, "success")
+            
+            # End telemetry successfully
+            await telemetry.end_run("success")
             
             # Return summary
             return self._get_summary()
             
         except Exception as e:
             logger.error(f"Workflow failed: {e}")
+            await telemetry.end_run("failed", str(e))
             raise
     
     async def _generate_test_plan(self):

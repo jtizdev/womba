@@ -88,6 +88,31 @@ class Settings(BaseSettings):
     rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
     rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
+    
+    # Performance & Optimization Configuration
+    max_parallel_requests: int = Field(default=10, description="Max parallel API requests")
+    enable_request_batching: bool = Field(default=True, description="Batch multiple API requests")
+    
+    # Caching Configuration
+    enable_caching: bool = Field(default=True, description="Enable caching layer")
+    cache_ttl_jira: int = Field(default=300, description="Jira cache TTL in seconds (5 minutes)")
+    cache_ttl_confluence: int = Field(default=1800, description="Confluence cache TTL in seconds (30 minutes)")
+    cache_ttl_rag: int = Field(default=3600, description="RAG cache TTL in seconds (1 hour)")
+    enable_embedding_cache: bool = Field(default=True, description="Cache embeddings to avoid recomputation")
+    embedding_cache_size: int = Field(default=1000, description="Max embeddings to cache")
+    
+    # RAG Optimization
+    rag_hybrid_search: bool = Field(default=True, description="Use hybrid semantic + keyword search")
+    rag_reranking: bool = Field(default=True, description="Rerank results using cross-encoder")
+    rag_multi_query: bool = Field(default=True, description="Use multiple query variations for better coverage")
+    rag_context_expansion: bool = Field(default=True, description="Automatically expand context from related docs")
+    
+    # Performance Monitoring
+    enable_performance_metrics: bool = Field(default=True, description="Track and log performance metrics")
+    
+    # Analytics & Telemetry Configuration
+    analytics_api_url: str = Field(default="http://localhost:8000", description="Analytics API URL for telemetry")
+    enable_telemetry: bool = Field(default=True, description="Enable telemetry collection and sending to analytics backend")
 
 
 # Global settings instance
