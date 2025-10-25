@@ -1,0 +1,141 @@
+{
+  "key": "com.womba.jira",
+  "name": "Womba - AI Test Generator",
+  "description": "Generate comprehensive test plans from Jira stories using AI. Automatically creates test cases, uploads to Zephyr Scale, and leverages RAG for context-aware testing.",
+  "vendor": {
+    "name": "Womba",
+    "url": "https://womba.onrender.com"
+  },
+  "baseUrl": "https://womba.onrender.com",
+  "authentication": {
+    "type": "jwt"
+  },
+  "lifecycle": {
+    "installed": "/connect/installed",
+    "uninstalled": "/connect/uninstalled",
+    "enabled": "/connect/enabled",
+    "disabled": "/connect/disabled"
+  },
+  "scopes": [
+    "READ",
+    "WRITE",
+    "DELETE",
+    "ACT_AS_USER"
+  ],
+  "apiVersion": 1,
+  "modules": {
+    "jiraIssueGlances": [
+      {
+        "key": "womba-test-count-glance",
+        "name": {
+          "value": "Test Coverage"
+        },
+        "icon": {
+          "width": 16,
+          "height": 16,
+          "url": "/static/icon-small.png"
+        },
+        "content": {
+          "type": "label",
+          "label": {
+            "value": "Tests"
+          }
+        },
+        "target": {
+          "type": "web_panel",
+          "url": "/connect/issue-glance?issueKey={issue.key}"
+        },
+        "conditions": [
+          {
+            "condition": "user_is_logged_in"
+          }
+        ]
+      }
+    ],
+    "webPanels": [
+      {
+        "key": "womba-issue-panel",
+        "name": {
+          "value": "Womba Test Generator"
+        },
+        "url": "/connect/issue-panel?issueKey={issue.key}&projectKey={project.key}",
+        "location": "atl.jira.view.issue.right.context",
+        "weight": 100,
+        "layout": {
+          "width": "100%",
+          "height": "100%"
+        },
+        "conditions": [
+          {
+            "condition": "user_is_logged_in"
+          }
+        ]
+      }
+    ],
+    "generalPages": [
+      {
+        "key": "womba-test-manager",
+        "name": {
+          "value": "Test Manager"
+        },
+        "url": "/connect/test-manager?projectKey={project.key}",
+        "location": "system.top.navigation.bar",
+        "weight": 100,
+        "icon": {
+          "width": 16,
+          "height": 16,
+          "url": "/static/icon-small.png"
+        },
+        "conditions": [
+          {
+            "condition": "user_is_logged_in"
+          }
+        ]
+      }
+    ],
+    "adminPages": [
+      {
+        "key": "womba-admin-config",
+        "name": {
+          "value": "Womba Configuration"
+        },
+        "url": "/connect/admin",
+        "location": "admin_plugins_menu/womba-section",
+        "weight": 100,
+        "icon": {
+          "width": 16,
+          "height": 16,
+          "url": "/static/icon-small.png"
+        },
+        "conditions": [
+          {
+            "condition": "user_is_admin"
+          }
+        ]
+      }
+    ],
+    "webhooks": [
+      {
+        "event": "jira:issue_created",
+        "url": "/connect/webhooks/issue-created",
+        "excludeBody": false
+      },
+      {
+        "event": "jira:issue_updated",
+        "url": "/connect/webhooks/issue-updated",
+        "excludeBody": false
+      },
+      {
+        "event": "jira:issue_deleted",
+        "url": "/connect/webhooks/issue-deleted",
+        "excludeBody": false
+      }
+    ]
+  },
+  "apiMigrations": {
+    "gdpr": true,
+    "context-qsh": true,
+    "signed-install": true
+  }
+}
+
