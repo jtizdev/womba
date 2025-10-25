@@ -124,7 +124,8 @@ class JiraClient(AtlassianClient):
             from jira import JIRA
             return JIRA(
                 server=self.base_url,
-                basic_auth=(self.email, self.api_token)
+                basic_auth=(self.email, self.api_token),
+                options={'rest_api_version': '3'}
             )
         except ImportError:
             logger.warning("Jira SDK not installed. Install with: pip install jira")
