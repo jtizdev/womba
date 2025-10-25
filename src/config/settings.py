@@ -91,5 +91,10 @@ class Settings(BaseSettings):
 
 
 # Global settings instance
+    
+    # Analytics & Telemetry Configuration
+    analytics_api_url: str = Field(default="http://localhost:8000", description="Analytics API URL for telemetry")
+    enable_telemetry: bool = Field(default=True, description="Enable telemetry collection and sending to analytics backend")
+
 settings = Settings()
 
