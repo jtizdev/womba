@@ -76,6 +76,13 @@ class TestPlanGenerator:
         main_story = context.main_story
         logger.info(f"Generating test plan for {main_story.key}: {main_story.summary}")
         
+        # Calculate story complexity for dynamic test count
+        complexity = self._calculate_story_complexity(context)
+        logger.info(
+            f"Story complexity: {complexity['level']} "
+            f"(score: {complexity['score']}, suggested tests: {complexity['suggested_test_count']})"
+        )
+        
         # Determine if RAG should be used
         if use_rag is None:
             use_rag = settings.enable_rag
@@ -105,6 +112,33 @@ class TestPlanGenerator:
 
         # Build the prompt with full context
         full_context = context.get("full_context_text", "")
+        
+        # Build complexity analysis section for the prompt
+        subtasks_count = len(context.get("subtasks", [])) if isinstance(context, dict) else len(context.subtasks)
+        linked_stories_count = len(context.get("linked_stories", [])) if isinstance(context, dict) else len(context.linked_stories)
+        confluence_docs_count = len(context.get("confluence_docs", [])) if isinstance(context, dict) else len(context.confluence_docs)
+        comments_count = len(context.get("comments", [])) if isinstance(context, dict) else len(context.comments)
+        
+        context_stats = f"""
+=== STORY COMPLEXITY ANALYSIS ===
+- Subtasks: {subtasks_count} (implementation details you MUST analyze)
+- Linked Issues: {linked_stories_count} (integration points to test)
+- Confluence Docs: {confluence_docs_count} (business requirements and terminology)
+- Comments: {comments_count} (edge cases and clarifications)
+- Complexity Score: {complexity['score']}
+- Complexity Level: {complexity['level']}
+- Required Test Count: {complexity['min_tests']}-{complexity['max_tests']} high-quality tests
+
+**YOU MUST GENERATE {complexity['suggested_test_count']} HIGH-QUALITY, DEEPLY ANALYZED TESTS**
+
+Each piece of context contains crucial information:
+- Subtasks reveal WHAT is being built (APIs, fields, validations, UI changes)
+- Linked issues show WHERE this integrates with other features
+- Confluence docs provide WHY (business logic, workflows, terminology)
+- Comments expose edge cases and special requirements
+
+DO NOT generate generic tests. Extract specific details from each context source.
+"""
         
         # Add existing tests context to check for duplicates
         # OPTIMIZATION: If RAG is enabled, we'll use RAG's semantic search instead of keyword matching
@@ -177,9 +211,9 @@ class TestPlanGenerator:
         # Build the final prompt with RAG grounding if available
         if use_rag and rag_context_section:
             # Add RAG grounding at the top for emphasis
-            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context_section + "\n\n"
+            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context_section + "\n\n" + context_stats + "\n\n"
         else:
-            prompt = ""
+            prompt = context_stats + "\n\n"
         
         prompt += USER_FLOW_GENERATION_PROMPT.format(
             business_context=BUSINESS_CONTEXT_PROMPT,
@@ -188,7 +222,15 @@ class TestPlanGenerator:
             existing_tests_context=existing_tests_context,
             tasks_context=tasks_context,
             folder_context=folder_context,
-            figma_context=figma_context or "(No Figma designs available)"
+            figma_context=figma_context or "(No Figma designs available)",
+            num_subtasks=subtasks_count,
+            num_linked_issues=linked_stories_count,
+            num_confluence_docs=confluence_docs_count,
+            num_comments=comments_count,
+            suggested_test_count=complexity['suggested_test_count'],
+            complexity_score=complexity['score'],
+            min_tests=complexity['min_tests'],
+            max_tests=complexity['max_tests']
         )
 
         # Add few-shot examples for better quality
@@ -498,4 +540,82 @@ class TestPlanGenerator:
                 return f"{potential_component}/Feature Tests"
         
         return "General/Automated Tests"
+
+    def _calculate_story_complexity(self, context: StoryContext) -> dict:
+        """
+        Calculate story complexity score and suggest appropriate test count.
+        
+        Scoring algorithm:
+        - Subtasks × 2 (each subtask represents implementation work to test)
+        - Linked issues × 1.5 (integration points and dependencies)
+        - Confluence docs × 1 (business context and requirements)
+        - Comments / 3 (discussion and edge cases)
+        
+        Complexity levels:
+        - Simple (< 5): 4-6 tests
+        - Medium (5-12): 6-10 tests
+        - Complex (12+): 10-15 tests
+        
+        Args:
+            context: StoryContext with all aggregated information
+            
+        Returns:
+            dict with score, level, suggested_test_count, min_tests, max_tests
+        """
+        # Handle both dict and StoryContext object
+        if isinstance(context, dict):
+            subtasks = context.get("subtasks", [])
+            linked_stories = context.get("linked_stories", [])
+            confluence_docs = context.get("confluence_docs", [])
+            comments = context.get("comments", [])
+        else:
+            subtasks = context.subtasks
+            linked_stories = context.linked_stories
+            confluence_docs = context.confluence_docs
+            comments = context.comments
+        
+        # Calculate weighted score
+        subtasks_score = len(subtasks) * 2
+        linked_issues_score = len(linked_stories) * 1.5
+        confluence_score = len(confluence_docs) * 1
+        comments_score = len(comments) / 3
+        
+        total_score = subtasks_score + linked_issues_score + confluence_score + comments_score
+        
+        # Determine complexity level and test count range
+        if total_score < 5:
+            level = "Simple"
+            min_tests = 4
+            max_tests = 6
+            suggested = 5
+        elif total_score < 12:
+            level = "Medium"
+            min_tests = 6
+            max_tests = 10
+            suggested = 8
+        else:
+            level = "Complex"
+            min_tests = 10
+            max_tests = 15
+            # For very complex stories, scale up further
+            if total_score > 20:
+                max_tests = 20
+                suggested = 15
+            else:
+                suggested = 12
+        
+        return {
+            "score": round(total_score, 1),
+            "level": level,
+            "suggested_test_count": suggested,
+            "min_tests": min_tests,
+            "max_tests": max_tests,
+            "breakdown": {
+                "subtasks": round(subtasks_score, 1),
+                "linked_issues": round(linked_issues_score, 1),
+                "confluence": round(confluence_score, 1),
+                "comments": round(comments_score, 1)
+            }
+        }
+
 
