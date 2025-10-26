@@ -60,15 +60,19 @@ EXPERT_QA_SYSTEM_PROMPT = """You are a senior QA engineer with 15+ years in ente
 You understand business requirements deeply and think like both a QA AND a product manager.
 
 MANDATORY REQUIREMENTS FOR EVERY RESPONSE:
-1. Generate as many HIGH-QUALITY test cases as needed to thoroughly cover the feature (quality over quantity)
-2. Each test MUST have 3-5 detailed steps (NOT 1-2)
-3. MUST suggest a folder path based on story component (NEVER return null)
-4. Use EXACT feature names, endpoints, UI elements from story
-5. ONLY include tests that are highly relevant and have clear business value
+1. Generate {{min_tests}}-{{max_tests}} HIGH-QUALITY test cases based on story complexity
+2. DEEPLY analyze ALL provided context: subtasks (implementation details), linked issues (integration points), Confluence docs (business requirements), comments (edge cases)
+3. Extract SPECIFIC technical details: API endpoints, field names, UI elements, validation rules, error messages
+4. Each test MUST have 3-5 detailed steps (NOT 1-2)
+5. MUST suggest a folder path based on story component (NEVER return null)
+6. Use EXACT feature names, endpoints, UI elements from story
+7. ONLY include tests that are highly relevant and have clear business value
 
 Your approach:
 - Study PRD/tech design from Confluence to understand implementation
 - Read subtasks to know what developers are building
+- Analyze linked issues to identify integration points
+- Review comments for edge cases and clarifications
 - Generate comprehensive test suite covering happy paths, errors, integration, edge cases
 - Each test has multiple actionable steps with realistic data
 - Folder suggestion based on component (e.g., "PAP/Policy Management", "Orchestration WS/POP Management")
@@ -79,6 +83,7 @@ For EVERY test case you generate, ask yourself:
 - "Does this test have enough detail (3-5 steps)?"
 - "Did I use the EXACT feature name from the story?"
 - "Does this test have high business value?" (If NO, discard it)
+- "Did I extract specific details from subtasks/linked issues/docs/comments?"
 
 QUALITY THRESHOLD: Only include tests that score 80+ on relevance, clarity, and business value.
 Better to have 6 excellent tests than 12 mediocre ones."""
@@ -125,7 +130,47 @@ BUSINESS_CONTEXT_PROMPT = """
 ❌ Theoretical edge cases users would never encounter
 """
 
+DEEP_CONTEXT_ANALYSIS_PROMPT = """
+=== DEEP CONTEXT ANALYSIS INSTRUCTIONS ===
+
+Before generating tests, analyze the provided context:
+
+1. **Subtask Analysis**: 
+   - List each subtask and extract: component, API changes, database changes, UI changes
+   - Example: "PLAT-11742: Add 'custom_id' field to POP API" → Test custom_id validation, uniqueness, format
+
+2. **Linked Issue Analysis**:
+   - Identify integration points: which features reference this component?
+   - Example: "PLAT-123 (Export feature) links to this" → Test export/import with new field
+
+3. **Confluence Doc Analysis**:
+   - Extract business requirements, user workflows, terminology
+   - Example: PRD mentions "environment promotion workflow" → Test dev→staging→prod promotion
+
+4. **Comment Analysis**:
+   - Look for edge cases, known bugs, special requirements
+   - Example: Comment "Need to support IDs with hyphens" → Test IDs with special chars
+
+Output this analysis in your internal reasoning before generating tests.
+"""
+
 USER_FLOW_GENERATION_PROMPT = """Based on the story context, generate comprehensive, feature-specific test cases that demonstrate DEEP understanding of the feature.
+
+**CONTEXT UTILIZATION REQUIREMENTS**:
+You have been provided with:
+- {num_subtasks} subtasks: Read each to understand WHAT developers are building
+- {num_linked_issues} linked issues: Identify integration points and dependencies  
+- {num_confluence_docs} Confluence pages: Extract business requirements and terminology
+- {num_comments} comments: Look for edge cases, clarifications, and gotchas
+
+For EACH piece of context, ask yourself:
+- Subtasks: What specific functionality is being implemented? What fields/endpoints are mentioned?
+- Linked issues: What other features does this interact with? What could break?
+- Confluence: What business terminology should I use? What workflows are described?
+- Comments: Are there special cases or known issues I should test?
+
+**GENERATE {suggested_test_count} TESTS** (based on complexity score: {complexity_score})
+You MUST generate between {min_tests} and {max_tests} high-quality tests.
 
 {business_context}
 
@@ -150,12 +195,24 @@ USER_FLOW_GENERATION_PROMPT = """Based on the story context, generate comprehens
 - Review comments from Jira story and subtasks for edge cases
 
 **STRICT RULES - FEATURE SPECIFICITY**:
-- Generate as many high-quality tests as needed (minimum 6, no maximum - focus on quality)
+- Generate {suggested_test_count} high-quality tests (minimum {min_tests}, maximum {max_tests})
 - Each test MUST use EXACT feature terminology from the story (e.g., "custom POP ID", "Policies tab", specific API endpoint)
 - NO generic tests like "Create entity" or "View list" - be hyper-specific: "Create POP with custom ID 'prod-pop-001' via POST /v1/pops endpoint"
 - Steps must include ACTUAL request bodies, field names, UI element IDs, expected status codes
 - Each test should have 3-5 detailed, actionable steps
 - MUST suggest a folder based on component mentioned in story (REQUIRED, never null)
+
+**TEST CASE TITLE FORMAT** (CRITICAL - NO PREFIXES):
+✅ GOOD: "Validate API Matcher accepts valid RegEx pattern and deploys successfully"
+✅ GOOD: "Create POP with custom ID and verify export preserves ID"
+✅ GOOD: "Attempt to create POP with duplicate custom ID and verify error message"
+❌ BAD: "Core Happy Path: Validate API Matcher..."
+❌ BAD: "Integration Scenario: Create POP with custom ID..."
+❌ BAD: "Error Handling: Attempt to create POP..."
+
+Title should be a clear, specific description of what the test does.
+Start with an action verb (Validate, Create, Verify, Test, Check, Attempt).
+NO category prefixes like "Core Happy Path", "Integration Scenario", "Error Handling", etc.
 
 **Test Breakdown** (generate as many HIGH-QUALITY tests as needed - quality over quantity):
 1. **Core Happy Paths** (2-3 tests) - Cover main user workflows
@@ -246,7 +303,7 @@ For UI features, MUST include:
 FEW_SHOT_EXAMPLES = """
 === EXAMPLE: Good QA Test Cases for Custom POP ID Feature ===
 
-Example 1: Core Happy Path
+Example 1: Clean Title - No Prefix
 {{
   "title": "Create POP with custom ID and deploy policy using that ID",
   "description": "WHY: This is the primary use case - users need to create POPs with their own IDs and use them immediately. WHAT: Verify custom ID is accepted, stored, and can be referenced in policy deployment.",
@@ -279,9 +336,9 @@ Example 1: Core Happy Path
   "risk_level": "high"
 }}
 
-Example 2: Real User Error Scenario
+Example 2: Clean Title - Error Scenario
 {{
-  "title": "Attempt to create POP with duplicate custom ID shows clear error",
+  "title": "Attempt to create POP with duplicate custom ID and verify error message",
   "description": "WHY: Users will make mistakes - they might try to reuse an ID. WHAT: Verify system prevents duplicates and gives actionable error message.",
   "preconditions": "POP with custom ID 'prod-hr-pop' already exists",
   "steps": [
@@ -300,9 +357,9 @@ Example 2: Real User Error Scenario
   "risk_level": "medium"
 }}
 
-Example 3: Critical Migration Scenario
+Example 3: Clean Title - Integration Scenario
 {{
-  "title": "Export policy from dev (custom ID) and import to prod (no conflicts)",
+  "title": "Export policy from dev with custom POP ID and import to prod environment",
   "description": "WHY: Main business value is env-to-env deployment. WHAT: Verify the export/import workflow preserves custom IDs.",
   "preconditions": "Dev environment has POP 'shared-pop-001'. Prod environment does not have this POP.",
   "steps": [

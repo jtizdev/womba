@@ -44,15 +44,17 @@ def prompt_for_config() -> WombaConfig:
     # Repository settings (optional)
     print("\n📁 Repository Configuration (Optional)")
     print("-" * 40)
-    print("If you always work with the same automation repository, you can set it here.")
-    repo_input = input("Default repository path [skip]: ").strip()
-    if repo_input:
-        config.repo_path = repo_input
+    print("Configure the automation repository where test code will be generated.")
+    print("This is where Womba will create PRs with automated tests.")
+    automation_repo = input("Automation repository path (where tests should be created) [skip]: ").strip()
+    if automation_repo:
+        config.automation_repo_path = automation_repo
+        config.repo_path = automation_repo  # Backward compatibility
         
         # Try to detect git provider
         manager = ConfigManager()
-        config.git_provider = manager.detect_git_provider(repo_input)
-        config.git_remote_url = manager.get_git_remote_url(repo_input)
+        config.git_provider = manager.detect_git_provider(automation_repo)
+        config.git_remote_url = manager.get_git_remote_url(automation_repo)
         
         if config.git_provider != "auto":
             print(f"  ✓ Detected git provider: {config.git_provider}")
@@ -153,7 +155,7 @@ def show_config() -> None:
     print(f"  OpenAI API Key:   {'*' * 20 if config.openai_api_key else '(not set)'}")
     
     print("\n📁 Repository")
-    print(f"  Default Path:     {config.repo_path or '(not set)'}")
+    print(f"  Automation Repo:  {config.automation_repo_path or config.repo_path or '(not set)'}")
     print(f"  Git Provider:     {config.git_provider}")
     print(f"  Default Branch:   {config.default_branch}")
     

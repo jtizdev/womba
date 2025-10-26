@@ -12,7 +12,8 @@ class WombaConfig:
     """User configuration for Womba CLI"""
     
     # Repository settings
-    repo_path: Optional[str] = None
+    repo_path: Optional[str] = None  # Deprecated: use automation_repo_path
+    automation_repo_path: Optional[str] = None  # Path to automation test repository
     git_provider: str = "auto"  # "gitlab", "github", or "auto"
     git_remote_url: Optional[str] = None
     default_branch: str = "master"
@@ -70,6 +71,7 @@ class WombaConfig:
         """Convert to dictionary for serialization"""
         return {
             "repo_path": self.repo_path,
+            "automation_repo_path": self.automation_repo_path,
             "git_provider": self.git_provider,
             "git_remote_url": self.git_remote_url,
             "default_branch": self.default_branch,

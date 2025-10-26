@@ -47,16 +47,24 @@ class FullWorkflowOrchestrator:
             dict: Summary of workflow results
         """
         self.story_key = story_key
-        repo_path = repo_path or self.config.repo_path
+        
+        # Use automation_repo_path from config, fall back to repo_path, then CLI arg
+        if not repo_path:
+            repo_path = self.config.automation_repo_path or self.config.repo_path
         
         if not repo_path:
-            raise ValueError("Repository path not configured. Use --repo or configure default repo.")
+            raise ValueError(
+                "Automation repository path not configured.\n"
+                "Please configure it by running: womba configure\n"
+                "Or provide it via --repo flag"
+            )
         
         repo_path = Path(repo_path)
         if not repo_path.exists():
             raise ValueError(f"Repository path does not exist: {repo_path}")
         
         logger.info(f"Starting full workflow for {story_key}")
+        logger.info(f"Automation repository: {repo_path}")
         
         try:
             # Step 1: Generate test plan
