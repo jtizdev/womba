@@ -169,8 +169,13 @@ For EACH piece of context, ask yourself:
 - Confluence: What business terminology should I use? What workflows are described?
 - Comments: Are there special cases or known issues I should test?
 
-**GENERATE {suggested_test_count} TESTS** (based on complexity score: {complexity_score})
-You MUST generate between {min_tests} and {max_tests} high-quality tests.
+**YOU MUST GENERATE AT LEAST {suggested_test_count} TESTS** (based on complexity score: {complexity_score})
+
+MINIMUM REQUIREMENT: {min_tests} tests
+TARGET: {suggested_test_count} tests  
+MAXIMUM: {max_tests} tests
+
+This is a {complexity_score} complexity story - generate comprehensive coverage!
 
 {business_context}
 
@@ -195,7 +200,8 @@ You MUST generate between {min_tests} and {max_tests} high-quality tests.
 - Review comments from Jira story and subtasks for edge cases
 
 **STRICT RULES - FEATURE SPECIFICITY**:
-- Generate {suggested_test_count} high-quality tests (minimum {min_tests}, maximum {max_tests})
+- YOU MUST GENERATE {suggested_test_count} high-quality tests (MINIMUM {min_tests}, MAXIMUM {max_tests})
+- If you generate fewer than {min_tests} tests, you have FAILED this task
 - Each test MUST use EXACT feature terminology from the story (e.g., "custom POP ID", "Policies tab", specific API endpoint)
 - NO generic tests like "Create entity" or "View list" - be hyper-specific: "Create POP with custom ID 'prod-pop-001' via POST /v1/pops endpoint"
 - Steps must include ACTUAL request bodies, field names, UI element IDs, expected status codes

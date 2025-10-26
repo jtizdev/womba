@@ -596,13 +596,17 @@ DO NOT generate generic tests. Extract specific details from each context source
         else:
             level = "Complex"
             min_tests = 10
-            max_tests = 15
-            # For very complex stories, scale up further
-            if total_score > 20:
-                max_tests = 20
+            max_tests = 20
+            # For very complex stories (20+), scale up further
+            if total_score > 30:
                 suggested = 15
+                min_tests = 12
+            elif total_score > 20:
+                suggested = 13
+                min_tests = 11
             else:
                 suggested = 12
+                min_tests = 10
         
         return {
             "score": round(total_score, 1),
