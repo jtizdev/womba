@@ -86,6 +86,14 @@ python3 womba_cli.py all PLAT-12345
 - Atlassian account with Jira and Confluence access
 - Zephyr Scale
 
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
 ## License
 
 MIT
+
+## Maintainers
+
+Maintained by [jtizdev](https://github.com/jtizdev)
