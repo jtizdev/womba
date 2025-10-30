@@ -14,6 +14,7 @@ from src.aggregator.jira_client import JiraClient
 from src.aggregator.confluence_client import ConfluenceClient
 from src.aggregator.story_collector import StoryCollector
 from src.models.story import JiraStory
+from src.config.settings import settings
 
 
 async def fetch_and_index_zephyr_tests(
@@ -202,6 +203,12 @@ async def index_all_data(project_key: str) -> dict:
     print("  1. All existing Zephyr tests")
     print("  2. All Jira stories from the project")
     print("  3. All Confluence docs from project space")
+    should_index_plainid = (
+        settings.plainid_doc_index_enabled and 
+        (settings.plainid_doc_base_url or settings.plainid_doc_urls)
+    )
+    if should_index_plainid:
+        print("  4. PlainID platform documentation (API reference)")
     print("\n⏳ This may take 5-15 minutes for large projects...\n")
     
     indexer = ContextIndexer()
@@ -210,12 +217,21 @@ async def index_all_data(project_key: str) -> dict:
     tests_count = await fetch_and_index_zephyr_tests(project_key, indexer)
     stories_count = await fetch_and_index_jira_stories(project_key, indexer)
     docs_count = await fetch_and_index_confluence_docs(project_key, indexer)
+    external_count = 0
+    if should_index_plainid:
+        print("\n📥 [4/4] Fetching PlainID documentation...")
+        external_count = await indexer.index_external_docs()
+        if external_count:
+            print(f"✅ Indexed {external_count} PlainID documentation pages")
+        else:
+            print("⚠️  No PlainID documentation indexed (check base_url/config)")
     
     return {
         'tests': tests_count,
         'stories': stories_count,
         'docs': docs_count,
-        'total': tests_count + stories_count + docs_count
+        'external_docs': external_count,
+        'total': tests_count + stories_count + docs_count + external_count
     }
 
 
@@ -252,7 +268,7 @@ def show_rag_stats() -> None:
     print(f"\n📁 Storage Path: {stats['storage_path']}")
     print(f"📈 Total Documents: {stats['total_documents']}")
     print("\nCollections:")
-    for collection_name in ['test_plans', 'confluence_docs', 'jira_stories', 'existing_tests']:
+    for collection_name in ['test_plans', 'confluence_docs', 'jira_stories', 'existing_tests', 'external_docs']:
         collection_stats = stats.get(collection_name, {})
         count = collection_stats.get('count', 0)
         status = "✓" if collection_stats.get('exists') else "✗"
@@ -277,4 +293,124 @@ def clear_rag_database(confirm: bool = False) -> None:
     store = RAGVectorStore()
     store.clear_all_collections()
     print("✅ RAG database cleared")
+
+
+def view_rag_documents(
+    collection: str,
+    limit: Optional[int] = 10,
+    project_key: Optional[str] = None,
+    show_full: bool = False
+) -> None:
+    """
+    View documents from a RAG collection.
+    
+    Args:
+        collection: Collection name (test_plans, confluence_docs, jira_stories, existing_tests)
+        limit: Number of documents to show (default: 10)
+        project_key: Optional project key filter
+        show_full: If True, show full document content (default: first 500 chars)
+    """
+    store = RAGVectorStore()
+    
+    # Validate collection name
+    valid_collections = [
+        store.TEST_PLANS_COLLECTION,
+        store.CONFLUENCE_DOCS_COLLECTION,
+        store.JIRA_STORIES_COLLECTION,
+        store.EXISTING_TESTS_COLLECTION,
+        store.EXTERNAL_DOCS_COLLECTION,
+    ]
+    
+    if collection not in valid_collections:
+        print(f"❌ Invalid collection: {collection}")
+        print(f"Valid options: {', '.join(valid_collections)}")
+        return
+    
+    # Build metadata filter
+    metadata_filter = None
+    if project_key:
+        metadata_filter = {"project_key": project_key}
+    
+    # Get documents
+    print(f"\n🔍 Fetching documents from '{collection}'...")
+    if project_key:
+        print(f"   Filter: project_key = {project_key}")
+    if limit:
+        print(f"   Limit: {limit}")
+    
+    documents = store.get_all_documents(
+        collection_name=collection,
+        limit=limit,
+        metadata_filter=metadata_filter
+    )
+    
+    if not documents:
+        print(f"\n⚠️  No documents found in '{collection}'")
+        return
+    
+    print(f"\n📄 Found {len(documents)} document(s):\n")
+    print("=" * 80)
+    
+    for i, doc in enumerate(documents, 1):
+        # Display metadata
+        metadata = doc.get('metadata', {})
+        
+        if collection == store.TEST_PLANS_COLLECTION:
+            print(f"\n[{i}] Test Plan:")
+            print(f"    Story: {metadata.get('story_key', 'N/A')}")
+            print(f"    Summary: {metadata.get('summary', 'N/A')[:100]}")
+            print(f"    Test Cases: {metadata.get('test_count', 'N/A')}")
+            
+        elif collection == store.CONFLUENCE_DOCS_COLLECTION:
+            print(f"\n[{i}] Confluence Document:")
+            print(f"    Title: {metadata.get('title', 'N/A')}")
+            print(f"    Space: {metadata.get('space', 'N/A')}")
+            if metadata.get('url'):
+                print(f"    URL: {metadata.get('url', 'N/A')}")
+                
+        elif collection == store.JIRA_STORIES_COLLECTION:
+            story_key = metadata.get('story_key', 'N/A')
+            print(f"\n[{i}] Jira Story:")
+            print(f"    Key: {story_key}")
+            print(f"    Summary: {metadata.get('summary', 'N/A')[:100]}")
+            print(f"    Type: {metadata.get('issue_type', 'N/A')}")
+            print(f"    Status: {metadata.get('status', 'N/A')}")
+            
+        elif collection == store.EXISTING_TESTS_COLLECTION:
+            print(f"\n[{i}] Existing Test:")
+            print(f"    Key: {metadata.get('test_key', 'N/A')}")
+            print(f"    Name: {metadata.get('test_name', 'N/A')}")
+            print(f"    Status: {metadata.get('status', 'N/A')}")
+            print(f"    Priority: {metadata.get('priority', 'N/A')}")
+        elif collection == store.EXTERNAL_DOCS_COLLECTION:
+            print(f"\n[{i}] External Doc:")
+            print(f"    Title: {metadata.get('title', 'N/A')}")
+            print(f"    Source: {metadata.get('source', 'N/A')}")
+            if metadata.get('source_url'):
+                print(f"    URL: {metadata.get('source_url')}")
+        
+        # Display document content
+        doc_text = doc.get('document', '')
+        
+        if show_full:
+            print(f"\n    Content (FULL):")
+            print("    " + "-" * 76)
+            # Show full content with proper indentation
+            for line in doc_text.split('\n'):
+                print(f"    {line}")
+        else:
+            # Show preview
+            preview = doc_text[:500] if len(doc_text) > 500 else doc_text
+            print(f"\n    Content Preview (first 500 chars):")
+            print("    " + "-" * 76)
+            print(f"    {preview}")
+            if len(doc_text) > 500:
+                print(f"    ... [{len(doc_text) - 500} more characters - use --full to see all]")
+        
+        print("    " + "-" * 76)
+    
+    print("\n" + "=" * 80)
+    print(f"\n💡 To see full content, use --full flag")
+    print(f"💡 To filter by project, use --project-key PROJECT_KEY")
+    print(f"💡 To see more documents, use --limit N")
 

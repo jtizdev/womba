@@ -9,6 +9,7 @@
 - 📊 **High Quality**: 88%+ pass rate with built-in quality scoring
 - 🔗 **Jira Integration**: Fetches stories, subtasks, comments, and linked issues
 - 📚 **Confluence Integration**: Pulls related documentation automatically
+- 📘 **PlainID Docs Awareness**: Indexes [docs.plainid.io](https://docs.plainid.io/) endpoints for request/response payload details
 - 🎯 **Smart Filtering**: Filters to top 50 most relevant existing tests
 - 📁 **Intelligent Organization**: Suggests optimal folder structure
 - ✅ **Zephyr Upload**: Uploads tests with steps, links to stories
@@ -111,6 +112,11 @@ ENABLE_RAG=true              # Enable RAG (recommended)
 RAG_AUTO_INDEX=true          # Auto-index new test plans
 RAG_COLLECTION_PATH=./data/chroma  # Vector database path
 
+# PlainID Documentation (optional)
+PLAINID_DOC_INDEX_ENABLED=true
+PLAINID_DOC_URLS="https://docs.plainid.io/authorization-apis/runtime"
+PLAINID_DOC_PROJECT_KEY=GLOBAL  # Metadata tag for external docs
+
 # Optional: API Documentation
 API_DOCS_URL=https://docs.your-company.com/api
 API_DOCS_TYPE=openapi  # or 'postman', 'readme', 'auto'
@@ -198,6 +204,7 @@ MIT
 - **[RAG Guide](docs/RAG.md)** - Comprehensive RAG documentation
 - **[Automation Guide](docs/AUTOMATION.md)** - Automated test code generation
 - **[API Documentation](docs/API.md)** - REST API reference
+- **[GitHub MCP Integration](docs/github-mcp-integration.md)** - Bridge MCP tools with repository context
 - **[Setup Guide](docs/SETUP.md)** - Detailed setup instructions
 
 ## Troubleshooting

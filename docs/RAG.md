@@ -52,6 +52,10 @@ RAG_AUTO_INDEX=true
 | `rag_top_k_docs` | `10` | Similar docs to retrieve |
 | `rag_top_k_stories` | `10` | Similar stories to retrieve |
 | `rag_top_k_existing` | `20` | Similar existing tests |
+| `rag_top_k_external` | `10` | External PlainID docs to retrieve |
+| `plainid_doc_index_enabled` | `true` | Toggle indexing of PlainID docs |
+| `plainid_doc_urls` | `[]` | List of PlainID endpoints to crawl |
+| `plainid_doc_project_key` | `GLOBAL` | Project key tag for external docs |
 
 ## CLI Commands
 

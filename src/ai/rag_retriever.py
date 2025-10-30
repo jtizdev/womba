@@ -20,6 +20,7 @@ class RetrievedContext:
     similar_confluence_docs: List[Dict[str, Any]]
     similar_jira_stories: List[Dict[str, Any]]
     similar_existing_tests: List[Dict[str, Any]]
+    similar_external_docs: List[Dict[str, Any]]
     
     def has_context(self) -> bool:
         """Check if any context was retrieved."""
@@ -27,7 +28,8 @@ class RetrievedContext:
             self.similar_test_plans or
             self.similar_confluence_docs or
             self.similar_jira_stories or
-            self.similar_existing_tests
+            self.similar_existing_tests or
+            self.similar_external_docs
         )
     
     def get_summary(self) -> str:
@@ -36,7 +38,8 @@ class RetrievedContext:
             f"Retrieved: {len(self.similar_test_plans)} test plans, "
             f"{len(self.similar_confluence_docs)} docs, "
             f"{len(self.similar_jira_stories)} stories, "
-            f"{len(self.similar_existing_tests)} existing tests"
+            f"{len(self.similar_existing_tests)} existing tests, "
+            f"{len(self.similar_external_docs)} external docs"
         )
 
 
@@ -53,6 +56,7 @@ class RAGRetriever:
         self.top_k_docs = settings.rag_top_k_docs
         self.top_k_stories = settings.rag_top_k_stories
         self.top_k_existing = settings.rag_top_k_existing
+        self.top_k_external = settings.rag_top_k_external
         logger.info("Initialized RAG retriever")
     
     async def retrieve_for_story(
@@ -85,11 +89,12 @@ class RAGRetriever:
         # Retrieve from all collections in parallel
         import asyncio
         
-        similar_test_plans, similar_docs, similar_stories, similar_tests = await asyncio.gather(
+        similar_test_plans, similar_docs, similar_stories, similar_tests, similar_external = await asyncio.gather(
             self._retrieve_similar_test_plans(query, metadata_filter),
             self._retrieve_similar_confluence_docs(query, metadata_filter),
             self._retrieve_similar_jira_stories(query, metadata_filter),
             self._retrieve_similar_existing_tests(query, metadata_filter),
+            self._retrieve_similar_external_docs(query),
             return_exceptions=True
         )
         
@@ -106,20 +111,30 @@ class RAGRetriever:
         if isinstance(similar_tests, Exception):
             logger.error(f"Failed to retrieve tests: {similar_tests}")
             similar_tests = []
+        if isinstance(similar_external, Exception):
+            logger.error(f"Failed to retrieve external docs: {similar_external}")
+            similar_external = []
         
         context = RetrievedContext(
             similar_test_plans=similar_test_plans,
             similar_confluence_docs=similar_docs,
             similar_jira_stories=similar_stories,
-            similar_existing_tests=similar_tests
+            similar_existing_tests=similar_tests,
+            similar_external_docs=similar_external,
         )
         
         logger.info(context.get_summary())
+
+        if settings.rag_prompt_logging_enabled:
+            self._log_matches("Confluence", similar_docs)
+            self._log_matches("Jira", similar_stories)
+            self._log_matches("ExistingTests", similar_tests)
+            self._log_matches("ExternalDocs", similar_external)
         return context
     
     def _build_query(self, story: JiraStory) -> str:
         """
-        Build search query from story.
+        Build comprehensive search query from story.
         
         Args:
             story: Jira story
@@ -127,17 +142,42 @@ class RAGRetriever:
         Returns:
             Query string for semantic search
         """
-        # Combine summary and key parts of description
+        # Combine ALL relevant story information for better matching
         query_parts = [story.summary]
         
+        # Include more of description for better context
         if story.description:
-            # Take first 500 chars of description
-            query_parts.append(story.description[:500])
+            # Use first 1500 chars instead of 500 for better semantic matching
+            desc_text = story.description[:1500]
+            query_parts.append(desc_text)
         
+        # Include acceptance criteria if available
+        if hasattr(story, 'acceptance_criteria') and story.acceptance_criteria:
+            query_parts.append(f"Acceptance Criteria: {story.acceptance_criteria[:800]}")
+        
+        # Include components for domain matching
         if story.components:
             query_parts.append(f"Components: {', '.join(story.components)}")
         
+        # Include labels for better categorization
+        if story.labels:
+            query_parts.append(f"Labels: {', '.join(story.labels)}")
+        
+        # Include issue type and priority for context
+        query_parts.append(f"Type: {story.issue_type}, Priority: {story.priority}")
+        
         return "\n".join(query_parts)
+
+    def _log_matches(self, label: str, matches: List[Dict[str, Any]], limit: int = 3) -> None:
+        if not matches:
+            return
+        for idx, match in enumerate(matches[:limit], 1):
+            meta = match.get('metadata', {})
+            distance = match.get('distance')
+            score = f"{1 - distance:.2f}" if distance is not None else "?"
+            title = meta.get('title') or meta.get('story_key') or meta.get('test_name') or meta.get('summary') or meta.get('source_url') or 'Unknown'
+            source = meta.get('source_url') or meta.get('url') or meta.get('source') or 'internal'
+            logger.debug(f"RAG match [{label}] #{idx}: score {score} title '{title}' source {source}")
     
     async def _retrieve_similar_test_plans(
         self,
@@ -237,5 +277,28 @@ class RAGRetriever:
             return results
         except Exception as e:
             logger.warning(f"No similar existing tests found: {e}")
+            return []
+
+    async def _retrieve_similar_external_docs(
+        self,
+        query: str
+    ) -> List[Dict[str, Any]]:
+        """Retrieve similar external (PlainID) documentation."""
+        try:
+            stats = self.store.get_collection_stats(self.store.EXTERNAL_DOCS_COLLECTION)
+            if stats.get('count', 0) == 0:
+                logger.info("External docs collection is empty, skipping retrieval")
+                return []
+
+            results = await self.store.retrieve_similar(
+                collection_name=self.store.EXTERNAL_DOCS_COLLECTION,
+                query_text=query,
+                top_k=self.top_k_external,
+                metadata_filter=None
+            )
+            logger.info(f"Retrieved {len(results)} external documentation entries")
+            return results
+        except Exception as e:
+            logger.warning(f"No external documentation found: {e}")
             return []
 

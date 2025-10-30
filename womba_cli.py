@@ -41,7 +41,7 @@ Examples:
     parser.add_argument(
         'command',
         choices=['generate', 'upload', 'evaluate', 'configure', 'automate', 'all', 
-                 'index', 'index-all', 'rag-stats', 'rag-clear'],
+                 'index', 'index-all', 'rag-stats', 'rag-clear', 'rag-view'],
         help='Command to execute'
     )
     
@@ -111,6 +111,25 @@ Examples:
     if args.command == 'rag-clear':
         from src.cli.rag_commands import clear_rag_database
         clear_rag_database(confirm=args.yes)
+        return
+    
+    if args.command == 'rag-view':
+        from src.cli.rag_commands import view_rag_documents
+        
+        # Parse collection from story_key or prompt
+        if args.story_key:
+            collection = args.story_key
+        else:
+            print("Usage: womba rag-view COLLECTION [--limit N] [--project-key KEY] [--full]")
+            print("\nCollections: test_plans, confluence_docs, jira_stories, existing_tests")
+            return
+        
+        view_rag_documents(
+            collection=collection,
+            limit=getattr(args, 'limit', 10),
+            project_key=getattr(args, 'project_key', None),
+            show_full=getattr(args, 'full', False)
+        )
         return
     
     if args.command == 'index-all':

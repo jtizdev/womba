@@ -3,7 +3,7 @@ Configuration settings for the application.
 Loads environment variables and provides type-safe configuration.
 """
 
-from typing import Optional
+from typing import Optional, List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -76,7 +76,7 @@ class Settings(BaseSettings):
     default_ai_model: str = Field(
         default="claude-3-5-sonnet-20241022", description="Default AI model to use"
     )
-    temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
+    temperature: float = Field(default=0.4, description="AI temperature for generation (0.3-0.5 for structured output, higher = more creative)")
     max_tokens: int = Field(default=10000, description="Max tokens for AI responses")
     
     # RAG Configuration
@@ -88,6 +88,55 @@ class Settings(BaseSettings):
     rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
     rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
+    rag_top_k_external: int = Field(default=10, description="Number of external documentation matches to retrieve")
+    rag_prompt_max_tokens: int = Field(
+        default=24000,
+        description="Maximum tokens budgeted for RAG context within the prompt"
+    )
+    rag_prompt_reserved_tokens: int = Field(
+        default=6000,
+        description="Tokens reserved for system prompt and generation instructions (not RAG context)"
+    )
+    rag_prompt_chars_per_token: float = Field(
+        default=4.0,
+        description="Approximate characters per token used for prompt size estimation"
+    )
+    rag_prompt_min_section_chars: int = Field(
+        default=400,
+        description="Minimum characters required to include a RAG section entry"
+    )
+    rag_prompt_logging_enabled: bool = Field(
+        default=True,
+        description="Log estimated token usage for prompts to monitor spend"
+    )
+    plainid_doc_urls: List[str] = Field(
+        default_factory=list,
+        description="List of PlainID documentation URLs to index for API reference"
+    )
+    plainid_doc_index_enabled: bool = Field(
+        default=True,
+        description="Enable indexing of PlainID documentation sources"
+    )
+    plainid_doc_project_key: str = Field(
+        default="GLOBAL",
+        description="Project key metadata to assign to external documentation entries"
+    )
+    plainid_doc_base_url: str = Field(
+        default="https://docs.plainid.io/v1-api",
+        description="Root URL for crawling PlainID documentation"
+    )
+    plainid_doc_max_pages: int = Field(
+        default=200,
+        description="Maximum number of PlainID documentation pages to crawl"
+    )
+    plainid_doc_request_delay: float = Field(
+        default=0.5,
+        description="Delay (in seconds) between PlainID doc requests to avoid rate limiting"
+    )
+    plainid_doc_max_depth: int = Field(
+        default=10,
+        description="Maximum depth for URL discovery crawl (to prevent infinite loops)"
+    )
 
 
 # Global settings instance

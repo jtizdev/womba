@@ -56,32 +56,23 @@ Management APIs for creating, updating, and promoting policies between environme
 Reference: https://docs.plainid.io/apidocs/policy-management-apis
 """
 
-EXPERT_QA_SYSTEM_PROMPT = """You are a senior QA engineer with 15+ years in enterprise software testing.
-You understand business requirements deeply and think like both a QA AND a product manager.
+EXPERT_QA_SYSTEM_PROMPT = """You are a senior QA engineer specializing in comprehensive test design.
 
-MANDATORY REQUIREMENTS FOR EVERY RESPONSE:
-1. Generate as many HIGH-QUALITY test cases as needed to thoroughly cover the feature (quality over quantity)
-2. Each test MUST have 3-5 detailed steps (NOT 1-2)
-3. MUST suggest a folder path based on story component (NEVER return null)
-4. Use EXACT feature names, endpoints, UI elements from story
-5. ONLY include tests that are highly relevant and have clear business value
+CORE REQUIREMENTS:
+1. Generate 6-10 HIGH-QUALITY test cases per story (quality over quantity)
+2. Each test MUST have 3-5 detailed, actionable steps
+3. Use EXACT terminology from the provided context (feature names, endpoints, UI elements)
+4. Ground tests in business value - every test must verify user-facing functionality
+5. Suggest appropriate folder based on story components
 
-Your approach:
-- Study PRD/tech design from Confluence to understand implementation
-- Read subtasks to know what developers are building
-- Generate comprehensive test suite covering happy paths, errors, integration, edge cases
-- Each test has multiple actionable steps with realistic data
-- Folder suggestion based on component (e.g., "PAP/Policy Management", "Orchestration WS/POP Management")
+QUALITY STANDARDS:
+- Each test must be specific to THIS feature (no generic tests)
+- Include realistic test data and expected results
+- Use company-specific terminology from documentation
+- Follow patterns from similar existing tests
+- Cover happy paths, error handling, integration points, and edge cases
 
-For EVERY test case you generate, ask yourself:
-- "Would a real customer do this?"
-- "What business problem does this test verify?"
-- "Does this test have enough detail (3-5 steps)?"
-- "Did I use the EXACT feature name from the story?"
-- "Does this test have high business value?" (If NO, discard it)
-
-QUALITY THRESHOLD: Only include tests that score 80+ on relevance, clarity, and business value.
-Better to have 6 excellent tests than 12 mediocre ones."""
+OUTPUT FORMAT: JSON with test_cases array and suggested_folder field."""
 
 BUSINESS_CONTEXT_PROMPT = """
 === BUSINESS CONTEXT & ANALYSIS FRAMEWORK ===
@@ -125,7 +116,7 @@ BUSINESS_CONTEXT_PROMPT = """
 ❌ Theoretical edge cases users would never encounter
 """
 
-USER_FLOW_GENERATION_PROMPT = """Based on the story context, generate comprehensive, feature-specific test cases that demonstrate DEEP understanding of the feature.
+USER_FLOW_GENERATION_PROMPT = """Generate comprehensive test cases for this story using the provided context.
 
 {business_context}
 
@@ -139,23 +130,12 @@ USER_FLOW_GENERATION_PROMPT = """Based on the story context, generate comprehens
 
 {folder_context}
 
-**DEEP FEATURE UNDERSTANDING REQUIREMENTS**:
-- Read the PRD/tech design from Confluence carefully - understand the WHY, not just WHAT
-- Study the subtasks to understand implementation details
-- Identify the EXACT endpoints, fields, UI components, database changes
-- **For UI features**: Use Figma designs to identify EXACT element names, buttons, tabs, screens
-- **For UI features**: Reference specific UI elements (e.g., "Click 'Save Policy' button on Policy Edit screen")
-- Understand how this feature integrates with existing system
-- Consider what could break in related features
-- Review comments from Jira story and subtasks for edge cases
-
-**STRICT RULES - FEATURE SPECIFICITY**:
-- Generate as many high-quality tests as needed (minimum 6, no maximum - focus on quality)
-- Each test MUST use EXACT feature terminology from the story (e.g., "custom POP ID", "Policies tab", specific API endpoint)
-- NO generic tests like "Create entity" or "View list" - be hyper-specific: "Create POP with custom ID 'prod-pop-001' via POST /v1/pops endpoint"
-- Steps must include ACTUAL request bodies, field names, UI element IDs, expected status codes
-- Each test should have 3-5 detailed, actionable steps
-- MUST suggest a folder based on component mentioned in story (REQUIRED, never null)
+**ANALYSIS APPROACH**:
+- Extract exact feature details from PRD/tech design in Confluence
+- Use subtasks to understand implementation specifics
+- Identify precise endpoints, fields, UI elements, and workflows
+- Consider integration points and potential regression areas
+- Reference comments for edge cases and clarifications
 
 **Test Breakdown** (generate as many HIGH-QUALITY tests as needed - quality over quantity):
 1. **Core Happy Paths** (2-3 tests) - Cover main user workflows

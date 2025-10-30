@@ -385,27 +385,26 @@ class StoryCollector:
         if main_story.labels:
             sections.append(f"Labels: {', '.join(main_story.labels)}")
 
-        # Subtasks/Engineering Tasks section (NEW!)
+        # Subtasks/Engineering Tasks section - FULL details for implementation context
         if subtasks:
             sections.append("\n=== ENGINEERING TASKS / SUBTASKS ===")
             sections.append("(These implementation details may suggest regression test scenarios)")
-            for task in subtasks[:10]:
+            for task in subtasks[:10]:  # Limit count to 10, but show full details
                 sections.append(f"\n{task.key}: {task.summary}")
                 sections.append(f"Status: {task.status}")
                 if task.description:
-                    desc = task.description[:200] + "..." if len(task.description) > 200 else task.description
-                    sections.append(f"Details: {desc}")
+                    # Include FULL description - subtasks contain critical implementation details
+                    sections.append(f"Details: {task.description}")
 
-        # Linked stories section
+        # Linked stories section - FULL context for understanding dependencies
         if linked_stories:
             sections.append("\n=== LINKED STORIES ===")
             for story in linked_stories:
                 sections.append(f"\n{story.key}: {story.summary}")
                 sections.append(f"Type: {story.issue_type}, Status: {story.status}")
                 if story.description:
-                    # Truncate long descriptions
-                    desc = story.description[:300] + "..." if len(story.description) > 300 else story.description
-                    sections.append(f"Description: {desc}")
+                    # Include FULL description - linked stories provide important context
+                    sections.append(f"Description: {story.description}")
 
         # Related bugs section
         if related_bugs:
@@ -414,16 +413,16 @@ class StoryCollector:
                 sections.append(f"\n{bug.key}: {bug.summary}")
                 sections.append(f"Status: {bug.status}, Priority: {bug.priority}")
 
-        # Confluence documentation section (NEW!)
+        # Confluence documentation section - FULL CONTENT (no truncation!)
         if confluence_docs:
             sections.append("\n=== RELATED DOCUMENTATION (PRD, TECH DESIGN) ===")
-            for doc in confluence_docs[:5]:  # Limit to 5 most relevant pages
+            # Show ALL Confluence docs (they're critical for context)
+            for doc in confluence_docs:
                 sections.append(f"\n📄 {doc['title']}")
                 sections.append(f"URL: {doc['url']}")
                 if doc['content']:
-                    # Truncate long content
-                    content = doc['content'][:1000] + "..." if len(doc['content']) > 1000 else doc['content']
-                    sections.append(f"Content:\n{content}")
+                    # Include COMPLETE content - Confluence is critical for understanding features
+                    sections.append(f"Content:\n{doc['content']}")
 
         return "\n".join(sections)
 
