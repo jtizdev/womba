@@ -43,8 +43,9 @@ class TestPlanGenerator:
         if use_openai:
             from openai import OpenAI
             self.api_key = api_key or settings.openai_api_key
-            self.model = model or "gpt-4o"  # GPT-4o - best for structured JSON output
+            self.model = model or settings.ai_model  # Use ai_model from settings (gpt-4-turbo by default)
             self.client = OpenAI(api_key=self.api_key)
+            logger.info(f"TestPlanGenerator initialized with model: {self.model}")
         else:
             from anthropic import Anthropic
             self.api_key = api_key or settings.anthropic_api_key
@@ -76,13 +77,6 @@ class TestPlanGenerator:
         main_story = context.main_story
         logger.info(f"Generating test plan for {main_story.key}: {main_story.summary}")
         
-        # Calculate story complexity for dynamic test count
-        complexity = self._calculate_story_complexity(context)
-        logger.info(
-            f"Story complexity: {complexity['level']} "
-            f"(score: {complexity['score']}, suggested tests: {complexity['suggested_test_count']})"
-        )
-        
         # Determine if RAG should be used
         if use_rag is None:
             use_rag = settings.enable_rag
@@ -112,33 +106,6 @@ class TestPlanGenerator:
 
         # Build the prompt with full context
         full_context = context.get("full_context_text", "")
-        
-        # Build complexity analysis section for the prompt
-        subtasks_count = len(context.get("subtasks", [])) if isinstance(context, dict) else len(context.subtasks)
-        linked_stories_count = len(context.get("linked_stories", [])) if isinstance(context, dict) else len(context.linked_stories)
-        confluence_docs_count = len(context.get("confluence_docs", [])) if isinstance(context, dict) else len(context.confluence_docs)
-        comments_count = len(context.get("comments", [])) if isinstance(context, dict) else len(context.comments)
-        
-        context_stats = f"""
-=== STORY COMPLEXITY ANALYSIS ===
-- Subtasks: {subtasks_count} (implementation details you MUST analyze)
-- Linked Issues: {linked_stories_count} (integration points to test)
-- Confluence Docs: {confluence_docs_count} (business requirements and terminology)
-- Comments: {comments_count} (edge cases and clarifications)
-- Complexity Score: {complexity['score']}
-- Complexity Level: {complexity['level']}
-- Required Test Count: {complexity['min_tests']}-{complexity['max_tests']} high-quality tests
-
-**YOU MUST GENERATE {complexity['suggested_test_count']} HIGH-QUALITY, DEEPLY ANALYZED TESTS**
-
-Each piece of context contains crucial information:
-- Subtasks reveal WHAT is being built (APIs, fields, validations, UI changes)
-- Linked issues show WHERE this integrates with other features
-- Confluence docs provide WHY (business logic, workflows, terminology)
-- Comments expose edge cases and special requirements
-
-DO NOT generate generic tests. Extract specific details from each context source.
-"""
         
         # Add existing tests context to check for duplicates
         # OPTIMIZATION: If RAG is enabled, we'll use RAG's semantic search instead of keyword matching
@@ -211,9 +178,9 @@ DO NOT generate generic tests. Extract specific details from each context source
         # Build the final prompt with RAG grounding if available
         if use_rag and rag_context_section:
             # Add RAG grounding at the top for emphasis
-            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context_section + "\n\n" + context_stats + "\n\n"
+            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context_section + "\n\n"
         else:
-            prompt = context_stats + "\n\n"
+            prompt = ""
         
         prompt += USER_FLOW_GENERATION_PROMPT.format(
             business_context=BUSINESS_CONTEXT_PROMPT,
@@ -222,15 +189,7 @@ DO NOT generate generic tests. Extract specific details from each context source
             existing_tests_context=existing_tests_context,
             tasks_context=tasks_context,
             folder_context=folder_context,
-            figma_context=figma_context or "(No Figma designs available)",
-            num_subtasks=subtasks_count,
-            num_linked_issues=linked_stories_count,
-            num_confluence_docs=confluence_docs_count,
-            num_comments=comments_count,
-            suggested_test_count=complexity['suggested_test_count'],
-            complexity_score=complexity['score'],
-            min_tests=complexity['min_tests'],
-            max_tests=complexity['max_tests']
+            figma_context=figma_context or "(No Figma designs available)"
         )
 
         # Add few-shot examples for better quality
@@ -276,6 +235,14 @@ DO NOT generate generic tests. Extract specific details from each context source
             logger.info(
                 f"Successfully generated {len(test_plan.test_cases)} test cases for {main_story.key}"
             )
+            
+            # Validate generated tests for quality
+            for tc in test_plan.test_cases:
+                for step in tc.steps:
+                    step_data = step.get('test_data', '') if isinstance(step, dict) else getattr(step, 'test_data', '')
+                    # Check for placeholder patterns
+                    if any(placeholder in str(step_data) for placeholder in ['<', '>', 'Bearer ', 'placeholder']):
+                        logger.warning(f"Test '{tc.title}' contains placeholder data - may need manual review")
             
             # Auto-index test plan for future RAG retrieval if enabled
             if use_rag and settings.rag_auto_index:
@@ -412,9 +379,14 @@ DO NOT generate generic tests. Extract specific details from each context source
 
         return test_plan
 
+    def _estimate_tokens(self, text: str) -> int:
+        """Estimate token count (rough: 1 token ≈ 4 chars for English)."""
+        return len(text) // 4
+    
     def _build_rag_context(self, retrieved_context) -> str:
         """
-        Build RAG context section from retrieved documents.
+        Build RAG context section with SMART token budgeting.
+        Dynamically adjusts to fit maximum information under API limits.
         
         Args:
             retrieved_context: RetrievedContext object from RAG retriever
@@ -422,12 +394,33 @@ DO NOT generate generic tests. Extract specific details from each context source
         Returns:
             Formatted RAG context string
         """
+        # Token budget: Adjust based on model context window
+        # gpt-4o-mini: 200K context, gpt-4-turbo: 128K, gpt-4o: 128K
+        model_name = self.model.lower() if hasattr(self, 'model') else 'gpt-4o'
+        if "mini" in model_name or "turbo" in model_name:
+            # Large context models - MAXIMUM RAG (NO LIMITS!)
+            MAX_TOTAL_TOKENS = 190000  # 200K - 10K buffer for response
+            RESERVED_FOR_PROMPTS = 20000  # System prompt + user story
+            RAG_BUDGET = MAX_TOTAL_TOKENS - RESERVED_FOR_PROMPTS  # ~170K tokens for RAG!
+            logger.info(f"Using large context model ({model_name}): {RAG_BUDGET} tokens available for RAG")
+        else:
+            # Standard gpt-4o with smaller context
+            MAX_TOTAL_TOKENS = 28000  # Conservative limit
+            RESERVED_FOR_PROMPTS = 20000  # System prompt + user story
+            RAG_BUDGET = MAX_TOTAL_TOKENS - RESERVED_FOR_PROMPTS  # ~8K tokens for RAG
+            logger.info(f"Using standard model ({model_name}): {RAG_BUDGET} tokens available for RAG")
+        
         sections = []
         sections.append("=" * 80)
         sections.append("=== RETRIEVED COMPANY-SPECIFIC CONTEXT (RAG) ===")
         sections.append("=" * 80)
         sections.append("\nThe following context has been retrieved from your company's actual data.")
         sections.append("Use this as your PRIMARY reference for generating tests.\n")
+        
+        # Track token usage
+        header_text = "\n".join(sections)
+        tokens_used = self._estimate_tokens(header_text)
+        tokens_remaining = RAG_BUDGET - tokens_used
         
         # Similar test plans
         if retrieved_context.similar_test_plans:
@@ -438,36 +431,90 @@ DO NOT generate generic tests. Extract specific details from each context source
                 sections.append(f"   {doc.get('document', '')[:800]}")  # First 800 chars
                 sections.append("   " + "-" * 70)
         
-        # Similar Confluence docs
-        if retrieved_context.similar_confluence_docs:
+        # Similar Confluence docs - DYNAMIC budgeting
+        if retrieved_context.similar_confluence_docs and tokens_remaining > 1000:
             sections.append("\n--- COMPANY DOCUMENTATION (Use this terminology) ---\n")
+            tokens_per_doc = min(tokens_remaining // len(retrieved_context.similar_confluence_docs[:5]), 2500)
             for i, doc in enumerate(retrieved_context.similar_confluence_docs[:5], 1):
-                sections.append(f"\n{i}. Document: {doc.get('metadata', {}).get('title', 'Unknown')}")
-                sections.append(f"   Similarity: {1 - doc.get('distance', 0):.2f}")
-                sections.append(f"   {doc.get('document', '')[:600]}")  # First 600 chars
-                sections.append("   " + "-" * 70)
+                if tokens_remaining < 500:
+                    break
+                doc_text = doc.get('document', '')
+                max_chars = tokens_per_doc * 4  # Convert tokens to chars
+                if len(doc_text) > max_chars:
+                    doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
+                doc_section = f"\n{i}. Document: {doc.get('metadata', {}).get('title', 'Unknown')}\n   Similarity: {1 - doc.get('distance', 0):.2f}\n   {doc_text}\n   " + "-" * 70
+                section_tokens = self._estimate_tokens(doc_section)
+                if section_tokens <= tokens_remaining:
+                    sections.append(doc_section)
+                    tokens_remaining -= section_tokens
         
-        # Similar stories
-        if retrieved_context.similar_jira_stories:
+        # Similar stories - DYNAMIC budgeting
+        if retrieved_context.similar_jira_stories and tokens_remaining > 1000:
             sections.append("\n--- SIMILAR PAST STORIES (Apply same approach) ---\n")
+            tokens_per_story = min(tokens_remaining // len(retrieved_context.similar_jira_stories[:5]), 2000)
             for i, doc in enumerate(retrieved_context.similar_jira_stories[:5], 1):
-                sections.append(f"\n{i}. Story: {doc.get('metadata', {}).get('story_key', 'Unknown')}")
-                sections.append(f"   {doc.get('document', '')[:400]}")  # First 400 chars
-                sections.append("   " + "-" * 70)
+                if tokens_remaining < 500:
+                    break
+                doc_text = doc.get('document', '')
+                max_chars = tokens_per_story * 4
+                if len(doc_text) > max_chars:
+                    doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
+                doc_section = f"\n{i}. Story: {doc.get('metadata', {}).get('story_key', 'Unknown')}\n   {doc_text}\n   " + "-" * 70
+                section_tokens = self._estimate_tokens(doc_section)
+                if section_tokens <= tokens_remaining:
+                    sections.append(doc_section)
+                    tokens_remaining -= section_tokens
         
-        # Similar existing tests
-        if retrieved_context.similar_existing_tests:
+        # Similar existing tests - DYNAMIC budgeting  
+        if retrieved_context.similar_existing_tests and tokens_remaining > 1000:
             sections.append("\n--- EXISTING TESTS (Match this style, avoid duplicates) ---\n")
+            tokens_per_test = min(tokens_remaining // len(retrieved_context.similar_existing_tests[:10]), 1500)
             for i, doc in enumerate(retrieved_context.similar_existing_tests[:10], 1):
-                sections.append(f"\n{i}. Test: {doc.get('metadata', {}).get('test_name', 'Unknown')}")
-                sections.append(f"   {doc.get('document', '')[:300]}")  # First 300 chars
-                sections.append("   " + "-" * 70)
+                if tokens_remaining < 300:
+                    break
+                doc_text = doc.get('document', '')
+                max_chars = tokens_per_test * 4
+                if len(doc_text) > max_chars:
+                    doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
+                doc_section = f"\n{i}. Test: {doc.get('metadata', {}).get('test_name', 'Unknown')}\n   {doc_text}\n   " + "-" * 70
+                section_tokens = self._estimate_tokens(doc_section)
+                if section_tokens <= tokens_remaining:
+                    sections.append(doc_section)
+                    tokens_remaining -= section_tokens
+        
+        # External documentation (PlainID API docs) - PRIORITY: Use remaining budget
+        if retrieved_context.similar_external_docs and tokens_remaining > 2000:
+            sections.append("\n--- PLAINID API DOCUMENTATION (Use exact endpoints/payloads) ---\n")
+            sections.append("CRITICAL REQUIREMENTS FOR JSON PAYLOADS:")
+            sections.append("1. Copy EXACT JSON structures from these PlainID docs - do NOT modify or simplify")
+            sections.append("2. Include ALL required fields shown in the documentation")
+            sections.append("3. Use the actual field names and data types from the examples")
+            sections.append("4. If a JSON example is shown, it MUST appear in your test steps verbatim")
+            sections.append("5. NEVER write generic placeholders like '<token>' or 'Bearer <value>'")
+            sections.append("6. If you cannot find the exact JSON, explicitly state 'See PlainID docs for payload structure' instead of inventing one\n")
+            # PlainID docs get PRIORITY - use more of remaining budget
+            tokens_per_api_doc = min(tokens_remaining // len(retrieved_context.similar_external_docs[:5]), 4000)
+            for i, doc in enumerate(retrieved_context.similar_external_docs[:5], 1):
+                if tokens_remaining < 1000:
+                    break
+                metadata = doc.get('metadata', {})
+                doc_text = doc.get('document', '')
+                max_chars = tokens_per_api_doc * 4
+                if len(doc_text) > max_chars:
+                    doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
+                doc_section = f"\n{i}. API Doc: {metadata.get('title', 'Unknown')}\n   Source: {metadata.get('source_url', 'N/A')}\n   Similarity: {1 - doc.get('distance', 0):.2f}\n   {doc_text}\n   " + "-" * 70
+                section_tokens = self._estimate_tokens(doc_section)
+                if section_tokens <= tokens_remaining:
+                    sections.append(doc_section)
+                    tokens_remaining -= section_tokens
         
         sections.append("\n" + "=" * 80)
-        sections.append("END OF RETRIEVED CONTEXT - Use the patterns above as your guide")
+        sections.append(f"END OF RETRIEVED CONTEXT - Token budget used: ~{RAG_BUDGET - tokens_remaining}/{RAG_BUDGET}")
         sections.append("=" * 80 + "\n")
         
-        return "\n".join(sections)
+        result = "\n".join(sections)
+        logger.info(f"RAG context built: {self._estimate_tokens(result)} tokens, {len(result)} chars")
+        return result
     
     def _extract_folder_from_story(
         self, main_story: any, folder_structure: List[Dict]
@@ -540,86 +587,4 @@ DO NOT generate generic tests. Extract specific details from each context source
                 return f"{potential_component}/Feature Tests"
         
         return "General/Automated Tests"
-
-    def _calculate_story_complexity(self, context: StoryContext) -> dict:
-        """
-        Calculate story complexity score and suggest appropriate test count.
-        
-        Scoring algorithm:
-        - Subtasks × 2 (each subtask represents implementation work to test)
-        - Linked issues × 1.5 (integration points and dependencies)
-        - Confluence docs × 1 (business context and requirements)
-        - Comments / 3 (discussion and edge cases)
-        
-        Complexity levels:
-        - Simple (< 5): 4-6 tests
-        - Medium (5-12): 6-10 tests
-        - Complex (12+): 10-15 tests
-        
-        Args:
-            context: StoryContext with all aggregated information
-            
-        Returns:
-            dict with score, level, suggested_test_count, min_tests, max_tests
-        """
-        # Handle both dict and StoryContext object
-        if isinstance(context, dict):
-            subtasks = context.get("subtasks", [])
-            linked_stories = context.get("linked_stories", [])
-            confluence_docs = context.get("confluence_docs", [])
-            comments = context.get("comments", [])
-        else:
-            subtasks = context.subtasks
-            linked_stories = context.linked_stories
-            confluence_docs = context.confluence_docs
-            comments = context.comments
-        
-        # Calculate weighted score
-        subtasks_score = len(subtasks) * 2
-        linked_issues_score = len(linked_stories) * 1.5
-        confluence_score = len(confluence_docs) * 1
-        comments_score = len(comments) / 3
-        
-        total_score = subtasks_score + linked_issues_score + confluence_score + comments_score
-        
-        # Determine complexity level and test count range
-        if total_score < 5:
-            level = "Simple"
-            min_tests = 4
-            max_tests = 6
-            suggested = 5
-        elif total_score < 12:
-            level = "Medium"
-            min_tests = 6
-            max_tests = 10
-            suggested = 8
-        else:
-            level = "Complex"
-            min_tests = 10
-            max_tests = 20
-            # For very complex stories (20+), scale up further
-            if total_score > 30:
-                suggested = 15
-                min_tests = 12
-            elif total_score > 20:
-                suggested = 13
-                min_tests = 11
-            else:
-                suggested = 12
-                min_tests = 10
-        
-        return {
-            "score": round(total_score, 1),
-            "level": level,
-            "suggested_test_count": suggested,
-            "min_tests": min_tests,
-            "max_tests": max_tests,
-            "breakdown": {
-                "subtasks": round(subtasks_score, 1),
-                "linked_issues": round(linked_issues_score, 1),
-                "confluence": round(confluence_score, 1),
-                "comments": round(comments_score, 1)
-            }
-        }
-
 
