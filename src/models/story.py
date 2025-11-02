@@ -61,6 +61,11 @@ class JiraStory(BaseModel):
     )
 
     class Config:
+        # Allow arbitrary types and convert them to strings during serialization
+        arbitrary_types_allowed = True
+        json_encoders = {
+            object: lambda v: str(v) if not isinstance(v, (dict, list, str, int, float, bool, type(None))) else v
+        }
         json_schema_extra = {
             "example": {
                 "key": "PROJ-123",
