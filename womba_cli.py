@@ -41,7 +41,7 @@ Examples:
     parser.add_argument(
         'command',
         choices=['generate', 'upload', 'evaluate', 'configure', 'automate', 'all', 
-                 'index', 'index-all', 'rag-stats', 'rag-clear'],
+                 'index', 'index-all', 'rag-stats', 'rag-clear', 'rag-view'],
         help='Command to execute'
     )
     
@@ -111,6 +111,25 @@ Examples:
     if args.command == 'rag-clear':
         from src.cli.rag_commands import clear_rag_database
         clear_rag_database(confirm=args.yes)
+        return
+    
+    if args.command == 'rag-view':
+        from src.cli.rag_commands import view_rag_documents
+        
+        # Parse collection from story_key or prompt
+        if args.story_key:
+            collection = args.story_key
+        else:
+            print("Usage: womba rag-view COLLECTION [--limit N] [--project-key KEY] [--full]")
+            print("\nCollections: test_plans, confluence_docs, jira_stories, existing_tests")
+            return
+        
+        view_rag_documents(
+            collection=collection,
+            limit=getattr(args, 'limit', 10),
+            project_key=getattr(args, 'project_key', None),
+            show_full=getattr(args, 'full', False)
+        )
         return
     
     if args.command == 'index-all':
@@ -187,20 +206,54 @@ Examples:
     
     elif args.command == 'generate':
         import asyncio
+        import json
+        from pathlib import Path
         from src.workflows.full_workflow import FullWorkflowOrchestrator
         
         orchestrator = FullWorkflowOrchestrator(config)
         orchestrator.story_key = args.story_key
         result = asyncio.run(orchestrator._generate_test_plan())
-        print(f"✅ Generated test plan for {args.story_key}")
         
-        if config.enable_rag:
-            print("📊 RAG was used for context-grounded generation")
+        # Save test plan to JSON file
+        output_dir = Path("test_plans")
+        output_dir.mkdir(exist_ok=True)
+        test_plan_file = output_dir / f"test_plan_{args.story_key}.json"
+        
+        with open(test_plan_file, 'w') as f:
+            # Convert TestPlan to dict, handling non-serializable Jira objects
+            def clean_dict(obj):
+                """Recursively clean dict of non-serializable objects."""
+                if isinstance(obj, dict):
+                    return {k: clean_dict(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [clean_dict(item) for item in obj]
+                elif hasattr(obj, '__dict__') and not isinstance(obj, (str, int, float, bool, type(None))):
+                    # Convert custom objects to string
+                    return str(obj)
+                else:
+                    return obj
+            
+            test_plan_dict = orchestrator.test_plan.model_dump()
+            test_plan_dict = clean_dict(test_plan_dict)
+            json.dump(test_plan_dict, f, indent=2, default=str)
+        
+        print(f"\n✅ Generated test plan for {args.story_key}")
+        print(f"📄 Test plan saved to: {test_plan_file.absolute()}")
+        print(f"📊 Generated {len(orchestrator.test_plan.test_cases)} test cases")
         
         if args.upload:
-            print("\n🚀 Auto-uploading to Zephyr...")
+            print("\n🚀 Uploading to Zephyr...")
             upload_result = asyncio.run(orchestrator._upload_to_zephyr())
-            print(f"✅ Uploaded to Zephyr: {upload_result}")
+            
+            # Print ONLY Zephyr URLs
+            project_key = args.story_key.split('-')[0]
+            print(f"\n🔗 Test Case URLs:")
+            for test_title, zephyr_key in upload_result.items():
+                if not zephyr_key.startswith('ERROR'):
+                    zephyr_url = f"https://plainid.atlassian.net/projects/{project_key}/test-cases/{zephyr_key}"
+                    print(zephyr_url)
+                else:
+                    print(f"ERROR: {test_title} - {zephyr_key}")
     
     elif args.command == 'upload':
         import asyncio
