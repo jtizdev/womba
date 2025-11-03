@@ -63,37 +63,37 @@ async def fetch_and_index_jira_stories(
         
         while True:
             jql = f"project = {project_key} AND type in (Story, Task, Bug) ORDER BY created DESC"
-            result, total = await jira_client.search_issues(jql, max_results=max_results, start_at=start_at)
+            result, total = jira_client.search_issues(jql, max_results=max_results, start_at=start_at)
             
-            # Store total count from first request
+            # Store total count from first request (may be 999999 for unknown)
             if total_count is None:
-                total_count = total
-                logger.info(f"Total Jira issues found: {total_count}")
+                total_count = total if total < 999999 else None  # Ignore "unknown" placeholder
+                if total_count:
+                    logger.info(f"Total Jira issues: {total_count}")
+                else:
+                    logger.info("Total unknown, will fetch until exhausted")
             
-            # Result is now a tuple (List[JiraStory], total)
+            # If no results returned, we're done
             if not result:
+                logger.info("No more results, pagination complete")
                 break
             
             # Add stories to list
             all_stories.extend(result)
+            print(f"  Fetched {len(all_stories)} stories so far...")
             
-            # Check if we've fetched all results using total count
-            if total_count is not None and len(all_stories) >= total_count:
-                logger.debug(f"Fetched all {total_count} issues")
-                break
-            
-            # Also check if this page returned fewer results than requested
+            # If we got fewer results than requested, we've reached the end
             if len(result) < max_results:
-                logger.debug(f"Last page returned {len(result)} results, stopping")
+                logger.info(f"Last page returned {len(result)} results, stopping")
                 break
             
-            # Prevent infinite loops: check if we're making progress
-            if start_at >= (total_count or 10000):  # Safety limit if total is wrong
-                logger.warning(f"Reached safety limit for pagination (start_at={start_at}, total={total_count})")
+            # Safety limit to prevent infinite loops (10x expected max)
+            if start_at >= 100000:
+                logger.warning(f"Reached safety limit at {start_at} stories")
                 break
             
+            # Increment start_at for next page
             start_at += max_results
-            print(f"  Fetched {len(all_stories)}/{total_count if total_count else '?'} stories so far...")
         
         print(f"Found {len(all_stories)} Jira stories (total available: {total_count})")
         
