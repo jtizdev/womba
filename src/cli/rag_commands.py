@@ -59,26 +59,43 @@ async def fetch_and_index_jira_stories(
         all_stories = []
         start_at = 0
         max_results = 100
+        total_count = None
         
         while True:
             jql = f"project = {project_key} AND type in (Story, Task, Bug) ORDER BY created DESC"
-            result = await jira_client.search_issues(jql, max_results=max_results, start_at=start_at)
+            result, total = await jira_client.search_issues(jql, max_results=max_results, start_at=start_at)
             
-            # Result is now a List[JiraStory] from the async method
+            # Store total count from first request
+            if total_count is None:
+                total_count = total
+                logger.info(f"Total Jira issues found: {total_count}")
+            
+            # Result is now a tuple (List[JiraStory], total)
             if not result:
                 break
             
             # Add stories to list
             all_stories.extend(result)
             
-            # Check if there are more results
+            # Check if we've fetched all results using total count
+            if total_count is not None and len(all_stories) >= total_count:
+                logger.debug(f"Fetched all {total_count} issues")
+                break
+            
+            # Also check if this page returned fewer results than requested
             if len(result) < max_results:
+                logger.debug(f"Last page returned {len(result)} results, stopping")
+                break
+            
+            # Prevent infinite loops: check if we're making progress
+            if start_at >= (total_count or 10000):  # Safety limit if total is wrong
+                logger.warning(f"Reached safety limit for pagination (start_at={start_at}, total={total_count})")
                 break
             
             start_at += max_results
-            print(f"  Fetched {len(all_stories)} stories so far...")
+            print(f"  Fetched {len(all_stories)}/{total_count if total_count else '?'} stories so far...")
         
-        print(f"Found {len(all_stories)} Jira stories")
+        print(f"Found {len(all_stories)} Jira stories (total available: {total_count})")
         
         if all_stories:
             print("📊 Indexing Jira stories...")
@@ -118,14 +135,18 @@ async def fetch_and_index_confluence_docs(
             f"{project_key}*",  # Wildcard (e.g., PLAT*)
         ]
         
-        # Also try common documentation spaces
+        # Also try common documentation spaces - DOC is critical for API documentation
         common_spaces = ["PROD", "TECH", "ENG", "DOC"]
         
         # Build CQL query for project-related spaces
+        # CQL syntax: space IN requires quoted space keys
         spaces_to_search = [project_key] + common_spaces
-        cql = f"type=page AND space IN ({','.join(spaces_to_search)}) ORDER BY lastModified DESC"
+        # Quote each space key for CQL syntax
+        quoted_spaces = [f'"{space}"' for space in spaces_to_search]
+        cql = f'type=page AND space IN ({",".join(quoted_spaces)}) ORDER BY lastModified DESC'
         
         print(f"Searching spaces: {', '.join(spaces_to_search)}")
+        logger.info(f"Using CQL query: {cql}")
         
         try:
             start = 0
@@ -145,16 +166,26 @@ async def fetch_and_index_confluence_docs(
                     break
                 
                 for page in pages:
+                    space_key = page.get('space', {}).get('key', '') if isinstance(page.get('space'), dict) else str(page.get('space', ''))
+                    # Extract lastModified from version if available
+                    version_info = page.get('version', {})
+                    last_modified = version_info.get('when') if version_info else None
                     doc = {
                         'id': page.get('id', ''),
                         'title': page.get('title', ''),
                         'content': page.get('body', {}).get('storage', {}).get('value', ''),
-                        'space': page.get('space', {}).get('key', '') if isinstance(page.get('space'), dict) else str(page.get('space', '')),
-                        'url': page.get('_links', {}).get('webui', '')
+                        'space': space_key,
+                        'url': page.get('_links', {}).get('webui', ''),
+                        'last_modified': last_modified
                     }
                     all_docs.append(doc)
                 
                 total_fetched += len(pages)
+                
+                # Log which spaces are being found
+                spaces_found = set(page.get('space', {}).get('key', '') if isinstance(page.get('space'), dict) else str(page.get('space', '')) for page in pages)
+                if spaces_found:
+                    logger.debug(f"Found pages from spaces: {', '.join(spaces_found)}")
                 
                 # Check if there are more results
                 if len(pages) < limit:
@@ -163,7 +194,12 @@ async def fetch_and_index_confluence_docs(
                 start += limit
                 print(f"  Fetched {total_fetched} Confluence pages so far...")
             
+            # Track which spaces were actually found
+            spaces_indexed = set(doc.get('space', '') for doc in all_docs if doc.get('space'))
             print(f"Found {len(all_docs)} Confluence docs")
+            if spaces_indexed:
+                print(f"Spaces found: {', '.join(sorted(spaces_indexed))}")
+                logger.info(f"Indexed Confluence pages from spaces: {', '.join(sorted(spaces_indexed))}")
             
             if all_docs:
                 print("📊 Indexing Confluence docs...")
@@ -202,20 +238,23 @@ async def index_all_data(project_key: str) -> dict:
     print("  1. All existing Zephyr tests")
     print("  2. All Jira stories from the project")
     print("  3. All Confluence docs from project space")
+    print("  4. PlainID dev portal documentation")
     print("\n⏳ This may take 5-15 minutes for large projects...\n")
     
     indexer = ContextIndexer()
     
-    # Index all three types
+    # Index all types
     tests_count = await fetch_and_index_zephyr_tests(project_key, indexer)
     stories_count = await fetch_and_index_jira_stories(project_key, indexer)
     docs_count = await fetch_and_index_confluence_docs(project_key, indexer)
+    external_docs_count = await indexer.index_external_docs()
     
     return {
         'tests': tests_count,
         'stories': stories_count,
         'docs': docs_count,
-        'total': tests_count + stories_count + docs_count
+        'external_docs': external_docs_count,
+        'total': tests_count + stories_count + docs_count + external_docs_count
     }
 
 
@@ -252,7 +291,7 @@ def show_rag_stats() -> None:
     print(f"\n📁 Storage Path: {stats['storage_path']}")
     print(f"📈 Total Documents: {stats['total_documents']}")
     print("\nCollections:")
-    for collection_name in ['test_plans', 'confluence_docs', 'jira_stories', 'existing_tests']:
+    for collection_name in ['test_plans', 'confluence_docs', 'jira_stories', 'existing_tests', 'external_docs']:
         collection_stats = stats.get(collection_name, {})
         count = collection_stats.get('count', 0)
         status = "✓" if collection_stats.get('exists') else "✗"

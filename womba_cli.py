@@ -168,7 +168,7 @@ Examples:
             results = asyncio.run(index_all_data(project_key))
             
             print("\n✅ Batch indexing complete!")
-            print(f"📊 Indexed: {results['tests']} tests, {results['stories']} stories, {results['docs']} docs")
+            print(f"📊 Indexed: {results['tests']} tests, {results['stories']} stories, {results['docs']} docs, {results.get('external_docs', 0)} external docs")
             print("💡 Run 'womba rag-stats' to see detailed statistics")
             
         except ValueError as e:
@@ -250,7 +250,8 @@ Examples:
             print(f"\n🔗 Test Case URLs:")
             for test_title, zephyr_key in upload_result.items():
                 if not zephyr_key.startswith('ERROR'):
-                    zephyr_url = f"https://plainid.atlassian.net/projects/{project_key}/test-cases/{zephyr_key}"
+                    # Zephyr URL format: https://plainid.atlassian.net/projects/{PROJECT}?selectedItem=...#!/v2/testCase/{TEST_KEY}/testScript
+                    zephyr_url = f"https://plainid.atlassian.net/projects/{project_key}?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/{zephyr_key}/testScript"
                     print(zephyr_url)
                 else:
                     print(f"ERROR: {test_title} - {zephyr_key}")

@@ -330,22 +330,34 @@ class JiraClient(AtlassianClient):
             logger.error(f"Error fetching linked issues with SDK: {e}")
             return []
 
-    async def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0) -> List[JiraStory]:
-        """Search for issues using JQL with SDK."""
+    async def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0) -> tuple[List[JiraStory], int]:
+        """
+        Search for issues using JQL with SDK.
+        
+        Returns:
+            Tuple of (list of JiraStory objects, total count)
+        """
         jira = self._get_jira_sdk_client()
         if not jira:
-            return []
+            return [], 0
         
         try:
             logger.info(f"Searching Jira issues with SDK JQL: {jql} (startAt={start_at}, maxResults={max_results})")
             # Use enhanced_search_issues for Jira Cloud (old search is deprecated)
             # CRITICAL: Must pass startAt parameter, otherwise returns same results forever!
+            # The SDK's search_issues returns an object with .total attribute
             issues = jira.search_issues(jql, maxResults=max_results, startAt=start_at)
-            return [self._parse_sdk_issue(issue) for issue in issues]
+            
+            # Get total count from the result object
+            total = getattr(issues, 'total', len(issues) if issues else 0)
+            stories = [self._parse_sdk_issue(issue) for issue in issues]
+            
+            logger.debug(f"Found {len(stories)} issues (total: {total})")
+            return stories, total
         except Exception as e:
             # If old method fails, we still return empty (don't want infinite loop!)
             logger.error(f"Error searching with SDK: {e}")
-            return []
+            return [], 0
 
 
     def _parse_issue(self, issue_data: Dict[str, Any]) -> JiraStory:

@@ -70,7 +70,7 @@ class ConfluenceClient(AtlassianClient):
         logger.info(f"Searching Confluence with CQL: {cql} (limit={limit}, start={start})")
 
         url = f"{self.base_url}/wiki/rest/api/content/search"
-        params = {"cql": cql, "limit": limit, "start": start, "expand": "body.storage,space"}
+        params = {"cql": cql, "limit": limit, "start": start, "expand": "body.storage,space,version"}
 
         async with httpx.AsyncClient() as client:
             response = await client.get(url, auth=self.auth, params=params, timeout=30.0)

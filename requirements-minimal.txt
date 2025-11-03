@@ -18,6 +18,7 @@ mcp==0.9.1
 # HTTP Client
 httpx==0.26.0
 requests==2.31.0
+tenacity==8.2.3
 
 # Utilities
 python-dotenv==1.0.1
@@ -29,6 +30,10 @@ loguru==0.7.2
 # JWT Authentication for Atlassian Connect
 PyJWT==2.8.0
 cryptography==41.0.7
+
+# HTML/Text Processing (already in render but needed for tests)
+beautifulsoup4==4.12.3
+lxml==5.1.0
 
 # RAG / Vector Database
 chromadb>=0.4.22
