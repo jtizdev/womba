@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
     rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
-    
+
     # PlainID External Documentation Indexing
     plainid_doc_index_enabled: bool = Field(default=True, description="Enable PlainID documentation indexing")
     plainid_doc_base_url: Optional[str] = Field(default=None, description="Base URL for PlainID Developer Portal (optional)")
