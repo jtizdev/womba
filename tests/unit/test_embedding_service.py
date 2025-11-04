@@ -9,19 +9,19 @@ from src.ai.embedding_service import EmbeddingService
 
 @pytest.fixture
 def mock_openai_client():
-    """Mock OpenAI client for testing."""
-    with patch('openai.OpenAI') as mock_client:
+    """Mock AsyncOpenAI client for testing."""
+    with patch('openai.AsyncOpenAI') as mock_client:
         mock_instance = Mock()
         mock_client.return_value = mock_instance
         
-        # Mock embeddings.create response
+        # Mock embeddings.create response (async)
         mock_response = Mock()
         mock_response.data = [
             Mock(embedding=[0.1] * 1536),
             Mock(embedding=[0.2] * 1536),
             Mock(embedding=[0.3] * 1536),
         ]
-        mock_instance.embeddings.create.return_value = mock_response
+        mock_instance.embeddings.create = AsyncMock(return_value=mock_response)
         
         yield mock_instance
 
@@ -33,7 +33,7 @@ async def test_embedding_service_initialization(mock_openai_client):
     assert service is not None
     assert service.model == "text-embedding-3-small"
     assert service.max_tokens == 8192
-    assert service.chunk_size == int(8192 * 0.85)
+    assert service.chunk_size == int(8192 * 0.70)  # Updated to 70% safety margin
 
 
 @pytest.mark.asyncio
@@ -41,12 +41,12 @@ async def test_token_estimation():
     """Test token estimation accuracy."""
     service = EmbeddingService()
     
-    # Test various text lengths
+    # Test various text lengths (using 3 chars/token estimation)
     test_cases = [
-        ("Hello world", 2),  # ~8 chars = 2 tokens
-        ("A" * 100, 25),     # 100 chars = 25 tokens
-        ("A" * 1000, 250),   # 1000 chars = 250 tokens
-        ("A" * 10000, 2500), # 10000 chars = 2500 tokens
+        ("Hello world", 3),  # 11 chars = 3 tokens
+        ("A" * 100, 33),     # 100 chars = 33 tokens
+        ("A" * 1000, 333),   # 1000 chars = 333 tokens
+        ("A" * 10000, 3333), # 10000 chars = 3333 tokens
     ]
     
     for text, expected_tokens in test_cases:
@@ -221,15 +221,15 @@ async def test_error_handling(mock_openai_client):
 
 @pytest.mark.asyncio
 async def test_batch_processing(mock_openai_client):
-    """Test that large batches are processed correctly."""
+    """Test that large batches are processed correctly with smart batching."""
     service = EmbeddingService()
-    service.batch_size = 2  # Set small batch size for testing
     
-    texts = ["Doc 1", "Doc 2", "Doc 3", "Doc 4", "Doc 5"]
+    # Create enough texts to trigger multiple batches (>1000 texts per batch limit)
+    texts = [f"Document number {i} with some content" for i in range(1500)]
     embeddings = await service.embed_texts(texts)
     
-    assert len(embeddings) == 5
-    # Should have made multiple calls due to batch size
+    assert len(embeddings) == 1500
+    # Should have made multiple API calls due to smart batching (1000 per batch)
     assert mock_openai_client.embeddings.create.call_count >= 2
 
 
