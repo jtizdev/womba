@@ -1,0 +1,290 @@
+{
+  "story": {
+    "key": "PLAT-13541",
+    "summary": "(6.5) - PAP - Generic - Show Policy list by Application",
+    "description": "<jira.resources.PropertyHolder object at 0x1034975c0>",
+    "issue_type": "Story",
+    "status": "Ready for deployment",
+    "priority": "Med-High",
+    "assignee": "omri.bashan",
+    "reporter": "Tal Agam",
+    "created": "2025-02-06 13:44:33.865000+02:00",
+    "updated": "2025-11-03 13:10:33.146000+02:00",
+    "labels": [
+      "Mgmt-Q2-25",
+      "Mgmt-Q3-25",
+      "policy_auth"
+    ],
+    "components": [
+      "PAP"
+    ],
+    "acceptance_criteria": "2|i05lhf:",
+    "linked_issues": [
+      "PRDT-431",
+      "PLAT-15443"
+    ],
+    "attachments": [],
+    "custom_fields": {
+      "customfield_10100": "2|i05lhf:",
+      "customfield_10102": "PLAT-1605",
+      "customfield_10106": 0.0,
+      "customfield_10200": [
+        "Not Deployed"
+      ],
+      "customfield_10401": [],
+      "customfield_10403": [],
+      "customfield_10416": [
+        "Test"
+      ],
+      "customfield_10500": "{repository={count=3, dataType=repository}, json={\"cachedValue\":{\"errors\":[],\"summary\":{\"repository\":{\"overall\":{\"count\":3,\"lastUpdated\":\"2025-11-02T17:08:39.000+0200\",\"dataType\":\"repository\"},\"byInstanceType\":{\"GitLab\":{\"count\":3,\"name\":\"GitLab\"}}}}},\"isStale\":true}}",
+      "customfield_10509": "2025-09-17",
+      "customfield_10512": "2025-10-20T11:46:29.941+0300",
+      "customfield_10525": "Low",
+      "customfield_10590": "Functional",
+      "customfield_10597": 0.0,
+      "customfield_10598": 0.0,
+      "customfield_10610": "NO",
+      "customfield_10641": "Low",
+      "customfield_10644": "Low",
+      "customfield_10645": [],
+      "customfield_10650": "Dor Elkabetz",
+      "customfield_10705": [
+        "No"
+      ],
+      "customfield_10712": [
+        "BE",
+        "FE"
+      ],
+      "customfield_10727": [
+        "Accenture PBAC"
+      ],
+      "customfield_10735": [
+        "No"
+      ],
+      "customfield_10743": [
+        "No"
+      ],
+      "customfield_10776": "Management",
+      "customfield_10784": "Sharon",
+      "customfield_10795": "PS"
+    }
+  },
+  "test_cases": [
+    {
+      "id": null,
+      "title": "Verify API fetches policies by application ID successfully",
+      "description": "Check that the API returns the correct list of policies for a specific application ID.",
+      "preconditions": "User is authenticated and has access to policies associated with application ID 'app-123'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Send GET request to /api/policies?applicationId=app-123",
+          "expected_result": "API returns HTTP 200 with a list of policies for application ID 'app-123'.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Verify returned policies include expected entries based on application ID 'app-123'.",
+          "expected_result": "Returned policies correctly reference associated application ID 'app-123'.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "API returns the correct policies associated with application ID 'app-123'.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "policy-fetch",
+        "application-id"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify UI displays correct policies list for selected application",
+      "description": "Ensure that the policies tab in the application UI correctly lists policies associated with the selected application.",
+      "preconditions": "User is on the Application Detail Screen for application ID 'app-123'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Application Detail Screen for application ID 'app-123'.",
+          "expected_result": "Application Detail Screen loads successfully.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Click 'Policies' tab.",
+          "expected_result": "Policies tab displays the list of policies for application ID 'app-123'.",
+          "test_data": null
+        },
+        {
+          "step_number": 3,
+          "action": "Verify that the list of policies matches the expected policies fetched from the API.",
+          "expected_result": "Displayed policies correspond to those returned by the API for application ID 'app-123'.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "Policies tab accurately reflects the policies associated with application ID 'app-123'.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "ui",
+        "policy-list",
+        "application"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify error message displayed when no policies found for application ID",
+      "description": "Check that a proper error message is shown when there are no policies associated with an application ID.",
+      "preconditions": "No policies exist for application ID 'app-999'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Send GET request to /api/policies?applicationId=app-999",
+          "expected_result": "API returns HTTP 404 with an error message indicating no policies found.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Verify that the error message states 'No policies found for this application.'",
+          "expected_result": "Returned error message matches expected confirmation of absence of policies.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "User receives a clear indication that no policies are linked to the specified application ID.",
+      "priority": "high",
+      "test_type": "negative",
+      "tags": [
+        "error-handling",
+        "no-policies"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify policies list updates correctly when switching applications",
+      "description": "Ensure that the policies list updates to reflect the policies for a newly selected application ID.",
+      "preconditions": "User is on the Application Detail Screen for application ID 'app-123' and has previously viewed policies for 'app-456'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Select application ID 'app-123' from the application dropdown.",
+          "expected_result": "Policies tab updates to show loading spinner.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Wait for policies to load and verify displayed policies.",
+          "expected_result": "Policies displayed correspond to those associated with application ID 'app-123'.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "Policies list reflects the correct policies for the selected application ID.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "ui",
+        "application-switch"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify API handles request for invalid application ID gracefully",
+      "description": "Test that the API returns a proper error when requesting policies for a non-existent application ID.",
+      "preconditions": "Application ID 'app-invalid' does not exist.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Send GET request to /api/policies?applicationId=app-invalid",
+          "expected_result": "API returns HTTP 404 Not Found with a corresponding error message.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Verify the error message returned states 'Application not found.'",
+          "expected_result": "Error message confirms that the application ID does not exist.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "API handles invalid application ID gracefully, providing a suitable error response.",
+      "priority": "high",
+      "test_type": "negative",
+      "tags": [
+        "api-error",
+        "invalid-id"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify integration with policy export and import maintains application ID references",
+      "description": "Check that policies exported from one application ID retain their references when imported to another application ID.",
+      "preconditions": "Policies exist for application ID 'app-123' and are prepared for export.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Send GET request to /api/policies/app-123/export",
+          "expected_result": "Export file contains correct policies for application ID 'app-123'.",
+          "test_data": null
+        },
+        {
+          "step_number": 2,
+          "action": "Import the exported policies using POST /api/policies/import with the appropriate payload.",
+          "expected_result": "Policies are imported successfully without losing references to application ID 'app-123'.",
+          "test_data": null
+        },
+        {
+          "step_number": 3,
+          "action": "Fetch policies for application ID 'app-123' after import.",
+          "expected_result": "Policies reflect the imported data correctly, maintaining references.",
+          "test_data": null
+        }
+      ],
+      "expected_result": "Policies retain proper application ID references after export and import.",
+      "priority": "critical",
+      "test_type": "integration",
+      "tags": [
+        "policy-management",
+        "export-import"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    }
+  ],
+  "metadata": {
+    "generated_at": "2025-11-03 11:12:28.656633",
+    "ai_model": "gpt-4o-mini",
+    "source_story_key": "PLAT-13541",
+    "total_test_cases": 6,
+    "edge_case_count": 0,
+    "integration_test_count": 1,
+    "confidence_score": 0.9
+  },
+  "summary": "These tests verify the functionality of fetching and displaying policies by application ID, ensuring proper integration with the policy management APIs and UI components.",
+  "coverage_analysis": null,
+  "risk_assessment": null,
+  "regression_risks": null,
+  "side_effects": null,
+  "dependencies": [],
+  "estimated_execution_time": null,
+  "suggested_folder": "PAP/Policy Management"
+}

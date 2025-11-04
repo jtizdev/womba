@@ -18,6 +18,7 @@ mcp==0.9.1
 # HTTP Client
 httpx==0.26.0
 requests==2.31.0
+tenacity==8.2.3
 
 # Utilities
 python-dotenv==1.0.1

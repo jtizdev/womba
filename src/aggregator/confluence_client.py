@@ -2,10 +2,12 @@
 Confluence client for fetching PRDs and technical documentation.
 """
 
-from typing import Dict, List, Optional
+import asyncio
+from typing import Dict, List, Optional, Tuple, Any
 
 import httpx
 from loguru import logger
+from urllib.parse import urlparse, parse_qs, urljoin
 
 from src.core.atlassian_client import AtlassianClient
 
@@ -52,32 +54,119 @@ class ConfluenceClient(AtlassianClient):
             response.raise_for_status()
             return response.json()
 
-    async def search_pages(self, cql: str, limit: int = 25, start: int = 0) -> List[Dict]:
-        """
-        Search for Confluence pages using CQL with pagination support.
+    def _make_absolute_url(self, url: Optional[str]) -> Optional[str]:
+        if not url:
+            return None
+        if url.startswith("http"):
+            return url
+        if url.startswith("/"):
+            return urljoin(f"{self.base_url}/", url.lstrip("/"))
+        return urljoin(f"{self.base_url}/", url)
 
-        Args:
-            cql: Confluence Query Language string
-            limit: Maximum results per page
-            start: Start index for pagination
+    async def _fetch_json(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: Optional[Dict[str, Any]] = None,
+        max_retries: int = 3,
+    ) -> Dict[str, Any]:
+        delay = 1.0
+        attempt = 0
+        absolute_url = self._make_absolute_url(url)
 
-        Returns:
-            List of page data
+        while True:
+            try:
+                response = await client.get(
+                    absolute_url,
+                    auth=self.auth,
+                    params=params,
+                )
 
-        Raises:
-            httpx.HTTPError: If the request fails
-        """
-        logger.info(f"Searching Confluence with CQL: {cql} (limit={limit}, start={start})")
+                if response.status_code in {429, 503} and attempt < max_retries:
+                    retry_after = response.headers.get("Retry-After")
+                    wait_time = float(retry_after) if retry_after else delay
+                    logger.warning(
+                        f"Confluence rate limit ({response.status_code}). Retrying in {wait_time:.1f}s..."
+                    )
+                    await asyncio.sleep(wait_time)
+                    attempt += 1
+                    delay = min(delay * 2, 30)
+                    continue
 
-        url = f"{self.base_url}/wiki/rest/api/content/search"
-        params = {"cql": cql, "limit": limit, "start": start, "expand": "body.storage,space"}
+                response.raise_for_status()
+                return response.json()
 
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, auth=self.auth, params=params, timeout=30.0)
-            response.raise_for_status()
-            data = response.json()
+            except httpx.HTTPError as exc:
+                if attempt < max_retries:
+                    logger.warning(f"Confluence request error '{exc}'. Retrying in {delay:.1f}s...")
+                    await asyncio.sleep(delay)
+                    attempt += 1
+                    delay = min(delay * 2, 30)
+                    continue
+                logger.error(f"Confluence request failed: {exc}")
+                raise
 
-        return data.get("results", [])
+    async def _iter_spaces_v2(
+        self,
+        client: httpx.AsyncClient,
+        limit: int = 250
+    ):
+        url = f"{self.base_url}/wiki/api/v2/spaces"
+        params: Optional[Dict[str, Any]] = {"limit": limit}
+
+        while url:
+            data = await self._fetch_json(client, url, params=params)
+            for space in data.get("results", []):
+                yield space
+
+            next_link = data.get("_links", {}).get("next")
+            url = self._make_absolute_url(next_link)
+            params = None
+
+    async def _iter_pages_v2(
+        self,
+        client: httpx.AsyncClient,
+        space_id: str,
+        limit: int = 250,
+        expand: Optional[str] = None
+    ):
+        url = f"{self.base_url}/wiki/api/v2/spaces/{space_id}/pages"
+        params: Optional[Dict[str, Any]] = {"limit": limit}
+        if expand:
+            params["expand"] = expand
+
+        while url:
+            data = await self._fetch_json(client, url, params=params)
+            for page in data.get("results", []):
+                yield page
+
+            next_link = data.get("_links", {}).get("next")
+            url = self._make_absolute_url(next_link)
+            params = None
+
+    async def search_all_pages(
+        self,
+        cql: str,
+        limit: int = 250,
+        expand: str = "body.storage,space,version"
+    ) -> List[Dict]:
+        """Fetch ALL pages across spaces using Confluence API v2 (cursor pagination)."""
+        logger.info(f"Fetching ALL Confluence pages for CQL: '{cql}' via API v2")
+
+        all_pages: List[Dict[str, Any]] = []
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            async for space in self._iter_spaces_v2(client, limit=limit):
+                space_id = space.get("id")
+                space_key = space.get("key") or space.get("name", "")
+                logger.info(f"Processing space {space_key} ({space_id})")
+
+                async for page in self._iter_pages_v2(client, space_id, limit=limit, expand=expand):
+                    page_copy = dict(page)
+                    page_copy.setdefault("space", {"id": space_id, "key": space_key})
+                    all_pages.append(page_copy)
+
+        logger.info(f"✅ Fetched {len(all_pages)} Confluence pages via API v2")
+        return all_pages
 
     async def find_related_pages(self, story_key: str, labels: List[str] = None) -> List[Dict]:
         """
@@ -179,4 +268,22 @@ class ConfluenceClient(AtlassianClient):
         except Exception as e:
             logger.error(f"Error fetching page by title: {e}")
             return None
+
+    async def search_pages(
+        self,
+        cql: str,
+        limit: int = 50,
+        start: int = 0,
+        expand: str = "space,version"
+    ) -> List[Dict]:
+        url = f"{self.base_url}/wiki/rest/api/content/search"
+        params = {
+            "cql": cql,
+            "limit": limit,
+            "start": start,
+            "expand": expand,
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            data = await self._fetch_json(client, url, params=params)
+        return data.get("results", [])
 

@@ -60,36 +60,53 @@ class PlainIDDocCrawler:
 
     def discover_urls(self) -> List[str]:
         """
-        Phase 1: SIMPLE URL GENERATION - NO HTML PARSING!
-        Just generates URLs based on known PlainID API doc structure.
+        Phase 1: Crawl from base URL to discover all documentation pages.
+        Uses BFS to find all linked pages within the allowed domain.
         Returns list of URLs to fetch.
         """
         if not self.is_available():
             return []
 
-        # Known PlainID API documentation paths (you can expand this list)
-        api_paths = [
-            "/apidocs/policy-resolution",
-            "/apidocs/policy-resolution-1",
-            "/v1-api/apidocs/policy-resolution",
-            "/v1-api/apidocs/policy-resolution-1",
-            "/apidocs/authorization",
-            "/apidocs/authentication",
-            "/apidocs/users",
-            "/apidocs/groups",
-            "/apidocs/policies",
-            "/apidocs/attributes",
-            "/apidocs/audit",
-            "/apidocs/configuration",
-        ]
+        logger.info(f"🔍 Starting URL discovery from {self.base_url}")
         
-        discovered_urls = []
-        for path in api_paths:
-            url = f"{self.base_url}{path}"
-            discovered_urls.append(url)
-            logger.info(f"📄 Will fetch: {url}")
+        visited: Set[str] = set()
+        to_visit: deque = deque([(self.base_url, 0)])  # (url, depth)
+        discovered_urls: List[str] = []
         
-        logger.info(f"✅ Generated {len(discovered_urls)} URLs to fetch")
+        while to_visit and len(discovered_urls) < self.max_pages:
+            current_url, depth = to_visit.popleft()
+            
+            if depth > self.max_depth:
+                continue
+                
+            if current_url in visited:
+                continue
+                
+            visited.add(current_url)
+            discovered_urls.append(current_url)
+            logger.debug(f"📄 Discovered [{len(discovered_urls)}/{self.max_pages}]: {current_url} (depth={depth})")
+            
+            # Fetch the page to find more links
+            html = self._fetch(current_url)
+            if not html:
+                continue
+                
+            soup = BeautifulSoup(html, "html.parser")
+            links = self._extract_links(soup)
+            
+            for link in links:
+                # Convert relative URLs to absolute
+                absolute_url = urljoin(current_url, link)
+                normalized_url = self._normalize_url(absolute_url)
+                
+                if normalized_url and normalized_url not in visited:
+                    to_visit.append((normalized_url, depth + 1))
+            
+            # Rate limiting
+            if self.delay > 0:
+                time.sleep(self.delay)
+        
+        logger.info(f"✅ Discovered {len(discovered_urls)} URLs to fetch")
         return discovered_urls
 
     def fetch_content(self, urls: Optional[List[str]] = None) -> List[PlainIDDocument]:
@@ -165,9 +182,16 @@ class PlainIDDocCrawler:
         if parsed.netloc != self.allowed_netloc:
             return None
         path = parsed.path or "/"
-        # Filter to only /apidocs/ paths for API documentation
-        if "/apidocs/" not in path and path != self.base_path and path != self.base_path + "/":
+        
+        # Accept URLs that are:
+        # 1. Under the base path (e.g., /v1-api/...)
+        # 2. OR under /apidocs/ (PlainID API documentation)
+        # 3. OR under /docs/ (general documentation)
+        if not (path.startswith(self.base_path) or 
+                path.startswith('/apidocs/') or 
+                path.startswith('/docs/')):
             return None
+            
         # Remove query params and fragments for canonical form
         normalized = parsed._replace(query="", fragment="").geturl().rstrip("/")
         return normalized

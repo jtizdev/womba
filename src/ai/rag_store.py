@@ -5,6 +5,8 @@ RAG Vector Store using ChromaDB for semantic search and retrieval.
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 import json
+import hashlib
+import shutil
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -25,6 +27,7 @@ class RAGVectorStore:
     CONFLUENCE_DOCS_COLLECTION = "confluence_docs"
     JIRA_STORIES_COLLECTION = "jira_stories"
     EXISTING_TESTS_COLLECTION = "existing_tests"
+    EXTERNAL_DOCS_COLLECTION = "external_docs"
     
     def __init__(self, collection_path: Optional[str] = None):
         """
@@ -101,15 +104,123 @@ class RAGVectorStore:
         # Get collection
         collection = self.get_or_create_collection(collection_name)
         
-        # Add to ChromaDB
+        # Add to ChromaDB with upsert logic - update changed documents
         try:
-            collection.add(
-                embeddings=embeddings,
-                documents=documents,
-                metadatas=metadatas,
-                ids=ids
-            )
-            logger.info(f"Successfully added {len(documents)} documents to {collection_name}")
+            # Check which IDs already exist and compare metadata
+            existing_docs = {}
+            try:
+                existing = collection.get(ids=ids)
+                if existing and existing.get('ids'):
+                    for idx, doc_id in enumerate(existing['ids']):
+                        existing_docs[doc_id] = {
+                            'metadata': existing['metadatas'][idx] if existing.get('metadatas') else {},
+                            'document': existing['documents'][idx] if existing.get('documents') else None
+                        }
+            except Exception:
+                pass  # Collection might not exist yet
+            
+            # Separate documents into new, updated, and unchanged
+            truly_new_docs = []
+            truly_new_embeddings = []
+            truly_new_metadatas = []
+            truly_new_ids = []
+            
+            updated_docs = []
+            updated_embeddings = []
+            updated_metadatas = []
+            updated_ids = []
+            
+            unchanged_count = 0
+            
+            for i, doc_id in enumerate(ids):
+                if doc_id not in existing_docs:
+                    # New document - never seen before
+                    truly_new_docs.append(documents[i])
+                    truly_new_embeddings.append(embeddings[i])
+                    truly_new_metadatas.append(metadatas[i])
+                    truly_new_ids.append(doc_id)
+                else:
+                    # Check if document has changed
+                    existing_meta = existing_docs[doc_id]['metadata']
+                    new_meta = metadatas[i]
+                    
+                    # Compare timestamps and content hashes
+                    existing_timestamp = existing_meta.get('last_modified') or existing_meta.get('timestamp')
+                    new_timestamp = new_meta.get('last_modified') or new_meta.get('timestamp')
+                    
+                    # Calculate content hash for comparison
+                    existing_doc = existing_docs[doc_id].get('document', '')
+                    existing_hash = hashlib.md5(existing_doc.encode()).hexdigest() if existing_doc else None
+                    new_hash = hashlib.md5(documents[i].encode()).hexdigest()
+                    
+                    # Check if document has changed (timestamp or content)
+                    has_changed = (
+                        new_timestamp and existing_timestamp and new_timestamp > existing_timestamp
+                    ) or (
+                        existing_hash and new_hash != existing_hash
+                    ) or (
+                        new_timestamp and not existing_timestamp  # New timestamp metadata
+                    )
+                    
+                    if has_changed:
+                        # Document exists but has changed - needs update
+                        try:
+                            collection.delete(ids=[doc_id])
+                            updated_docs.append(documents[i])
+                            updated_embeddings.append(embeddings[i])
+                            updated_metadatas.append(metadatas[i])
+                            updated_ids.append(doc_id)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete document {doc_id} for update: {e}")
+                            # If delete fails, treat as new
+                            truly_new_docs.append(documents[i])
+                            truly_new_embeddings.append(embeddings[i])
+                            truly_new_metadatas.append(metadatas[i])
+                            truly_new_ids.append(doc_id)
+                    else:
+                        # Document unchanged - skip it
+                        unchanged_count += 1
+                        logger.debug(f"Skipping unchanged document: {doc_id}")
+            
+            # Combine new and updated for batch add
+            all_docs = truly_new_docs + updated_docs
+            all_embeddings = truly_new_embeddings + updated_embeddings
+            all_metadatas = truly_new_metadatas + updated_metadatas
+            all_ids = truly_new_ids + updated_ids
+            
+            # Add new and updated documents
+            if all_docs:
+                collection.add(
+                    embeddings=all_embeddings,
+                    documents=all_docs,
+                    metadatas=all_metadatas,
+                    ids=all_ids
+                )
+                
+                # Clear, detailed logging
+                total = len(ids)
+                new_count = len(truly_new_ids)
+                updated_count = len(updated_ids)
+                unchanged = unchanged_count
+                
+                status_parts = []
+                if new_count > 0:
+                    status_parts.append(f"✨ {new_count} NEW")
+                if updated_count > 0:
+                    status_parts.append(f"🔄 {updated_count} UPDATED")
+                if unchanged > 0:
+                    status_parts.append(f"⏭️  {unchanged} UNCHANGED (skipped)")
+                
+                logger.info(f"📊 Collection '{collection_name}' upsert complete: {total} total processed - {', '.join(status_parts)}")
+                
+                # Summary for user visibility
+                if new_count > 0 or updated_count > 0:
+                    logger.info(f"   ✅ Successfully indexed: {new_count} new + {updated_count} updated = {new_count + updated_count} total changes")
+                if unchanged > 0:
+                    logger.info(f"   ⏭️  Skipped: {unchanged} unchanged documents")
+            else:
+                # All documents unchanged
+                logger.info(f"⏭️  Collection '{collection_name}': All {len(ids)} documents unchanged - nothing to update")
         except Exception as e:
             logger.error(f"Failed to add documents to {collection_name}: {e}")
             raise
@@ -210,7 +321,8 @@ class RAGVectorStore:
             self.TEST_PLANS_COLLECTION,
             self.CONFLUENCE_DOCS_COLLECTION,
             self.JIRA_STORIES_COLLECTION,
-            self.EXISTING_TESTS_COLLECTION
+            self.EXISTING_TESTS_COLLECTION,
+            self.EXTERNAL_DOCS_COLLECTION
         ]
         
         stats = {}
@@ -240,16 +352,61 @@ class RAGVectorStore:
             logger.warning(f"Failed to clear collection {collection_name}: {e}")
     
     def clear_all_collections(self) -> None:
-        """Clear all RAG collections."""
+        """
+        Clear all RAG collections and remove all data files.
+        
+        ChromaDB's delete_collection() doesn't remove underlying files,
+        so we need to actually delete the storage directory to fully clear everything.
+        """
         collections = [
             self.TEST_PLANS_COLLECTION,
             self.CONFLUENCE_DOCS_COLLECTION,
             self.JIRA_STORIES_COLLECTION,
-            self.EXISTING_TESTS_COLLECTION
+            self.EXISTING_TESTS_COLLECTION,
+            self.EXTERNAL_DOCS_COLLECTION
         ]
         
+        # First, delete all collections
         for collection_name in collections:
             self.clear_collection(collection_name)
         
-        logger.info("Cleared all RAG collections")
+        # Then, completely delete all data files and directories
+        # ChromaDB's reset() doesn't actually remove files, so we must do it manually
+        try:
+            logger.info("Deleting all ChromaDB data files and directories...")
+            
+            # Get list of items to delete before deletion (to avoid iteration issues)
+            items_to_delete = list(self.collection_path.iterdir())
+            deleted_dirs = 0
+            deleted_files = 0
+            
+            for item in items_to_delete:
+                try:
+                    if item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                        logger.debug(f"Deleted directory: {item.name}")
+                        deleted_dirs += 1
+                    elif item.is_file():
+                        # Keep chroma.sqlite3 as ChromaDB may need it, but delete everything else
+                        if item.name != "chroma.sqlite3":
+                            item.unlink(missing_ok=True)
+                            logger.debug(f"Deleted file: {item.name}")
+                            deleted_files += 1
+                except Exception as e:
+                    logger.warning(f"Failed to delete {item.name}: {e}")
+                    continue
+            
+            logger.info(f"✅ Deleted {deleted_dirs} directories and {deleted_files} files from ChromaDB storage")
+            
+            # Also try reset for good measure (but it usually doesn't do anything)
+            try:
+                self.client.reset()
+            except Exception:
+                pass  # Reset may fail, but that's okay if we manually deleted
+            
+        except Exception as e:
+            logger.error(f"Failed to delete ChromaDB data files: {e}")
+            raise
+        
+        logger.info("✅ Cleared all RAG collections and data files")
 

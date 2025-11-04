@@ -3,6 +3,7 @@ Zephyr Scale integration for uploading test cases.
 """
 
 from typing import Dict, List, Optional
+from collections import defaultdict
 
 import httpx
 from loguru import logger
@@ -40,7 +41,7 @@ class ZephyrIntegration:
         }
 
     async def upload_test_plan(
-        self, test_plan: TestPlan, project_key: str, folder_id: Optional[str] = None
+        self, test_plan: TestPlan, project_key: str, folder_id: Optional[str] = None, folder_path: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Upload entire test plan to Zephyr Scale.
@@ -61,6 +62,14 @@ class ZephyrIntegration:
         )
 
         result = {}
+
+        if folder_path and not folder_id:
+            try:
+                folder_id = await self.ensure_folder(project_key, folder_path)
+                logger.info(f"Resolved folder path '{folder_path}' to ID {folder_id}")
+            except Exception as exc:
+                logger.error(f"Failed to ensure folder '{folder_path}': {exc}")
+                raise
 
         for test_case in test_plan.test_cases:
             try:
@@ -128,7 +137,7 @@ class ZephyrIntegration:
 
         # Add folder if specified
         if folder_id:
-            payload["folderId"] = folder_id
+            payload["folderId"] = int(folder_id) if str(folder_id).isdigit() else folder_id
 
         # Add preconditions
         if test_case.preconditions:
@@ -421,6 +430,82 @@ class ZephyrIntegration:
             data = response.json()
 
         return data.get("values", [])
+
+    async def ensure_folder(self, project_key: str, folder_path: str) -> Optional[str]:
+        """Ensure the full folder path exists and return the final folder ID."""
+        if not folder_path:
+            return None
+
+        segments = [seg.strip() for seg in folder_path.split('/') if seg.strip()]
+        if not segments:
+            return None
+
+        existing = await self.get_folder_structure(project_key)
+        flat_folders = self._flatten_folders(existing)
+        by_parent: Dict[Optional[str], List[Dict]] = defaultdict(list)
+        for folder in flat_folders:
+            fid = folder.get('id')
+            pid = folder.get('parentId') if folder.get('parentId') is not None else None
+            key = str(pid) if pid is not None else None
+            by_parent[key].append(folder)
+
+        parent_id: Optional[str] = None
+        for segment in segments:
+            normalized = segment.lower()
+            siblings = by_parent[str(parent_id) if parent_id is not None else None]
+            match = None
+            for folder in siblings:
+                name = folder.get('name', '').strip().lower()
+                if name == normalized:
+                    match = folder
+                    break
+            if match:
+                parent_id = match.get('id')
+                continue
+
+            parent_before = parent_id
+            created_id = await self._create_folder(project_key, segment, parent_before)
+            new_folder = {
+                'id': created_id,
+                'name': segment,
+                'parentId': parent_before,
+                'children': []
+            }
+            by_parent[str(parent_before) if parent_before is not None else None].append(new_folder)
+            by_parent[str(created_id)].extend([])
+            parent_id = created_id
+
+        return str(parent_id) if parent_id is not None else None
+
+    async def _create_folder(self, project_key: str, name: str, parent_id: Optional[str] = None) -> str:
+        """Create a test case folder and return its ID."""
+        payload: Dict[str, object] = {
+            "projectKey": project_key,
+            "name": name,
+            "folderType": "TEST_CASE",
+        }
+        if parent_id is not None:
+            payload["parentId"] = int(parent_id) if str(parent_id).isdigit() else parent_id
+
+        url = f"{self.base_url}/folders"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=self.headers, json=payload, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+        folder_id = data.get("id") or data.get("folderId")
+        logger.info(f"Created folder '{name}' (ID: {folder_id})")
+        return str(folder_id)
+
+    def _flatten_folders(self, folders: List[Dict]) -> List[Dict]:
+        """Flatten folder tree into a list."""
+        flat: List[Dict] = []
+        stack = list(folders or [])
+        while stack:
+            folder = stack.pop()
+            flat.append(folder)
+            children = folder.get('children') or []
+            stack.extend(children)
+        return flat
 
     async def link_test_to_issue(self, test_case_key: str, issue_key: str) -> None:
         """
