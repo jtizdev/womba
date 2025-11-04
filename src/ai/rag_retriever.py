@@ -20,6 +20,12 @@ class RetrievedContext:
     similar_confluence_docs: List[Dict[str, Any]]
     similar_jira_stories: List[Dict[str, Any]]
     similar_existing_tests: List[Dict[str, Any]]
+    similar_external_docs: List[Dict[str, Any]] = None
+    
+    def __post_init__(self):
+        """Initialize similar_external_docs if not provided."""
+        if self.similar_external_docs is None:
+            self.similar_external_docs = []
     
     def has_context(self) -> bool:
         """Check if any context was retrieved."""
@@ -27,7 +33,8 @@ class RetrievedContext:
             self.similar_test_plans or
             self.similar_confluence_docs or
             self.similar_jira_stories or
-            self.similar_existing_tests
+            self.similar_existing_tests or
+            self.similar_external_docs
         )
     
     def get_summary(self) -> str:
@@ -36,7 +43,8 @@ class RetrievedContext:
             f"Retrieved: {len(self.similar_test_plans)} test plans, "
             f"{len(self.similar_confluence_docs)} docs, "
             f"{len(self.similar_jira_stories)} stories, "
-            f"{len(self.similar_existing_tests)} existing tests"
+            f"{len(self.similar_existing_tests)} existing tests, "
+            f"{len(self.similar_external_docs)} external docs"
         )
 
 
@@ -85,11 +93,12 @@ class RAGRetriever:
         # Retrieve from all collections in parallel
         import asyncio
         
-        similar_test_plans, similar_docs, similar_stories, similar_tests = await asyncio.gather(
+        similar_test_plans, similar_docs, similar_stories, similar_tests, similar_external = await asyncio.gather(
             self._retrieve_similar_test_plans(query, metadata_filter),
             self._retrieve_similar_confluence_docs(query, metadata_filter),
             self._retrieve_similar_jira_stories(query, metadata_filter),
             self._retrieve_similar_existing_tests(query, metadata_filter),
+            self._retrieve_similar_external_docs(query, metadata_filter),
             return_exceptions=True
         )
         
@@ -106,12 +115,16 @@ class RAGRetriever:
         if isinstance(similar_tests, Exception):
             logger.error(f"Failed to retrieve tests: {similar_tests}")
             similar_tests = []
+        if isinstance(similar_external, Exception):
+            logger.error(f"Failed to retrieve external docs: {similar_external}")
+            similar_external = []
         
         context = RetrievedContext(
             similar_test_plans=similar_test_plans,
             similar_confluence_docs=similar_docs,
             similar_jira_stories=similar_stories,
-            similar_existing_tests=similar_tests
+            similar_existing_tests=similar_tests,
+            similar_external_docs=similar_external
         )
         
         logger.info(context.get_summary())
@@ -237,5 +250,31 @@ class RAGRetriever:
             return results
         except Exception as e:
             logger.warning(f"No similar existing tests found: {e}")
+            return []
+    
+    async def _retrieve_similar_external_docs(
+        self,
+        query: str,
+        metadata_filter: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Retrieve similar external documentation (PlainID API docs)."""
+        try:
+            # Check if collection has documents
+            stats = self.store.get_collection_stats(self.store.EXTERNAL_DOCS_COLLECTION)
+            if stats.get('count', 0) == 0:
+                logger.debug("External docs collection is empty, skipping retrieval")
+                return []
+            
+            # Don't filter by project_key for external docs (they're global)
+            results = await self.store.retrieve_similar(
+                collection_name=self.store.EXTERNAL_DOCS_COLLECTION,
+                query_text=query,
+                top_k=10,  # Get top 10 external docs
+                metadata_filter=None  # No project filter for external docs
+            )
+            logger.info(f"Retrieved {len(results)} external documentation entries")
+            return results
+        except Exception as e:
+            logger.warning(f"No similar external docs found: {e}")
             return []
 

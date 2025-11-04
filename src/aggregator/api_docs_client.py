@@ -1,5 +1,9 @@
 """
 Dynamic API documentation client - fetches customer-specific API docs.
+
+NOTE: This class is currently not in use. PlainIDDocCrawler (src/external/plainid_crawler.py)
+is the preferred implementation for fetching API documentation. This class is kept for
+potential future use with non-PlainID customers.
 """
 
 from typing import Dict, List, Optional

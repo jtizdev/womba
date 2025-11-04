@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
     rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
+    rag_refresh_hours: Optional[float] = Field(default=None, description="Minimum hours between automatic full RAG refresh runs")
+
+    # PlainID External Documentation Indexing
+    plainid_doc_index_enabled: bool = Field(default=True, description="Enable PlainID documentation indexing")
+    plainid_doc_base_url: Optional[str] = Field(default=None, description="Base URL for PlainID Developer Portal (optional)")
+    plainid_doc_urls: Optional[list] = Field(
+        default=[
+            "https://docs.plainid.io/apidocs/authorization-apis",
+            "https://docs.plainid.io/apidocs/policy-management-apis",
+            "https://docs.plainid.io/apidocs/authentication-mgmt-apis"
+        ],
+        description="List of PlainID API documentation entry points to crawl from"
+    )
+    plainid_doc_max_pages: int = Field(default=200, description="Maximum pages to crawl from PlainID docs")
+    plainid_doc_max_depth: int = Field(default=5, description="Maximum crawl depth for PlainID docs")
+    plainid_doc_request_delay: float = Field(default=0.3, description="Delay between requests (seconds)")
+    plainid_doc_project_key: str = Field(default="PLAT", description="Project key for PlainID docs")
 
 
 # Global settings instance

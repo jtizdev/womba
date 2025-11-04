@@ -164,7 +164,7 @@ class StoryCollector:
         jql = " AND ".join(jql_parts)
 
         try:
-            bugs = await self.jira_client.search_issues(jql, max_results=20)
+            bugs, _ = self.jira_client.search_issues(jql, max_results=20)
             return bugs
         except Exception as e:
             logger.error(f"Error fetching related bugs: {e}")
@@ -194,7 +194,7 @@ class StoryCollector:
         subtasks = []
         for jql in queries:
             try:
-                results = await self.jira_client.search_issues(jql, max_results=50)
+                results, _ = self.jira_client.search_issues(jql, max_results=50)
                 if results:
                     subtasks.extend(results)
                     logger.info(f"Found {len(results)} subtasks with query: {jql}")
