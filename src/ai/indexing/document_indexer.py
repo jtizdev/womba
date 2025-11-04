@@ -33,6 +33,18 @@ class DocumentIndexer:
         self.store = store or RAGVectorStore()
         logger.info("Initialized document indexer")
 
+    def _normalize_metadata(self, metadata: Dict[str, Any]) -> Dict[str, str]:
+        """Ensure metadata values are serialized as strings for ChromaDB."""
+        normalized = {}
+        for key, value in metadata.items():
+            if value is None:
+                normalized[key] = ""
+            elif isinstance(value, (list, dict)):
+                normalized[key] = str(value)
+            else:
+                normalized[key] = str(value)
+        return normalized
+
     async def index_test_plan(
         self,
         test_plan: TestPlan,
@@ -57,9 +69,8 @@ class DocumentIndexer:
                 "timestamp": datetime.now().isoformat(),
                 "ai_model": test_plan.metadata.ai_model
             }
-            
-            doc_id = f"testplan_{test_plan.story.key}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            
+            metadata = self._normalize_metadata(metadata)
+            doc_id = self.create_timestamped_id("testplan", test_plan.story.key)
             await self.store.add_documents(
                 collection_name=self.store.TEST_PLANS_COLLECTION,
                 documents=[doc_text],
@@ -92,9 +103,10 @@ class DocumentIndexer:
         logger.info(f"📄 Indexing {total} Confluence documents (with upsert logic)")
         
         try:
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
             for i in range(0, total, batch_size):
                 batch_docs = doc_texts[i:i + batch_size]
-                batch_meta = metadatas[i:i + batch_size]
+                batch_meta = normalized_metadatas[i:i + batch_size]
                 batch_ids = ids[i:i + batch_size]
                 
                 await self.store.add_documents(
@@ -134,9 +146,10 @@ class DocumentIndexer:
         logger.info(f"📋 Indexing {total} Jira stories (with upsert logic)")
         
         try:
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
             for i in range(0, total, batch_size):
                 batch_docs = doc_texts[i:i + batch_size]
-                batch_meta = metadatas[i:i + batch_size]
+                batch_meta = normalized_metadatas[i:i + batch_size]
                 batch_ids = ids[i:i + batch_size]
                 
                 await self.store.add_documents(
@@ -176,9 +189,10 @@ class DocumentIndexer:
         logger.info(f"Indexing {total} existing test cases")
         
         try:
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
             for i in range(0, total, batch_size):
                 batch_docs = doc_texts[i:i + batch_size]
-                batch_meta = metadatas[i:i + batch_size]
+                batch_meta = normalized_metadatas[i:i + batch_size]
                 batch_ids = ids[i:i + batch_size]
                 
                 await self.store.add_documents(
@@ -219,10 +233,11 @@ class DocumentIndexer:
             return 0
         
         try:
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
             await self.store.add_documents(
                 collection_name=self.store.EXTERNAL_DOCS_COLLECTION,
                 documents=doc_texts,
-                metadatas=metadatas,
+                metadatas=normalized_metadatas,
                 ids=ids,
             )
             

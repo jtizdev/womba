@@ -42,7 +42,7 @@ class JiraClient(AtlassianClient):
         Returns:
             Plain text extracted from ADF with URLs included
         """
-        logger.debug(f"Extracting text from ADF (type: {type(adf_content).__name__})")
+        # DEBUG logging removed for performance (was being called thousands of times)
         
         if isinstance(adf_content, str):
             return adf_content
@@ -330,18 +330,72 @@ class JiraClient(AtlassianClient):
             logger.error(f"Error fetching linked issues with SDK: {e}")
             return []
 
+    def search_all_issues(self, jql: str) -> List[JiraStory]:
+        """
+        Search for ALL issues using JQL with automatic pagination.
+        
+        Uses SDK's native search_issues() method - let the SDK handle the endpoint correctly.
+        NO artificial limits - fetches the actual count whatever it is.
+        
+        Args:
+            jql: JQL query string
+            
+        Returns:
+            List of ALL JiraStory objects matching the query
+        """
+        jira = self._get_jira_sdk_client()
+        if not jira:
+            return []
+        
+        try:
+            logger.info(f"Fetching ALL issues for JQL: '{jql}'")
+            
+            all_stories = []
+            
+            logger.info("  Using enhanced_search_issues (maxResults=False) for full pagination")
+            issues = jira.enhanced_search_issues(
+                jql_str=jql,
+                maxResults=False,
+                fields='*all'
+            )
+            
+            if not issues:
+                logger.warning("  No issues returned by enhanced_search_issues")
+                return []
+            
+            for idx, issue in enumerate(issues, start=1):
+                try:
+                    story = self._parse_sdk_issue(issue)
+                    all_stories.append(story)
+                except Exception as parse_error:
+                    logger.warning(f"  Failed to parse issue {getattr(issue, 'key', 'UNKNOWN')}: {parse_error}")
+                    continue
+                
+                if idx % 500 == 0:
+                    logger.info(f"  📊 Progress: {idx} issues processed so far...")
+            
+            logger.info(f"🎉 FINAL COUNT: {len(all_stories)} issues fetched successfully")
+            return all_stories
+            
+        except Exception as e:
+            logger.error(f"Error searching all Jira issues: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return []
+    
     def search_issues(self, jql: str, max_results: int = 50, start_at: int = 0) -> tuple[List[JiraStory], int]:
         """
-        Search for issues using JQL with proper pagination.
+        Search for issues using JQL with manual pagination.
         
-        Uses Jira Cloud's cursor-based pagination (/search/jql endpoint) but maintains
-        offset-based interface for backward compatibility.
+        For fetching ALL issues, use search_all_issues() instead.
         
-        Best Practice: For large datasets, call repeatedly with incremented start_at
-        until fewer than max_results are returned.
-        
+        Args:
+            jql: JQL query string
+            max_results: Number of results to return per page
+            start_at: Starting index for pagination
+            
         Returns:
-            Tuple of (list of JiraStory objects, total count or -1 if unknown)
+            Tuple of (list of JiraStory objects, total count)
         """
         jira = self._get_jira_sdk_client()
         if not jira:
@@ -350,65 +404,25 @@ class JiraClient(AtlassianClient):
         try:
             logger.info(f"Searching Jira issues: JQL='{jql}' startAt={start_at} maxResults={max_results}")
             
-            # Jira Cloud uses cursor-based pagination, so we need to handle offset-based requests
-            # by maintaining a cursor cache or fetching from the beginning
-            all_issues = []
-            next_token = None
-            current_offset = 0
-            target_end = start_at + max_results
+            # Use SDK's native search_issues - makes ONE efficient API call
+            issues = jira.search_issues(
+                jql_str=jql,
+                startAt=start_at,
+                maxResults=max_results,
+                fields='*all'
+            )
             
-            # Fetch pages until we have enough data
-            while current_offset < target_end:
-                params = {
-                    'jql': jql,
-                    'maxResults': min(100, target_end - current_offset),  # Fetch efficiently
-                    'fields': '*all'
-                }
-                if next_token:
-                    params['nextPageToken'] = next_token
-                
-                response = jira._get_json('search/jql', params=params)
-                batch = response.get('issues', [])
-                
-                if not batch:
-                    break
-                
-                all_issues.extend(batch)
-                current_offset += len(batch)
-                
-                # If we have enough data, we can stop early
-                if current_offset >= target_end:
-                    break
-                
-                # Check if there are more pages
-                if response.get('isLast', True):
-                    break
-                
-                next_token = response.get('nextPageToken')
-                if not next_token:
-                    break
+            # Parse issues
+            stories = [self._parse_sdk_issue(issue) for issue in issues]
             
-            # Extract the requested slice
-            issues_data = all_issues[start_at:target_end] if start_at < len(all_issues) else []
-            
-            # Calculate total: if we fetched less than requested and it's the last page, we know the total
-            # Otherwise, return -1 to indicate "unknown, keep paginating"
-            if len(issues_data) < max_results or (response and response.get('isLast', False)):
-                total = start_at + len(issues_data)
+            # The SDK returns a ResultList with total attribute
+            if hasattr(issues, 'total'):
+                total = issues.total
             else:
-                total = -1  # Unknown total, caller should keep paginating
+                total = start_at + len(issues) if len(issues) < max_results else 999999
             
-            # Parse issues using SDK
-            from jira.resources import Issue
-            issues_list = []
-            for issue_data in issues_data:
-                issue = Issue(jira._options, jira._session, raw=issue_data)
-                issues_list.append(issue)
-            
-            stories = [self._parse_sdk_issue(issue) for issue in issues_list]
-            
-            logger.info(f"✅ Fetched {len(stories)} stories (startAt={start_at}, total={'unknown' if total == -1 else total})")
-            return stories, total if total != -1 else 999999  # Return large number for unknown
+            logger.info(f"✅ Fetched {len(stories)} stories (startAt={start_at}, total={total})")
+            return stories, total
             
         except Exception as e:
             logger.error(f"Error searching Jira: {e}")

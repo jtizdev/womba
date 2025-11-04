@@ -8,6 +8,9 @@ import argparse
 from pathlib import Path
 from loguru import logger
 
+from src.config.settings import settings
+from src.cli.rag_refresh import RAGRefreshManager
+
 
 def main():
     """Main CLI entry point"""
@@ -35,13 +38,16 @@ Examples:
   womba index-all                        # Index all available data (batch)
   womba rag-stats                        # Show RAG statistics
   womba rag-clear                        # Clear RAG database
+  womba generate PLAT-12991 --upload --folder "Regression/UI"   # Generate + upload into folder
+  womba upload-plan --file test_plans/test_plan_PLAT-12991.json --folder "Regression/UI"   # Upload saved plan
+  womba index-source --source jira --source confluence              # Index specific sources only
         """
     )
     
     parser.add_argument(
         'command',
-        choices=['generate', 'upload', 'evaluate', 'configure', 'automate', 'all', 
-                 'index', 'index-all', 'rag-stats', 'rag-clear', 'rag-view'],
+        choices=['generate', 'upload', 'upload-plan', 'evaluate', 'configure', 'automate', 'all', 
+                 'index', 'index-all', 'index-source', 'rag-stats', 'rag-clear', 'rag-view'],
         help='Command to execute'
     )
     
@@ -95,6 +101,43 @@ Examples:
         help='Automatically create PR after generating code'
     )
     
+    parser.add_argument(
+        '--project-key',
+        dest='project_key_override',
+        help='Override project key for indexing commands'
+    )
+
+    parser.add_argument(
+        '--source',
+        dest='sources',
+        action='append',
+        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid. Repeatable.'
+    )
+    
+    parser.add_argument(
+        '--folder',
+        dest='folder_path',
+        help='Target Zephyr folder path (e.g., "Parent/Sub")'
+    )
+
+    parser.add_argument(
+        '--file',
+        dest='file_path',
+        help='Path to test plan JSON file (use with upload-plan)'
+    )
+
+    parser.add_argument(
+        '--force-refresh',
+        action='store_true',
+        help='Force RAG indexing even if refresh interval has not elapsed'
+    )
+
+    parser.add_argument(
+        '--refresh-hours',
+        type=float,
+        help='Override RAG refresh interval (hours) for this command'
+    )
+    
     args = parser.parse_args()
     
     # Handle commands that don't need story key
@@ -136,41 +179,54 @@ Examples:
         import asyncio
         from src.config.config_manager import ConfigManager
         from src.cli.rag_commands import index_all_data
-        
+
         try:
-            # Load config (don't prompt if missing)
             manager = ConfigManager()
             if not manager.exists():
                 print("\n❌ No configuration found!")
                 print("💡 Run 'womba configure' first to set up your credentials")
                 return
-            
+
             config = manager.load()
             if not config:
                 print("\n❌ Error loading configuration!")
                 print("💡 Run 'womba configure' to reconfigure")
                 return
-            
-            # Use configured project key (required)
+
             project_key = config.project_key
             if not project_key:
                 print("\n❌ Project key not configured!")
                 print("💡 Run 'womba configure' to set your project key")
                 return
-            
+
+            refresh_manager = RAGRefreshManager()
+            refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+            if not args.force_refresh and refresh_hours is not None and not refresh_manager.should_refresh(project_key, 'index_all', refresh_hours):
+                last = refresh_manager.get_last_refresh(project_key, 'index_all')
+                hours_since = refresh_manager.hours_since_refresh(project_key, 'index_all') or 0.0
+                remaining = max(refresh_hours - hours_since, 0.0)
+                formatted_last = last.isoformat() if last else 'unknown'
+                print(f"\n⏳ Last full refresh for {project_key} ran at {formatted_last} (≈{hours_since:.1f}h ago).")
+                print(f"💡 Next refresh due in ~{remaining:.1f}h. Use --force-refresh to override.")
+                return
+
             print(f"\n🔄 Starting batch indexing for project: {project_key}")
             print("(Using configured project key)")
-            
+
             print("\nThis will index all available data from your project.")
             print("This may take several minutes.\n")
-            
-            # Run async indexing
-            results = asyncio.run(index_all_data(project_key))
-            
+
+            results = asyncio.run(index_all_data(
+                project_key,
+                refresh_manager=refresh_manager,
+                refresh_hours=refresh_hours,
+                force=args.force_refresh
+            ))
+
             print("\n✅ Batch indexing complete!")
             print(f"📊 Indexed: {results['tests']} tests, {results['stories']} stories, {results['docs']} docs, {results.get('external_docs', 0)} external docs")
             print("💡 Run 'womba rag-stats' to see detailed statistics")
-            
+
         except ValueError as e:
             print(f"\n❌ Configuration Error: {e}")
             print("💡 Run 'womba configure' to set up your API keys")
@@ -179,6 +235,126 @@ Examples:
             print(f"\n❌ Indexing failed: {e}")
             logger.exception("Full error details:")
             return
+        return
+    
+    if args.command == 'index-source':
+        import asyncio
+        from src.config.config_manager import ConfigManager
+        from src.cli.rag_commands import index_specific_sources
+
+        sources = args.sources or []
+        if not sources:
+            parser.error("--source is required for 'index-source'. Use multiple --source flags for more than one.")
+
+        manager = ConfigManager()
+        if not manager.exists():
+            print("\n❌ No configuration found!")
+            print("💡 Run 'womba configure' first to set up your credentials")
+            return
+
+        config_obj = manager.load()
+        project_key = args.project_key_override or (config_obj.project_key if config_obj else None)
+        if not project_key:
+            print("\n❌ Project key not configured!")
+            print("💡 Run 'womba configure' or provide --project-key")
+            return
+
+        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external'}
+        canonical_map = {
+            'zephyr': 'tests',
+            'jira': 'stories',
+            'confluence': 'docs',
+            'plainid': 'external_docs',
+            'external': 'external_docs'
+        }
+        normalized_sources = []
+        for src in sources:
+            key = src.lower()
+            if key not in valid_sources:
+                parser.error(f"Unknown source '{src}'. Valid options: {', '.join(sorted(valid_sources))}")
+            normalized_sources.append(key)
+
+        refresh_manager = RAGRefreshManager()
+        refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+        due_sources = normalized_sources
+        if not args.force_refresh and refresh_hours is not None:
+            due_sources = [s for s in normalized_sources if refresh_manager.should_refresh(project_key, canonical_map[s], refresh_hours)]
+            if not due_sources:
+                messages = []
+                for src in normalized_sources:
+                    hours_since = refresh_manager.hours_since_refresh(project_key, canonical_map[src])
+                    if hours_since is None:
+                        continue
+                    remaining = max(refresh_hours - hours_since, 0.0)
+                    messages.append(f"{src}: next in ~{remaining:.1f}h")
+                if messages:
+                    print("\n⏳ All requested sources were refreshed recently:")
+                    for msg in messages:
+                        print(f"  • {msg}")
+                    print("💡 Use --force-refresh to override.")
+                else:
+                    print("\nℹ️ No due sources detected (no previous refresh recorded).")
+                return
+
+        try:
+            asyncio.run(index_specific_sources(due_sources, project_key, refresh_manager=refresh_manager))
+        except ValueError as e:
+            print(f"\n❌ {e}")
+            return
+        except Exception as e:
+            print(f"\n❌ Targeted indexing failed: {e}")
+            logger.exception("Full error details:")
+            return
+        return
+    
+    if args.command == 'upload-plan':
+        from src.models.test_plan import TestPlan
+        from src.integrations.zephyr_integration import ZephyrIntegration
+        import asyncio
+
+        if not args.file_path:
+            parser.error("--file is required for 'upload-plan'")
+
+        plan_path = Path(args.file_path)
+        if not plan_path.exists():
+            parser.error(f"Test plan file does not exist: {plan_path}")
+
+        try:
+            test_plan = TestPlan.model_validate_json(plan_path.read_text())
+        except Exception as exc:
+            print(f"\n❌ Failed to parse test plan JSON: {exc}")
+            return
+
+        project_key = args.project_key_override or (test_plan.story.key.split('-')[0] if test_plan.story and test_plan.story.key else None)
+        if not project_key:
+            parser.error("Could not determine project key. Provide --project-key.")
+
+        folder_path = args.folder_path
+        zephyr = ZephyrIntegration()
+        print(f"\n🚀 Uploading test plan from {plan_path} to project {project_key}")
+        if folder_path:
+            print(f"📁 Target folder: {folder_path}")
+
+        results = asyncio.run(zephyr.upload_test_plan(
+            test_plan=test_plan,
+            project_key=project_key,
+            folder_path=folder_path
+        ))
+
+        success = {k: v for k, v in results.items() if not str(v).startswith('ERROR')}
+        failures = {k: v for k, v in results.items() if str(v).startswith('ERROR')}
+
+        print("\n✅ Uploaded test cases:")
+        for title, key in success.items():
+            print(f"  {title} -> {key}")
+
+        if failures:
+            print("\n⚠️ Failures:")
+            for title, err in failures.items():
+                print(f"  {title}: {err}")
+
+        print(f"\nSummary: {len(success)} succeeded, {len(failures)} failed")
+        return
     
     # Ensure config exists for other commands
     from src.config.interactive_setup import ensure_config
@@ -209,9 +385,27 @@ Examples:
         import json
         from pathlib import Path
         from src.workflows.full_workflow import FullWorkflowOrchestrator
-        
+        from src.cli.rag_commands import index_all_data
+
+        project_key = args.story_key.split('-')[0]
+        refresh_manager = RAGRefreshManager()
+        refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+
+        if refresh_hours is not None and (args.force_refresh or refresh_manager.should_refresh(project_key, 'index_all', refresh_hours)):
+            if args.force_refresh:
+                print("\n⚙️ Force refreshing RAG before generation...")
+            else:
+                print(f"\n⏳ RAG refresh is due (>{refresh_hours}h). Running index-all before generation...")
+            asyncio.run(index_all_data(
+                project_key,
+                refresh_manager=refresh_manager,
+                refresh_hours=refresh_hours,
+                force=True
+            ))
+
         orchestrator = FullWorkflowOrchestrator(config)
         orchestrator.story_key = args.story_key
+        orchestrator.folder_path = args.folder_path
         result = asyncio.run(orchestrator._generate_test_plan())
         
         # Save test plan to JSON file
@@ -243,7 +437,7 @@ Examples:
         
         if args.upload:
             print("\n🚀 Uploading to Zephyr...")
-            upload_result = asyncio.run(orchestrator._upload_to_zephyr())
+            upload_result = asyncio.run(orchestrator._upload_to_zephyr(force=True))
             
             # Print ONLY Zephyr URLs
             project_key = args.story_key.split('-')[0]
@@ -262,9 +456,10 @@ Examples:
         
         orchestrator = FullWorkflowOrchestrator(config)
         orchestrator.story_key = args.story_key
+        orchestrator.folder_path = args.folder_path
         # First generate test plan, then upload
         asyncio.run(orchestrator._generate_test_plan())
-        result = asyncio.run(orchestrator._upload_to_zephyr())
+        result = asyncio.run(orchestrator._upload_to_zephyr(force=True))
         print(f"✅ Uploaded to Zephyr: {len(result)}")
     
     elif args.command == 'evaluate':
@@ -284,6 +479,7 @@ Examples:
         from src.workflows.full_workflow import FullWorkflowOrchestrator
         
         orchestrator = FullWorkflowOrchestrator(config)
+        orchestrator.folder_path = args.folder_path
         result = asyncio.run(orchestrator.run(
             args.story_key,
             args.repo
@@ -301,7 +497,8 @@ Examples:
         result = asyncio.run(run_full_workflow(
             story_key=args.story_key,
             config=config,
-            repo_path=args.repo
+            repo_path=args.repo,
+            folder_path=args.folder_path
         ))
         
         # Display summary
