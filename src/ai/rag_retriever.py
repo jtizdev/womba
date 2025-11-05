@@ -21,11 +21,14 @@ class RetrievedContext:
     similar_jira_stories: List[Dict[str, Any]]
     similar_existing_tests: List[Dict[str, Any]]
     similar_external_docs: List[Dict[str, Any]] = None
+    similar_swagger_docs: List[Dict[str, Any]] = None
     
     def __post_init__(self):
-        """Initialize similar_external_docs if not provided."""
+        """Initialize optional fields if not provided."""
         if self.similar_external_docs is None:
             self.similar_external_docs = []
+        if self.similar_swagger_docs is None:
+            self.similar_swagger_docs = []
     
     def has_context(self) -> bool:
         """Check if any context was retrieved."""
@@ -34,7 +37,8 @@ class RetrievedContext:
             self.similar_confluence_docs or
             self.similar_jira_stories or
             self.similar_existing_tests or
-            self.similar_external_docs
+            self.similar_external_docs or
+            self.similar_swagger_docs
         )
     
     def get_summary(self) -> str:
@@ -44,7 +48,8 @@ class RetrievedContext:
             f"{len(self.similar_confluence_docs)} docs, "
             f"{len(self.similar_jira_stories)} stories, "
             f"{len(self.similar_existing_tests)} existing tests, "
-            f"{len(self.similar_external_docs)} external docs"
+            f"{len(self.similar_external_docs)} external docs, "
+            f"{len(self.similar_swagger_docs)} swagger docs"
         )
 
 
@@ -61,6 +66,7 @@ class RAGRetriever:
         self.top_k_docs = settings.rag_top_k_docs
         self.top_k_stories = settings.rag_top_k_stories
         self.top_k_existing = settings.rag_top_k_existing
+        self.top_k_swagger = settings.rag_top_k_swagger
         logger.info("Initialized RAG retriever")
     
     async def retrieve_for_story(
@@ -93,12 +99,13 @@ class RAGRetriever:
         # Retrieve from all collections in parallel
         import asyncio
         
-        similar_test_plans, similar_docs, similar_stories, similar_tests, similar_external = await asyncio.gather(
+        similar_test_plans, similar_docs, similar_stories, similar_tests, similar_external, similar_swagger = await asyncio.gather(
             self._retrieve_similar_test_plans(query, metadata_filter),
             self._retrieve_similar_confluence_docs(query, metadata_filter),
             self._retrieve_similar_jira_stories(query, metadata_filter),
             self._retrieve_similar_existing_tests(query, metadata_filter),
             self._retrieve_similar_external_docs(query, metadata_filter),
+            self._retrieve_similar_swagger_docs(query, metadata_filter),
             return_exceptions=True
         )
         
@@ -118,13 +125,17 @@ class RAGRetriever:
         if isinstance(similar_external, Exception):
             logger.error(f"Failed to retrieve external docs: {similar_external}")
             similar_external = []
+        if isinstance(similar_swagger, Exception):
+            logger.error(f"Failed to retrieve swagger docs: {similar_swagger}")
+            similar_swagger = []
         
         context = RetrievedContext(
             similar_test_plans=similar_test_plans,
             similar_confluence_docs=similar_docs,
             similar_jira_stories=similar_stories,
             similar_existing_tests=similar_tests,
-            similar_external_docs=similar_external
+            similar_external_docs=similar_external,
+            similar_swagger_docs=similar_swagger
         )
         
         logger.info(context.get_summary())
@@ -276,5 +287,31 @@ class RAGRetriever:
             return results
         except Exception as e:
             logger.warning(f"No similar external docs found: {e}")
+            return []
+    
+    async def _retrieve_similar_swagger_docs(
+        self,
+        query: str,
+        metadata_filter: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Retrieve similar Swagger/OpenAPI documentation from GitLab services."""
+        try:
+            # Check if collection has documents
+            stats = self.store.get_collection_stats(self.store.SWAGGER_DOCS_COLLECTION)
+            if stats.get('count', 0) == 0:
+                logger.debug("Swagger docs collection is empty, skipping retrieval")
+                return []
+            
+            # Filter by project_key for swagger docs
+            results = await self.store.retrieve_similar(
+                collection_name=self.store.SWAGGER_DOCS_COLLECTION,
+                query_text=query,
+                top_k=self.top_k_swagger,
+                metadata_filter=metadata_filter
+            )
+            logger.info(f"Retrieved {len(results)} Swagger documentation entries")
+            return results
+        except Exception as e:
+            logger.warning(f"No similar swagger docs found: {e}")
             return []
 

@@ -28,6 +28,7 @@ class RAGVectorStore:
     JIRA_STORIES_COLLECTION = "jira_stories"
     EXISTING_TESTS_COLLECTION = "existing_tests"
     EXTERNAL_DOCS_COLLECTION = "external_docs"
+    SWAGGER_DOCS_COLLECTION = "swagger_docs"
     
     def __init__(self, collection_path: Optional[str] = None):
         """
@@ -264,18 +265,58 @@ class RAGVectorStore:
                 where=metadata_filter
             )
             
-            # Format results
+            # Format results with similarity filtering and logging
             documents = []
+            filtered_count = 0
+            min_similarity = settings.rag_min_similarity
+            similarity_scores = []
+            
             if results['documents'] and len(results['documents']) > 0:
                 for i, doc in enumerate(results['documents'][0]):
-                    documents.append({
-                        'id': results['ids'][0][i],
-                        'document': doc,
-                        'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
-                        'distance': results['distances'][0][i] if results['distances'] else None
-                    })
+                    distance = results['distances'][0][i] if results['distances'] else None
+                    similarity = 1 - distance if distance is not None else 0.0
+                    similarity_scores.append(similarity)
+                    
+                    # Filter by minimum similarity threshold
+                    if similarity >= min_similarity:
+                        documents.append({
+                            'id': results['ids'][0][i],
+                            'document': doc,
+                            'metadata': results['metadatas'][0][i] if results['metadatas'] else {},
+                            'distance': distance,
+                            'similarity': similarity
+                        })
+                    else:
+                        filtered_count += 1
+                        logger.debug(
+                            f"Filtered low-similarity document from {collection_name}: "
+                            f"similarity={similarity:.3f} < threshold={min_similarity}"
+                        )
             
-            logger.info(f"Retrieved {len(documents)} similar documents")
+            # Log retrieval quality metrics
+            if similarity_scores:
+                avg_similarity = sum(similarity_scores) / len(similarity_scores)
+                max_similarity = max(similarity_scores)
+                min_similarity_found = min(similarity_scores)
+                
+                logger.info(
+                    f"Retrieved {len(documents)}/{len(similarity_scores)} documents from {collection_name} "
+                    f"(filtered {filtered_count} below threshold={min_similarity:.2f})"
+                )
+                logger.info(
+                    f"Similarity scores: avg={avg_similarity:.3f}, max={max_similarity:.3f}, "
+                    f"min={min_similarity_found:.3f}"
+                )
+                
+                # Warn if average similarity is low
+                if avg_similarity < 0.6:
+                    logger.warning(
+                        f"Low average similarity ({avg_similarity:.3f}) for {collection_name}. "
+                        f"Consider improving query or embeddings."
+                    )
+            else:
+                logger.info(f"Retrieved {len(documents)} similar documents from {collection_name}")
+            
             return documents
             
         except Exception as e:

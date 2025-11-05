@@ -410,3 +410,76 @@ class DocumentIndexer:
         """
         return f"{prefix}_{identifier}_{datetime.now().strftime('%Y%m%d')}"
 
+    def create_swagger_metadata(
+        self,
+        swagger_doc,
+        project_key: str
+    ) -> Dict[str, Any]:
+        """
+        Create metadata dict for Swagger/OpenAPI document.
+        
+        Args:
+            swagger_doc: SwaggerDocument object
+            project_key: Project key for filtering
+            
+        Returns:
+            Metadata dictionary
+        """
+        # Create hash from service name and file path for deduplication
+        doc_hash = hashlib.sha256(
+            f"{swagger_doc.service_name}_{swagger_doc.file_path}".encode("utf-8")
+        ).hexdigest()[:16]
+        
+        # Determine API type from file path
+        api_type = "external" if "external" in swagger_doc.file_path else "internal"
+        
+        return {
+            "source": "gitlab_swagger",
+            "service_name": swagger_doc.service_name,
+            "file_path": swagger_doc.file_path,
+            "project_url": swagger_doc.project_url,
+            "project_id": str(swagger_doc.project_id),
+            "branch": swagger_doc.branch,
+            "api_type": api_type,
+            "project_key": project_key,
+            "doc_hash": doc_hash,
+            "timestamp": datetime.now().isoformat()
+        }
+
+    async def index_swagger_docs(
+        self,
+        doc_texts: List[str],
+        metadatas: List[Dict[str, Any]],
+        ids: List[str],
+    ) -> int:
+        """
+        Index Swagger/OpenAPI documentation.
+        
+        Args:
+            doc_texts: List of document texts
+            metadatas: List of metadata dicts
+            ids: List of document IDs
+            
+        Returns:
+            Number of documents indexed
+        """
+        if not doc_texts:
+            logger.warning("No Swagger documentation to index")
+            return 0
+        
+        try:
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
+            await self.store.add_documents(
+                collection_name=self.store.SWAGGER_DOCS_COLLECTION,
+                documents=doc_texts,
+                metadatas=normalized_metadatas,
+                ids=ids,
+            )
+            
+            logger.info(f"Successfully indexed {len(doc_texts)} Swagger documentation entries")
+            return len(doc_texts)
+            
+        except Exception as e:
+            logger.error(f"Failed to index Swagger docs: {e}")
+            return 0
+

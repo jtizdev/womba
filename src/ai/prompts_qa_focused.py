@@ -11,6 +11,127 @@ Key improvements:
 """
 
 # ============================================================================
+# COMPANY OVERVIEW - PlainID Platform Context (~350 tokens)
+# ============================================================================
+
+COMPANY_OVERVIEW = """
+<plainid_overview>
+
+PlainID delivers Policy-Based Access Control (PBAC) for applications, APIs, data, and identities. The platform separates business policy authoring from runtime enforcement: business and security owners model authorization logic in the Policy Administration Point (PAP), while distributed Policy Enforcement Points (PEP) call PlainID runtime services to obtain real-time decisions from Policy Decision Points (PDP). Auxiliary services—Policy Authorization Agents (PAA) and Policy Information Points (PIP/Authorizers)—supply context, broker policy promotion, and synchronize external data. [docs.plainid.io]
+
+
+
+
+Smart System Interaction Notes
+
+
+
+Tenant/Environment hierarchy
+
+Tenants encapsulate multiple environments (dev/test/prod). Each environment carries its own POP deployments, identity sources, API clients, and authorizers. Policy promotion APIs push vetted policies between environments while preserving vendor IDs and metadata. Coordination between PAP and POP happens through orchestration workflows that manage vendor policy IDs and override semantics.
+
+
+Policy lifecycle and POP synchronization
+
+Policies authored in the Policy workspace become active only after validation (structure checks, dependency checks) and deployment to POPs. Management APIs support import/export, delta deployment, and override operations. POP operations (create/update/override policy) are versioned and can be triggered manually or via CI/CD pipelines.
+
+
+Runtime decision flow
+
+PEPs call Permit/Deny or Policy Resolution endpoints with subject, resource, action, and context. PDP resolves the relevant policy, enriches the context via PIPs (identity attributes, external data, calculated attributes, combined multi-values), and returns a structured response (including deny reasons, obligations, and JSON payloads). Token APIs issue subject access tokens that encapsulate policy outcomes for downstream services.
+
+
+Identity enrichment and token services
+
+IDP Authorizers ingest identity events from Okta, Azure AD, Ping, etc., trigger token enrichment hooks, and maintain identity caches. Identity Matchers determine the best identity template and source for a given request; cache invalidation APIs keep PDP state in sync after identity changes.
+
+
+Authorizers as data fabric
+
+Authorizers are categorized into data, API, and identity authorizers. Data authorizers expose virtual schemas (views) over external data sources; API authorizers integrate with SaaS platforms; Access File authorizers produce offline access files for legacy systems. PIP services orchestrate data refresh, caching, and schema governance.
+
+
+Application & asset governance
+
+Applications (POP clients) are managed via dedicated APIs for creation, export/import, token secret rotation, and vendor synchronization. Asset types and attributes define the authorization graph; asset templates, asset mappers, and scopes tie business semantics to policy conditions.
+
+
+Observability and audit
+
+Administration APIs expose audit events, status endpoints, and runtime metrics. SaaS status pages, Ping checks, and logging guides help integrate with platform monitoring. Structured logs capture policy evaluations, API calls, and authorizer operations for compliance trails.
+
+
+Deployment playbooks
+
+Docs include Kubernetes Helm values, standalone installation steps, secret management, and connector-specific deployment guides (Snowflake, Google BigQuery, SQL Authorizer). Tenants can adopt PlainID in hybrid modes by mixing SaaS PAP with self-hosted POP/authorizer deployments.
+
+
+Integration choreography
+
+Policy-as-Code support (export/import, Structured Rego) enables GitOps flows. API client credentials underpin service-to-service integration. Combined multi-value and calculated attribute APIs let developers pre-compose policy attributes. Token exchange APIs enable delegated authorization across microservices.
+
+
+Workspaces map to core domains:
+
+• Identity Workspace — orchestrates identity templates, matchers, token-enrichment, dynamic groups, and IDP authorizers; supports multiple identity sources and virtual data sources for fine-grained decisions.  
+
+• Policy Workspace — manages policy taxonomies, assets, conditional logic, scopes, approvals, and Policy-as-Code lifecycle. Promotion flows move validated policies across environments.  
+
+• Authorization Workspace — tunes runtime enforcement (POPs, policy overrides, deny reasons, allow/deny combinations) and exposes decision telemetry.  
+
+• Orchestration Workspace — automates POP deployment, vendor synchronization, and tenancy/environment hierarchies. [docs.plainid.io]
+
+
+APIs are segmented by function:
+
+• Runtime Authorization APIs (Permit/Deny, Policy Resolution, Entitlement Lookups, Subject Listings) expose REST endpoints for synchronous decision checks.  
+
+• Management APIs cover CRUD and lifecycle for policies, building blocks, POPs, API clients, applications, and environment metadata (import/export, validation, override flows).  
+
+• Authentication & Token APIs issue access tokens, manage OAuth client credentials, and integrate with external IDPs (Okta, Azure AD, Ping, custom). [docs.plainid.io]
+
+
+Authorizers/PIPs supply contextual data:
+
+• Data Authorizers/policy data sources map to SQL, Snowflake, REST, SaaS, and file-based systems.  
+
+• IDP Authorizers pull identity attributes, provide token enrichment services, and expose inline hooks/webhooks.  
+
+• API Authorizers allow API-first integrations, including offline access-file generation for batch enforcement. [docs.plainid.io]
+
+
+Deployment & operations:
+
+• Supports Kubernetes/Istio, standalone installs, and SaaS tenants with multi-environment governance.  
+
+• Admin portal configures tenants, environments, connectors, logging, audit, and observability (status pages, API audit trail).  
+
+• Policy-as-Code tooling and Structured Rego enable version control and CI/CD integration. [docs.plainid.io]
+
+Use this context to interpret retrieved snippets: anchor all reasoning to PBAC terminology (tenant→environment→workspace→policy models), map resources to POP/PDP interactions, and respect the separation of authoring, orchestration, and enforcement layers.
+
+</plainid_overview>
+"""
+
+
+# ============================================================================
+# COMPANY SYSTEM NOTES - Interaction Guidance (~250 tokens)
+# ============================================================================
+
+COMPANY_SYSTEM_NOTES = """
+<system_interaction_notes>
+1. Tenant ➜ Environment ➜ Workspace hierarchy: policies are authored per tenant, promoted across environments, and each environment owns its POP deployments, identity sources, and API clients. Always mention promotion/override steps when stories touch multiple environments.
+2. Policy lifecycle: author → validate → deploy/override via POP operations. Management APIs (import/export, override, vendor sync) keep POPs in parity with PAP output. Tests should verify promotion, validation errors, and vendor policy ID handling when applicable.
+3. Decision flow: PEP calls Permit/Deny or Policy Resolution; PDP enriches context via PIPs (dynamic identity attributes, data authorizers, calculated fields) and returns structured decisions with deny reasons/obligations. RAG snippets that reference JSON payloads must be mirrored exactly in tests.
+4. Identity fabric: IDP Authorizers, identity matchers, cache invalidation, and token enrichment hooks keep PDP aligned with external directories. Tests covering identity changes should include cache invalidation and webhook/token enrichment outcomes.
+5. Authorizers as data plane: data authorizers define virtual schemas, API authorizers integrate SaaS systems, access-file authorizers produce offline enforcement artifacts. Tests must verify synchronization, data freshness, and failure handling for these connectors.
+6. Observability & audit: administration APIs expose audit events, status endpoints, and health checks; runtime telemetry appears in Authorization workspace. Validate that workflows log decisions, expose audit records, and surface POP/PDP health when stories touch monitoring.
+7. Deployment & automation: Kubernetes/Istio, standalone scripts, Policy-as-Code, Structured Rego, and CI/CD promotion pipelines are expected patterns. When stories involve automation, reference the relevant deployment mode and CI touch points.
+</system_interaction_notes>
+"""
+
+
+# ============================================================================
 # SYSTEM INSTRUCTION - Core Role Definition (~300 tokens)
 # ============================================================================
 
@@ -175,6 +296,7 @@ You have been provided with RETRIEVED CONTEXT from this company's actual data:
 - Existing test cases (match their style and detail level)
 - Similar stories (apply the same testing approach)
 - External API docs (copy exact request/response examples)
+- Swagger/OpenAPI documentation (use exact endpoint paths, parameters, and schemas)
 
 PRIMARY DIRECTIVE:
 The retrieved context is your PRIMARY source. General QA knowledge is secondary.
@@ -185,6 +307,16 @@ USAGE RULES:
 3. If examples show test patterns → follow those patterns
 4. If examples show terminology → use that terminology
 5. If examples show detail level → match that detail level
+6. If Swagger docs show API endpoints → use exact paths, methods, parameters, and response codes
+7. If Swagger docs show request/response schemas → reference exact field names and data types
+
+SWAGGER/OPENAPI CONTEXT:
+When Swagger/OpenAPI documentation is provided:
+- Use EXACT endpoint paths (e.g., /api/v1/policies/{policyId})
+- Reference EXACT parameter names and types from the spec
+- Include EXACT status codes from the documented responses
+- Copy request/response schema field names verbatim
+- Note authentication requirements from the security schemes
 
 THINK: "How do we test things HERE?" not "How do I usually test things?"
 

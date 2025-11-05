@@ -31,6 +31,9 @@ class WombaConfig:
     openai_api_key: str = ""
     ai_model: str = "gpt-4o"
     
+    # GitLab settings
+    gitlab_token: str = ""
+    
     # Womba API settings
     womba_api_url: str = "https://womba.onrender.com"
     womba_api_key: str = ""
@@ -81,8 +84,8 @@ class WombaConfig:
             "zephyr_api_token": self.zephyr_api_token,
             "project_key": self.project_key,
             "openai_api_key": self.openai_api_key,
-            "anthropic_api_key": self.anthropic_api_key,
             "ai_model": self.ai_model,
+            "gitlab_token": self.gitlab_token,
             "womba_api_url": self.womba_api_url,
             "womba_api_key": self.womba_api_key,
             "auto_upload": self.auto_upload,

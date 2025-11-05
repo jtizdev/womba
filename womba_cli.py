@@ -111,7 +111,7 @@ Examples:
         '--source',
         dest='sources',
         action='append',
-        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid. Repeatable.'
+        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid, gitlab, swagger. Repeatable.'
     )
     
     parser.add_argument(
@@ -259,13 +259,15 @@ Examples:
             print("💡 Run 'womba configure' or provide --project-key")
             return
 
-        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external'}
+        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external', 'gitlab', 'swagger'}
         canonical_map = {
             'zephyr': 'tests',
             'jira': 'stories',
             'confluence': 'docs',
             'plainid': 'external_docs',
-            'external': 'external_docs'
+            'external': 'external_docs',
+            'gitlab': 'swagger_docs',
+            'swagger': 'swagger_docs'
         }
         normalized_sources = []
         for src in sources:

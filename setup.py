@@ -12,7 +12,7 @@ with open("requirements-minimal.txt", "r", encoding="utf-8") as fh:
 
 setup(
     name="womba",
-    version="1.5.5",
+    version="1.6.0",
     author="PlainID",
     author_email="support@plainid.com",
     description="AI-powered test generation from Jira stories to Zephyr Scale",
