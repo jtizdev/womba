@@ -52,7 +52,8 @@ class TestAPIEndpoints:
         )
 
         response = await api_client.get("/api/v1/stories/INVALID-123")
-        assert response.status_code == 500
+        # Should return 404 for non-existent story (fixed from 500)
+        assert response.status_code == 404
         data = response.json()
         assert "detail" in data
 

@@ -1,53 +1,89 @@
-# Python
+# Python cache and compiled files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-*.egg-info/
-dist/
-build/
-*.egg
 
 # Virtual environments
 venv/
-.venv/
 env/
 ENV/
+.venv
 
-# IDE
+# Testing and coverage
+tests/
+htmlcov/
+.coverage
+.pytest_cache/
+.tox/
+*.cover
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+GITHUB_BRANCH_PROTECTION_SETUP.md
+HOW_TO_VIEW_INDEXED_DOCS.md
+IMPLEMENTATION_COMPLETE.md
+JIRA_PAGINATION_FIX.md
+OPTIMIZATION_RESULTS.md
+PLAINID_DOCS_INDEXED.md
+RAG_CONFIGURATION_SUMMARY.md
+REFACTORING_SUMMARY.md
+SDK_FIXES_SUMMARY.md
+TEST_FIXES_COMPLETE.md
+TESTS_AND_CI_CD_SETUP.md
+
+# Examples and test scripts
+examples/
+test_*.py
+validate_*.py
+view_*.py
+list_*.py
+index_*.py
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
-Thumbs.db
 
-# RAG database (will be mounted as volume)
+# Local data and cache
 data/
-
-# Environment and secrets
 .env
 .env.local
-
-# Git
-.git/
-.gitignore
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
 *.log
 
-# Documentation builds
-docs/_build/
+# Test plans output
+test_plans/
+test_plan_*.json
 
-# Temporary files
-*.tmp
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Docker
+docker-compose.override.yml
+Dockerfile.dev
+
+# Render deployment
+render.yaml
+
+# Misc
 *.bak
-.cursor/
-
+*.tmp
+.cache/

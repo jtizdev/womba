@@ -3,14 +3,30 @@ End-to-end integration tests for full Jira → AI → Zephyr workflow.
 """
 
 import pytest
+from datetime import datetime
 from src.aggregator.story_collector import StoryCollector
 from src.ai.test_plan_generator import TestPlanGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
+from src.models.story import JiraStory
+
+
+def create_test_story(key="TEST-123", summary="Test", description="Test", **kwargs):
+    """Helper to create JiraStory with all required fields."""
+    defaults = {
+        "issue_type": "Story",
+        "status": "Open",
+        "priority": "Medium",
+        "reporter": "test@example.com",
+        "created": datetime.fromisoformat("2024-01-01T00:00:00"),
+        "updated": datetime.fromisoformat("2024-01-02T00:00:00")
+    }
+    defaults.update(kwargs)
+    return JiraStory(key=key, summary=summary, description=description, **defaults)
 
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_full_jira_to_zephyr_flow():
+async def test_full_jira_to_zephyr_flow(mock_integration_env):
     """
     Test complete workflow: Fetch story → Generate tests → Upload to Zephyr.
     
@@ -21,7 +37,7 @@ async def test_full_jira_to_zephyr_flow():
     - Test quality meets minimum standards
     """
     # Arrange
-    story_key = "PLAT-11907"
+    story_key = "PROJ-123"  # Use mocked story
     
     # Act - Step 1: Collect story context
     collector = StoryCollector()
@@ -84,7 +100,7 @@ async def test_full_jira_to_zephyr_flow():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_context_collection_speed():
+async def test_context_collection_speed(mock_integration_env):
     """
     Test that context collection completes within reasonable time.
     
@@ -92,7 +108,7 @@ async def test_context_collection_speed():
     """
     import time
     
-    story_key = "PLAT-11907"
+    story_key = "PROJ-123"  # Use mocked story
     collector = StoryCollector()
     
     start_time = time.time()
@@ -105,7 +121,7 @@ async def test_context_collection_speed():
 
 @pytest.mark.integration  
 @pytest.mark.asyncio
-async def test_ai_generation_quality():
+async def test_ai_generation_quality(mock_integration_env):
     """
     Test AI generation produces high-quality tests.
     
@@ -118,17 +134,14 @@ async def test_ai_generation_quality():
     from src.aggregator.story_collector import StoryContext
     
     # Create minimal context
-    story = JiraStory(
+    story = create_test_story(
         key="TEST-123",
         summary="Add custom POP ID feature for environment alignment",
         description="Users need to create POPs with custom IDs via POST /v1/pops endpoint",
-        story_type="Story",
         status="In Progress",
         priority="High",
         labels=["api", "backend"],
-        components=["Orchestration"],
-        created="2024-01-01",
-        updated="2024-01-02"
+        components=["Orchestration"]
     )
     
     context = StoryContext(story)
@@ -176,7 +189,7 @@ async def test_zephyr_connection():
 
 @pytest.mark.integration
 @pytest.mark.asyncio
-async def test_duplicate_detection():
+async def test_duplicate_detection(mock_integration_env):
     """
     Test that duplicate detection prevents creating redundant tests.
     """
@@ -200,17 +213,14 @@ async def test_duplicate_detection():
     from src.models.story import JiraStory
     from src.aggregator.story_collector import StoryContext
     
-    story = JiraStory(
+    story = create_test_story(
         key="TEST-456",
         summary="Custom POP ID feature",
         description="Add custom IDs to POPs",
-        story_type="Story",
         status="To Do",
         priority="High",
         labels=[],
-        components=[],
-        created="2024-01-01",
-        updated="2024-01-02"
+        components=[]
     )
     
     context = StoryContext(story)

@@ -76,8 +76,9 @@ class Settings(BaseSettings):
     default_ai_model: str = Field(
         default="claude-3-5-sonnet-20241022", description="Default AI model to use"
     )
+    ai_model: str = Field(default="gpt-4o-mini", description="AI model for test generation")
     temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
-    max_tokens: int = Field(default=10000, description="Max tokens for AI responses")
+    max_tokens: int = Field(default=4000, description="Max tokens for AI responses")
     
     # RAG Configuration
     enable_rag: bool = Field(default=True, description="Enable RAG for context retrieval")

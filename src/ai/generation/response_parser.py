@@ -1,11 +1,17 @@
 """
 Response parser for AI-generated test plans.
 Single Responsibility: Parsing AI responses into TestPlan objects.
+
+Enhanced with:
+- Reasoning extraction (chain-of-thought)
+- Structured JSON parsing
+- Support for both OpenAI and Claude formats
+- Stricter validation
 """
 
 import json
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from loguru import logger
 
 from src.models.test_plan import TestPlan, TestPlanMetadata
@@ -21,34 +27,55 @@ class ResponseParser:
     - Folder suggestion extraction
     """
 
-    def parse_ai_response(self, response_text: str) -> dict:
+    def parse_ai_response(self, response_text: str) -> Tuple[dict, Optional[str]]:
         """
-        Parse AI response text into structured data.
+        Parse AI response text into structured data and extract reasoning.
+        
+        Handles both:
+        - OpenAI: Direct JSON (structured output)
+        - Claude: JSON wrapped in XML tags
         
         Args:
             response_text: Raw response from AI
             
         Returns:
-            Parsed dictionary
+            Tuple of (parsed dictionary, reasoning text)
             
         Raises:
             ValueError: If response cannot be parsed
         """
-        # Try to find JSON in the response (AI might add explanation text)
-        json_start = response_text.find("{")
-        json_end = response_text.rfind("}") + 1
-
-        if json_start == -1 or json_end == 0:
-            raise ValueError("No JSON found in AI response")
-
-        json_text = response_text[json_start:json_end]
+        reasoning = None
+        
+        # Try Claude format first (JSON wrapped in <json> tags)
+        if "<json>" in response_text and "</json>" in response_text:
+            logger.debug("Detected Claude format (XML-wrapped JSON)")
+            json_start = response_text.find("<json>") + 6
+            json_end = response_text.find("</json>")
+            json_text = response_text[json_start:json_end].strip()
+        else:
+            # OpenAI format (direct JSON)
+            logger.debug("Detected OpenAI format (direct JSON)")
+            json_start = response_text.find("{")
+            json_end = response_text.rfind("}") + 1
+            
+            if json_start == -1 or json_end == 0:
+                raise ValueError("No JSON found in AI response")
+            
+            json_text = response_text[json_start:json_end]
 
         try:
             data = json.loads(json_text)
-            return data
+            
+            # Extract reasoning if present
+            reasoning = data.get("reasoning")
+            if reasoning:
+                logger.info(f"Extracted reasoning: {len(reasoning)} chars")
+            
+            return data, reasoning
+            
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse JSON: {e}")
-            logger.error(f"Response text: {json_text[:500]}")
+            logger.error(f"Response text preview: {json_text[:500]}")
             raise ValueError(f"Invalid JSON in AI response: {e}")
 
     def build_test_plan(
@@ -56,16 +83,20 @@ class ResponseParser:
         main_story: any,
         test_plan_data: dict,
         ai_model: str,
-        folder_structure: Optional[List[Dict]] = None
+        folder_structure: Optional[List[Dict]] = None,
+        reasoning: Optional[str] = None,
+        validation_check: Optional[Dict] = None
     ) -> TestPlan:
         """
-        Build TestPlan object from parsed AI data.
+        Build TestPlan object from parsed AI data with reasoning.
         
         Args:
             main_story: The main Jira story
             test_plan_data: Parsed test plan data from AI
             ai_model: AI model used
             folder_structure: Optional folder structure for fallback
+            reasoning: Optional reasoning/analysis from AI
+            validation_check: Optional self-validation results from AI
             
         Returns:
             TestPlan object
@@ -106,8 +137,18 @@ class ResponseParser:
         integration_test_count = sum(
             1 for tc in test_cases if tc.test_type == "integration"
         )
+        
+        # Extract validation issues if present
+        validation_issues = []
+        if validation_check:
+            if not validation_check.get("all_tests_specific", True):
+                validation_issues.append("Some tests may not be feature-specific")
+            if not validation_check.get("no_placeholders", True):
+                validation_issues.append("Placeholder data detected in tests")
+            if not validation_check.get("terminology_matched", True):
+                validation_issues.append("Terminology may not match company docs")
 
-        # Build metadata
+        # Build metadata with reasoning
         metadata = TestPlanMetadata(
             ai_model=ai_model,
             source_story_key=main_story.key,
@@ -115,6 +156,8 @@ class ResponseParser:
             edge_case_count=edge_case_count,
             integration_test_count=integration_test_count,
             confidence_score=0.9,
+            ai_reasoning=reasoning,
+            validation_issues=validation_issues if validation_issues else None
         )
 
         # Extract suggested folder
@@ -212,20 +255,59 @@ class ResponseParser:
         
         return "General/Automated Tests"
 
-    def validate_test_cases(self, test_plan: TestPlan) -> None:
+    def validate_test_cases(self, test_plan: TestPlan) -> List[str]:
         """
-        Validate generated test cases for quality issues.
-        Logs warnings for tests that may need manual review.
+        Validate generated test cases for quality issues with stricter criteria.
+        
+        Checks for:
+        - Missing or null test_data
+        - Placeholder patterns
+        - Generic test names
+        - Empty descriptions
         
         Args:
             test_plan: TestPlan to validate
+            
+        Returns:
+            List of validation warnings
         """
+        warnings = []
+        
         for tc in test_plan.test_cases:
+            # Check test name quality
+            if not tc.title.startswith("Verify"):
+                warnings.append(f"Test '{tc.title}' should start with 'Verify'")
+            
+            if any(generic in tc.title.lower() for generic in ["happy path", "test case", "basic test"]):
+                warnings.append(f"Test '{tc.title}' has generic naming")
+            
+            # Check description
+            if not tc.description or len(tc.description) < 20:
+                warnings.append(f"Test '{tc.title}' has insufficient description")
+            
+            # Check steps
             for step in tc.steps:
                 step_data = step.get('test_data', '') if isinstance(step, dict) else getattr(step, 'test_data', '')
+                step_number = step.get('step_number', '?') if isinstance(step, dict) else getattr(step, 'step_number', '?')
+                
+                # Check for null or empty test_data
+                if step_data is None or (isinstance(step_data, str) and not step_data.strip()):
+                    warnings.append(f"Test '{tc.title}' step {step_number} missing test_data")
                 
                 # Check for placeholder patterns
-                placeholders = ['<', '>', 'Bearer ', 'placeholder', 'TODO', 'FIXME']
+                placeholders = ['<', '>', 'Bearer ', 'placeholder', 'TODO', 'FIXME', '<token>', '<value>']
                 if any(placeholder in str(step_data) for placeholder in placeholders):
-                    logger.warning(f"Test '{tc.title}' contains placeholder data - may need manual review")
+                    warnings.append(f"Test '{tc.title}' step {step_number} contains placeholder")
+        
+        # Log warnings
+        if warnings:
+            logger.warning(f"Found {len(warnings)} validation issues:")
+            for warning in warnings[:5]:  # Log first 5
+                logger.warning(f"  - {warning}")
+            if len(warnings) > 5:
+                logger.warning(f"  ... and {len(warnings) - 5} more")
+        else:
+            logger.info("✓ All tests passed validation")
+        
+        return warnings
 

@@ -1,24 +1,46 @@
-version: '3.8'
-
 services:
+  # Womba - Unified API Server + CLI
   womba:
     build:
       context: .
-      dockerfile: Dockerfile.cli
-    image: womba:latest
-    container_name: womba
+      dockerfile: Dockerfile
+    image: plainid/womba:latest
+    container_name: womba-server
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
     volumes:
-      # Persist RAG database between container restarts
-      - ./data:/app/data
-      # Mount .env for configuration
+      # Persistent ChromaDB storage
+      - womba-chroma-data:/app/data
+      # Mount .env for configuration (read-only)
       - ./.env:/app/.env:ro
     environment:
       - PYTHONUNBUFFERED=1
-    # Keep container running for CLI commands
-    command: tail -f /dev/null
+      - PYTHONDONTWRITEBYTECODE=1
+      - HOST=0.0.0.0
+      - PORT=8000
+    env_file:
+      - .env
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - womba-network
 
+# Named volume for ChromaDB persistence
+volumes:
+  womba-chroma-data:
+    driver: local
+
+# Bridge network for container communication
 networks:
   womba-network:
     driver: bridge

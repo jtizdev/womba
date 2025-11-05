@@ -131,9 +131,9 @@ class ZephyrIntegration:
         if test_case.estimated_time:
             payload["estimatedTime"] = test_case.estimated_time * 60  # Convert to seconds
         
-        # Add labels if provided
+        # Add labels if provided (sanitize: Zephyr doesn't allow spaces in labels)
         if test_case.tags:
-            payload["labels"] = test_case.tags
+            payload["labels"] = [tag.replace(" ", "-") for tag in test_case.tags]
 
         # Add folder if specified
         if folder_id:
@@ -155,7 +155,12 @@ class ZephyrIntegration:
             response = await client.post(
                 url, headers=self.headers, json=payload, timeout=30.0
             )
-            response.raise_for_status()
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Zephyr API error response: {e.response.text}")
+                logger.error(f"Payload sent: {payload}")
+                raise
             data = response.json()
 
         test_case_key = data.get("key")

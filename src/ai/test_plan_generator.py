@@ -12,7 +12,7 @@ from src.models.test_plan import TestPlan
 from src.ai.generation.ai_client_factory import AIClientFactory
 from src.ai.generation.prompt_builder import PromptBuilder
 from src.ai.generation.response_parser import ResponseParser
-from src.ai.prompts_qa_focused import EXPERT_QA_SYSTEM_PROMPT
+from src.ai.prompts_qa_focused import SYSTEM_INSTRUCTION
 
 
 class TestPlanGenerator:
@@ -104,15 +104,20 @@ class TestPlanGenerator:
         # Step 3: Call AI API
         response_text = await self._call_ai_api(prompt)
         
-        # Step 4: Parse response
-        test_plan_data = self.response_parser.parse_ai_response(response_text)
+        # Step 4: Parse response (extracts reasoning and data)
+        test_plan_data, reasoning = self.response_parser.parse_ai_response(response_text)
         
-        # Step 5: Build TestPlan object
+        # Extract validation check if present
+        validation_check = test_plan_data.get("validation_check")
+        
+        # Step 5: Build TestPlan object with reasoning
         test_plan = self.response_parser.build_test_plan(
             main_story=main_story,
             test_plan_data=test_plan_data,
             ai_model=self.model,
             folder_structure=folder_structure,
+            reasoning=reasoning,
+            validation_check=validation_check
         )
         
         logger.info(
@@ -166,37 +171,128 @@ class TestPlanGenerator:
 
     async def _call_ai_api(self, prompt: str) -> str:
         """
-        Call AI API with the prompt.
+        Call AI API with the prompt using structured output.
+        
+        OpenAI: Uses response_format with JSON schema for reliable parsing (for supported models)
+        Claude: Uses XML tags as fallback (no native structured output support)
         
         Args:
             prompt: Complete prompt
             
         Returns:
-            AI response text
+            AI response text (JSON string for OpenAI, text with JSON for Claude)
         """
         try:
             if self.use_openai:
-                logger.info(f"Calling OpenAI API with model: {self.model}")
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature,
-                    messages=[
-                        {"role": "system", "content": EXPERT_QA_SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt}
-                    ],
-                )
-                return response.choices[0].message.content
+                # Check if model supports json_schema (gpt-4o-2024-08-06+, gpt-4o-mini-2024-07-18+)
+                supports_json_schema = (
+                    "gpt-4o" in self.model.lower() and 
+                    ("2024-08-06" in self.model or "2024-11" in self.model or "mini" in self.model.lower())
+                ) or "o1" in self.model.lower()
+                
+                if supports_json_schema:
+                    logger.info(f"Calling OpenAI API with structured output: {self.model}")
+                    
+                    # Get JSON schema from prompt builder
+                    json_schema = self.prompt_builder.get_json_schema()
+                    
+                    # Use structured output for reliable JSON parsing
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature,
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": json_schema
+                        },
+                        messages=[
+                            {"role": "system", "content": SYSTEM_INSTRUCTION},
+                            {"role": "user", "content": prompt}
+                        ],
+                    )
+                    
+                    response_text = response.choices[0].message.content
+                    logger.info(f"OpenAI response: {len(response_text)} chars (structured JSON)")
+                    return response_text
+                else:
+                    # Older OpenAI models (gpt-4-turbo, gpt-4, etc.) - use JSON mode
+                    logger.info(f"Calling OpenAI API with JSON mode (legacy): {self.model}")
+                    
+                    json_prompt = prompt + "\n\n" + """
+Return your response as valid JSON matching this exact structure:
+{
+  "reasoning": "your analysis here",
+  "summary": "brief summary",
+  "test_cases": [
+    {
+      "name": "test name",
+      "description": "what this tests",
+      "test_data": "concrete test data",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "what to do",
+          "expected_result": "what should happen",
+          "test_data": "data for this step"
+        }
+      ],
+      "expected_result": "overall expected outcome",
+      "priority": "high/medium/low",
+      "test_type": "functional/integration/regression/etc",
+      "tags": ["tag1", "tag2"]
+    }
+  ],
+  "suggested_folder": "folder/path"
+}
+"""
+                    
+                    response = self.client.chat.completions.create(
+                        model=self.model,
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature,
+                        response_format={"type": "json_object"},
+                        messages=[
+                            {"role": "system", "content": SYSTEM_INSTRUCTION + "\n\nYou must respond with valid JSON only."},
+                            {"role": "user", "content": json_prompt}
+                        ],
+                    )
+                    
+                    response_text = response.choices[0].message.content
+                    logger.info(f"OpenAI response: {len(response_text)} chars (JSON mode)")
+                    return response_text
+                
             else:
-                logger.info(f"Calling Claude API with model: {self.model}")
+                # Claude doesn't support response_format, use XML tags
+                logger.info(f"Calling Claude API with XML-tagged output: {self.model}")
+                
+                # Add XML output instructions for Claude
+                claude_prompt = prompt + "\n\n" + """
+<output_instructions>
+Return your response as valid JSON wrapped in <json> tags:
+<json>
+{
+  "reasoning": "your analysis here",
+  "summary": "...",
+  "test_cases": [...],
+  "suggested_folder": "...",
+  "validation_check": {...}
+}
+</json>
+</output_instructions>
+"""
+                
                 response = self.client.messages.create(
                     model=self.model,
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,
-                    system=EXPERT_QA_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": prompt}],
+                    system=SYSTEM_INSTRUCTION,
+                    messages=[{"role": "user", "content": claude_prompt}],
                 )
-                return response.content[0].text
+                
+                response_text = response.content[0].text
+                logger.info(f"Claude response: {len(response_text)} chars")
+                return response_text
+                
         except Exception as e:
             logger.error(f"AI API call failed: {e}")
             raise

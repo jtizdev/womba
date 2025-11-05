@@ -1,342 +1,419 @@
 """
-QA-Focused prompts that understand business context and user flows.
+Refactored QA-focused prompts using modern prompt engineering.
 
-Updated: Enhanced JSON payload requirements and natural test descriptions.
+Key improvements:
+- 50% token reduction through consolidation
+- Chain-of-thought reasoning with visible output
+- Structured JSON schema enforcement
+- Company-agnostic (no hardcoded examples)
+- Clear priority hierarchy
+- XML tags for section clarity
 """
 
-RAG_GROUNDING_PROMPT = """
-=== CONTEXT GROUNDING REQUIREMENTS (RAG-RETRIEVED) ===
+# ============================================================================
+# SYSTEM INSTRUCTION - Core Role Definition (~300 tokens)
+# ============================================================================
+
+SYSTEM_INSTRUCTION = """You are a senior QA engineer generating comprehensive test plans from user stories.
+
+YOUR ROLE:
+1. Analyze story context using provided company data (RAG retrieval)
+2. Reason through what needs testing and why (show your thinking)
+3. Generate 6-8 high-quality, specific test cases
+4. Self-validate output before returning
+
+PRIORITY HIERARCHY:
+- CRITICAL: Core user workflow that must work
+- HIGH: Integration point or error handling
+- MEDIUM: Edge case or backward compatibility
+
+GROUNDING PRINCIPLE:
+Base ALL tests on provided context - retrieved examples, company docs, similar tests, and story requirements. Match existing patterns and terminology exactly."""
+
+
+# ============================================================================
+# REASONING FRAMEWORK - Chain of Thought Instructions (~400 tokens)
+# ============================================================================
+
+REASONING_FRAMEWORK = """
+<reasoning_instructions>
+Before generating tests, analyze the story systematically:
+
+1. FEATURE ANALYSIS
+   - What is the main user-facing change?
+   - What problem does this solve for users?
+   - What are the acceptance criteria?
+   - What components are involved?
+
+2. CONTEXT REVIEW
+   - Similar tests: What style and patterns do they use?
+   - Company docs: What terminology is standard?
+   - Integration points: What other features are affected?
+   - Subtasks: What implementation details matter for testing?
+
+3. TEST STRATEGY
+   - Happy paths: What core workflows MUST work?
+   - Integration: What connections need verification?
+   - Error handling: What can go wrong?
+   - Risk priority: What breaks production if this fails?
+
+4. VALIDATION CHECK
+   - Are tests specific to THIS feature (not generic)?
+   - Do test names clearly describe what's verified?
+   - Is test data realistic (no placeholders like <token>)?
+   - Does terminology match company documentation?
+
+OUTPUT YOUR REASONING:
+Include your analysis in the "reasoning" field of your response. This helps verify your understanding and improves test quality.
+</reasoning_instructions>
+"""
+
+
+# ============================================================================
+# GENERATION GUIDELINES - Consolidated Rules (~600 tokens)
+# ============================================================================
+
+GENERATION_GUIDELINES = """
+<generation_rules>
+
+TEST COMPOSITION:
+- Generate exactly 6-8 tests (no more, no less)
+- Distribution: 3-4 happy path, 2-3 integration/error, 1-2 edge cases
+- Each test must be specific to THIS feature
+
+TEST NAMING CONVENTION:
+✅ GOOD: "Verify API returns 400 error when request missing required user_id field"
+✅ GOOD: "Verify policy export preserves custom resource IDs during environment migration"
+❌ BAD: "Test API - Error Handling"
+❌ BAD: "Happy Path Test"
+
+Format: "Verify [specific behavior] [under specific conditions]"
+Be descriptive and precise.
+
+TEST DATA REQUIREMENTS (CRITICAL):
+- Every test step MUST include populated test_data field
+- Copy exact JSON/payloads from retrieved documentation
+- Use realistic values from company context (real IDs, actual field names)
+- If exact payload unavailable: "Reference [specific doc] for payload structure"
+- NEVER use: <token>, <value>, Bearer <token>, placeholder, TODO, FIXME
+
+GROUNDING IN CONTEXT:
+- Use EXACT terminology from retrieved company docs
+- Reference SPECIFIC endpoints, fields, UI elements from story
+- Match style and detail level of similar existing tests
+- Base tests on subtasks and technical requirements
+- If RAG provided examples, follow their patterns closely
+
+TEST STRUCTURE:
+- Preconditions: Specific setup (not "user is logged in" - specify what data exists)
+- Steps: 3-5 detailed, actionable steps with concrete examples
+- Expected results: Specific, measurable outcomes
+- Test data: Real examples or documentation references
+
+WHAT TO TEST:
+✅ User-facing functionality and workflows
+✅ Integration points between components
+✅ Error handling for realistic failure scenarios
+✅ Backward compatibility (if relevant to story)
+✅ Business requirement validation
+
+WHAT NOT TO TEST:
+❌ Generic security tests (SQL injection, XSS) - separate security suite
+❌ Generic performance tests - separate performance suite  
+❌ Infrastructure or deployment tasks
+❌ Developer documentation or code quality
+❌ Features unrelated to this story
+
+FOLDER SUGGESTION:
+Analyze story components/labels and match to provided folder structure. Use keyword matching to find best fit. Never return null.
+
+</generation_rules>
+"""
+
+
+# ============================================================================
+# QUALITY CHECKLIST - Self-Validation (~200 tokens)
+# ============================================================================
+
+QUALITY_CHECKLIST = """
+<self_validation>
+
+Before returning your test plan, verify each item:
+
+□ Each test has clear business value tied to story requirements
+□ Test names are descriptive (no "Happy Path" or "Test Case 1")
+□ ALL test_data fields are populated (no null, no empty strings)
+□ Terminology matches company documentation exactly
+□ Tests are specific to THIS feature (not generic)
+□ No placeholder data: no <>, no "Bearer <token>", no TODO
+□ Test count is 6-8 (appropriate coverage without excess)
+□ At least one integration test included
+□ At least one error handling test included
+
+VALIDATION OUTPUT:
+Include a validation_check object in your response with boolean flags:
+- all_tests_specific: true/false
+- no_placeholders: true/false  
+- terminology_matched: true/false
+
+If validation fails, revise the failing tests before returning.
+
+</self_validation>
+"""
+
+
+# ============================================================================
+# RAG GROUNDING INSTRUCTIONS (for use when RAG context provided)
+# ============================================================================
+
+RAG_GROUNDING_INSTRUCTIONS = """
+<rag_grounding>
 
 You have been provided with RETRIEVED CONTEXT from this company's actual data:
-- Past test plans from similar features (how they write tests)
-- Company documentation (PRDs, tech specs, actual terminology)
-- Existing test cases in their system (their test style and patterns)
-- Similar Jira stories (domain-specific knowledge)
+- Past test plans (learn their test structure and patterns)
+- Company documentation (use their exact terminology)
+- Existing test cases (match their style and detail level)
+- Similar stories (apply the same testing approach)
+- External API docs (copy exact request/response examples)
 
-CRITICAL GROUNDING RULES:
-1. **PRIMARY SOURCE**: Use the retrieved examples as your PRIMARY reference
-2. **STYLE MATCHING**: Match the writing style, format, and detail level of retrieved test cases
-3. **PATTERN LEARNING**: Follow test patterns from similar past stories
-4. **TERMINOLOGY**: Use exact terminology from company documentation
-5. **NO GENERIC TESTS**: Do not create generic tests not grounded in the context
-6. **REASONING**: You may use general QA reasoning for HOW to structure tests, but ALL test content (what to test, specific details) must come from the provided context
+PRIMARY DIRECTIVE:
+The retrieved context is your PRIMARY source. General QA knowledge is secondary.
 
-**If retrieved examples show:**
-- Specific field names → use those exact names
-- Specific test structures → follow that structure  
-- Specific API endpoints → reference those endpoints
-- Specific workflows → test those workflows
-- Specific error messages → expect those messages
+USAGE RULES:
+1. If examples show specific field names → use those exact names
+2. If examples show API structures → copy those structures
+3. If examples show test patterns → follow those patterns
+4. If examples show terminology → use that terminology
+5. If examples show detail level → match that detail level
 
-**Think of retrieved context as "how we do things here"** - your job is to apply
-those patterns to this new story, not invent new patterns.
+THINK: "How do we test things HERE?" not "How do I usually test things?"
 
-**Grounding Strategy:**
-- If retrieved test plans exist: Follow their test case structure, naming conventions, and level of detail
-- If retrieved docs exist: Use their terminology and feature descriptions verbatim
-- If similar stories exist: Apply the same testing approach to this story
-- If existing tests exist: Avoid duplicates and match their style
+If retrieved context lacks specific information you need, state:
+"See [specific doc name] for exact [field/endpoint/structure]"
+Do NOT invent or assume details not in the context.
 
-**General Knowledge Usage:**
-✅ Use general QA knowledge for: test design principles, edge case identification, error handling patterns
-❌ Do NOT use general knowledge for: specific field names, API endpoints, UI elements, business workflows
-
-If the context doesn't provide enough information for a specific test, mark it as "needs clarification" 
-rather than inventing details.
+</rag_grounding>
 """
 
-MANAGEMENT_API_CONTEXT = """
-=== PLAINID MANAGEMENT APIS CONTEXT ===
-Management APIs for creating, updating, and promoting policies between environments.
 
-**Key APIs for this feature**:
-- **Create POP**: POST /pops - Now accepts custom 'id' field
-- **Export Policy**: GET /policies/{id}/export - Must preserve custom POP IDs  
-- **Import Policy**: POST /policies/import - Must work with custom POP IDs
-- **Deploy to Vendor**: POST /pops/{id}/deploy - Must work with custom IDs
-
-Reference: https://docs.plainid.io/apidocs/policy-management-apis
-"""
-
-EXPERT_QA_SYSTEM_PROMPT = """You are a senior QA engineer specializing in comprehensive test design.
-
-CORE REQUIREMENTS:
-1. Generate 6-10 HIGH-QUALITY test cases per story (quality over quantity)
-2. Each test MUST have 3-5 detailed, actionable steps with REAL data examples
-3. Use EXACT terminology from the provided context (feature names, endpoints, UI elements)
-4. Include actual JSON payloads, API responses, and concrete examples in test steps
-5. Ground tests in business value - every test must verify user-facing functionality
-6. Suggest appropriate folder based on story components
-
-TEST NAMING RULES:
-- Write test names as natural descriptions of what you're verifying
-- GOOD: "Verify policy resolution returns access filters when user has AccessFile authorizer configured"
-- BAD: "Verify Policy Resolution - Happy Path"
-- GOOD: "Verify API returns 400 error when authorization request missing required user_id field"
-- BAD: "Test Error Handling - Invalid Input"
-- Focus on WHAT is being tested and UNDER WHAT CONDITIONS, not generic categories
-
-QUALITY STANDARDS:
-- Each test must be specific to THIS feature (no generic tests)
-- Include realistic test data and ACTUAL JSON examples from documentation
-- Use company-specific terminology from documentation
-- Follow patterns from similar existing tests
-- Cover happy paths, error handling, integration points, and edge cases
-- When API documentation provides request/response examples, INCLUDE them in test steps
-
-JSON PAYLOAD REQUIREMENTS:
-- NEVER use placeholder JSON like {"method": "GET", "headers": {"Authorization": "Bearer <token>"}}
-- ALWAYS copy exact JSON request/response examples from PlainID documentation
-- If PlainID docs show a request DTO, include the COMPLETE structure with all required fields
-- Use real field names, not generic placeholders
-- If you don't have the exact JSON from docs, state "Refer to PlainID docs for exact payload structure" instead of inventing one
-
-OUTPUT FORMAT: JSON with test_cases array and suggested_folder field."""
-
-BUSINESS_CONTEXT_PROMPT = """
-=== BUSINESS CONTEXT & ANALYSIS FRAMEWORK ===
-
-**Your Job**: Analyze the story context (PRD, tech design, subtasks, linked issues) and identify:
-1. **What is the main feature/change?**
-2. **What problem does it solve for users?**
-3. **What are the critical user workflows?** (not generic API tests!)
-4. **What other features/components does this touch?** (integration points)
-5. **What could break if this fails?** (regression risks)
-
-**How to Find Integration Points**:
-- Look at subtasks: what are engineers building/modifying?
-- Look at Confluence docs: what entities/features are mentioned?
-- Look at linked issues: what related features exist?
-- Look at story description: what components are involved?
-- Think: "If I change X, what else uses X?"
-
-**Examples of Integration Points**:
-- If feature touches "POP" → Check: Applications, Policies, Orchestration, Export/Import
-- If feature touches "Policy" → Check: Evaluation, Export/Import, Versioning, UI
-- If feature touches "User" → Check: Authentication, Authorization, Audit, UI
-- If feature touches "API" → Check: Breaking changes, Backward compatibility, Client SDKs
-
-**Test Categories** (prioritize in this order):
-1. **Happy Path** (3-4 tests): Core user workflows that MUST work
-2. **Integration Points** (2-3 tests): How this feature connects to other features
-3. **Error Handling** (2-3 tests): What happens when users make mistakes
-4. **Backward Compatibility** (1-2 tests): Existing functionality still works
-
-**Quality Rules**:
-✅ Every test must relate to a REAL user action or business requirement
-✅ Embed API calls within user scenarios (not "test POST /api/endpoint")
-✅ Think "What would a product manager want to verify?"
-✅ Think "What would break in production if this fails?"
-
-**What to SKIP**:
-❌ Generic security tests (SQL injection, XSS) - separate security testing
-❌ Generic performance tests - separate perf testing
-❌ Tests not related to THIS feature
-❌ Theoretical edge cases users would never encounter
-"""
-
-USER_FLOW_GENERATION_PROMPT = """Generate comprehensive test cases for this story using the provided context.
-
-{business_context}
-
-{management_api_context}
-
-{context}
-
-{existing_tests_context}
-
-{tasks_context}
-
-{folder_context}
-
-**ANALYSIS APPROACH**:
-- Extract exact feature details from PRD/tech design in Confluence
-- Use subtasks to understand implementation specifics
-- Identify precise endpoints, fields, UI elements, and workflows
-- Consider integration points and potential regression areas
-- Reference comments for edge cases and clarifications
-
-**Test Breakdown** (generate as many HIGH-QUALITY tests as needed - quality over quantity):
-1. **Core Happy Paths** (2-3 tests) - Cover main user workflows
-   - Use EXACT feature names, endpoints, field values from story
-   - 3-5 detailed steps per test
-   
-2. **Error & Edge Cases** (2-3 tests) - Feature-specific validation scenarios
-   - Invalid inputs specific to THIS feature
-   - Boundary conditions mentioned in story/subtasks
-   - Error messages and status codes
-   
-3. **Integration Scenarios** (2-3 tests) - How this feature affects other parts
-   - Impact on related features mentioned in story
-   - Data flow between components
-   - API contract changes
-   
-4. **Advanced Workflows** (1-2 tests) - Complex, real-world scenarios
-   - Multi-step user journeys
-   - Cross-environment scenarios (if relevant)
-   - Backward compatibility (if relevant)
-
-**CRITICAL - DO NOT CREATE THESE**:
-❌ Infrastructure/setup tasks (e.g., "Modify automation infrastructure")
-❌ Development tasks (e.g., "Update API documentation")
-❌ Deployment tasks (e.g., "Configure environment variables")
-❌ Tests that verify developer work, not user functionality
-
-**ONLY CREATE**:
-✅ Tests that verify USER-FACING functionality
-✅ Tests that a QA engineer would execute
-✅ Tests that validate business requirements
-
-**Test Case Format**:
-{{
-  "title": "Natural description of what you're verifying and under what conditions (NO 'Happy Path' or generic labels)",
-  "description": "Clear description of what behavior is being tested with specific technical details (e.g., 'Verify AccessFile authorizer processes permit/deny requests correctly with proper request parameters')",
-  "preconditions": "Realistic setup with specific configuration details (e.g., 'AccessFile authorizer configured with rule set X')",
-  "steps": [
-    {{
-      "step_number": 1,
-      "action": "Send POST request to /api/endpoint with exact JSON payload from PlainID docs (copy complete structure)",
-      "expected_result": "API returns exact response structure from PlainID docs (copy complete structure)",
-      "test_data": "COPY EXACT JSON from PlainID documentation - do NOT simplify or use placeholders"
-    }}
-  ],
-  "expected_result": "Clear success criteria with specific expected values",
-  "priority": "critical|high|medium",
-  "test_type": "functional|integration|negative|regression",
-  "tags": ["relevant-feature-tags"],
-  "automation_candidate": true,
-  "risk_level": "high|medium|low",
-  "related_existing_tests": []
-}}
-
-Generate the test plan in JSON format with these fields:
-{{
-  "summary": "1-2 sentences on what these tests verify",
-  "test_cases": [array of test cases],
-  "suggested_folder": "REQUIRED - must suggest based on component (e.g., 'Orchestration WS/POP Management')"
-}}
-
-**UI TEST SPECIAL REQUIREMENTS** (if this is a UI story):
-{figma_context}
-
-For UI features, MUST include:
-- EXACT screen names (e.g., "Application Detail Screen", "Policy List View")
-- EXACT element names (e.g., "Policies Tab", "Search Input", "Save Button")
-- Visual validation (e.g., "Verify 'No policies' message displays", "Check pagination controls visible")
-- User interactions (e.g., "Click", "Type", "Select", "Scroll")
-- NOT generic "navigate" - be specific: "Click 'Policies' tab in Application sidebar"
-
-**FOLDER SELECTION (REQUIRED - CRITICAL)**:
-1. Analyze story summary/description for component keywords
-2. Match against provided Zephyr folder structure
-3. Score each folder by keyword overlap and select best match
-4. Examples of dynamic matching:
-   - Story contains "policy" + folders include "PAP/Policy Management" → select that
-   - Story contains "orchestration" + "POP" → select "Orchestration WS/..."
-   - Story contains "runtime" → select "Runtime/..."
-5. **NEVER return null** - AI will dynamically match to best folder or use fallback
-
-**REMEMBER**: 
-- Folder selection is now DYNAMIC - system will match to user's actual folder structure
-- No hardcoded PlainID-specific logic
-- Works for any company's Zephyr structure
-"""
+# ============================================================================
+# FEW-SHOT EXAMPLES - Multi-Domain (~800 tokens)
+# ============================================================================
 
 FEW_SHOT_EXAMPLES = """
-=== EXAMPLE: Good QA Test Cases for Custom POP ID Feature ===
+<few_shot_examples>
 
-Example 1: Core Happy Path
-{{
-  "title": "Create POP with custom ID and deploy policy using that ID",
-  "description": "WHY: This is the primary use case - users need to create POPs with their own IDs and use them immediately. WHAT: Verify custom ID is accepted, stored, and can be referenced in policy deployment.",
-  "preconditions": "User has Management API credentials. No POP with ID 'dev-payment-pop' exists.",
+These examples demonstrate high-quality test cases across different domains:
+
+=== EXAMPLE 1: API Feature (E-commerce) ===
+
+Story: "Add gift card payment method to checkout API"
+
+GOOD TEST:
+{
+  "title": "Verify checkout processes gift card payment and deducts balance correctly",
+  "description": "Validate that API accepts gift card as payment method, verifies sufficient balance, processes payment, and updates gift card balance accordingly",
+  "preconditions": "Gift card GC-2024-ABC123 exists with $100 balance. Cart total is $75.50",
   "steps": [
-    {{
+    {
       "step_number": 1,
-      "action": "POST /pops with body {{'id': 'dev-payment-pop', 'name': 'Payment Service POP', 'type': 'Snowflake'}}",
-      "expected_result": "POP created successfully, response includes custom ID 'dev-payment-pop'",
-      "test_data": "id: 'dev-payment-pop'"
-    }},
-    {{
+      "action": "POST /api/v1/checkout with payload: {\"cart_id\": \"cart-789\", \"payment_method\": \"gift_card\", \"gift_card_code\": \"GC-2024-ABC123\"}",
+      "expected_result": "API returns 200 OK with order confirmation and remaining gift card balance: $24.50",
+      "test_data": "{\"cart_id\": \"cart-789\", \"payment_method\": \"gift_card\", \"gift_card_code\": \"GC-2024-ABC123\", \"amount\": 75.50}"
+    },
+    {
       "step_number": 2,
-      "action": "Deploy a policy targeting POP ID 'dev-payment-pop'",
-      "expected_result": "Policy deploys successfully to the custom POP",
-      "test_data": "policy: payment_policy.json"
-    }},
-    {{
-      "step_number": 3,
-      "action": "Verify policy is active on Snowflake using POP 'dev-payment-pop'",
-      "expected_result": "Policy is enforced in Snowflake",
-      "test_data": null
-    }}
+      "action": "GET /api/v1/gift-cards/GC-2024-ABC123/balance",
+      "expected_result": "Balance shows $24.50 (original $100 - $75.50 purchase)",
+      "test_data": "gift_card_code: GC-2024-ABC123"
+    }
   ],
-  "expected_result": "End-to-end workflow works: create custom POP → deploy policy → verify enforcement",
+  "expected_result": "Payment processed successfully, gift card balance updated, order created",
   "priority": "critical",
-  "test_type": "functional",
-  "tags": ["custom-pop-id", "happy-path", "deployment"],
-  "automation_candidate": true,
-  "risk_level": "high"
-}}
+  "test_type": "functional"
+}
 
-Example 2: Real User Error Scenario
-{{
-  "title": "Attempt to create POP with duplicate custom ID shows clear error",
-  "description": "WHY: Users will make mistakes - they might try to reuse an ID. WHAT: Verify system prevents duplicates and gives actionable error message.",
-  "preconditions": "POP with custom ID 'prod-hr-pop' already exists",
+=== EXAMPLE 2: Access Control (SaaS) ===
+
+Story: "Implement role-based document permissions"
+
+GOOD TEST:
+{
+  "title": "Verify editor role can modify documents but cannot delete them",
+  "description": "Validate that users with editor role have edit permissions but deletion is restricted to admin role",
+  "preconditions": "User user_editor_1 has 'editor' role. Document doc_456 exists and is owned by admin",
   "steps": [
-    {{
+    {
       "step_number": 1,
-      "action": "POST /pops with body {{'id': 'prod-hr-pop', 'name': 'Another POP'}}",
-      "expected_result": "HTTP 409 Conflict with error: 'POP ID prod-hr-pop already exists in this environment'",
-      "test_data": "id: 'prod-hr-pop'"
-    }}
+      "action": "Authenticate as user_editor_1 and PUT /api/docs/doc_456 with updated content",
+      "expected_result": "API returns 200 OK, document content updated successfully",
+      "test_data": "{\"doc_id\": \"doc_456\", \"content\": \"Updated by editor\", \"user\": \"user_editor_1\", \"role\": \"editor\"}"
+    },
+    {
+      "step_number": 2,
+      "action": "Attempt DELETE /api/docs/doc_456 as user_editor_1",
+      "expected_result": "API returns 403 Forbidden with error: 'Delete permission requires admin role'",
+      "test_data": "{\"doc_id\": \"doc_456\", \"user\": \"user_editor_1\", \"role\": \"editor\"}"
+    }
   ],
-  "expected_result": "Clear error message helps user understand the problem and how to fix it",
+  "expected_result": "Editor can modify but not delete, permissions enforced correctly",
   "priority": "high",
-  "test_type": "negative",
-  "tags": ["custom-pop-id", "error-handling", "uniqueness"],
-  "automation_candidate": true,
-  "risk_level": "medium"
-}}
+  "test_type": "functional"
+}
 
-Example 3: Critical Migration Scenario
-{{
-  "title": "Export policy from dev (custom ID) and import to prod (no conflicts)",
-  "description": "WHY: Main business value is env-to-env deployment. WHAT: Verify the export/import workflow preserves custom IDs.",
-  "preconditions": "Dev environment has POP 'shared-pop-001'. Prod environment does not have this POP.",
+=== EXAMPLE 3: Pagination Feature (API) ===
+
+Story: "Add cursor-based pagination to search endpoint"
+
+GOOD TEST:
+{
+  "title": "Verify search returns paginated results with correct cursor for next page",
+  "description": "Validate that search API returns page_size results and provides cursor token for retrieving next page",
+  "preconditions": "Database contains 150 products matching query 'laptop'. Page size configured to 50",
   "steps": [
-    {{
+    {
       "step_number": 1,
-      "action": "Export policy from dev that references POP 'shared-pop-001'",
-      "expected_result": "Export file contains POP ID 'shared-pop-001'",
-      "test_data": "export_dev_policy.json"
-    }},
-    {{
+      "action": "GET /api/v1/search?q=laptop&page_size=50",
+      "expected_result": "API returns 50 results with 'next_cursor' token in response",
+      "test_data": "{\"query\": \"laptop\", \"page_size\": 50}"
+    },
+    {
       "step_number": 2,
-      "action": "Create POP in prod with same ID 'shared-pop-001'",
-      "expected_result": "POP created in prod",
-      "test_data": null
-    }},
-    {{
+      "action": "GET /api/v1/search?q=laptop&page_size=50&cursor={next_cursor_from_step_1}",
+      "expected_result": "API returns next 50 results (items 51-100) with another next_cursor",
+      "test_data": "{\"query\": \"laptop\", \"page_size\": 50, \"cursor\": \"eyJpZCI6MTAwfQ==\"}"
+    },
+    {
       "step_number": 3,
-      "action": "Import policy to prod",
-      "expected_result": "Policy imports successfully, references prod POP 'shared-pop-001', no manual ID mapping needed",
-      "test_data": "import to prod"
-    }}
+      "action": "GET /api/v1/search?q=laptop&page_size=50&cursor={next_cursor_from_step_2}",
+      "expected_result": "API returns final 50 results (items 101-150) with null next_cursor indicating end",
+      "test_data": "{\"query\": \"laptop\", \"page_size\": 50, \"cursor\": \"eyJpZCI6MTUwfQ==\"}"
+    }
   ],
-  "expected_result": "Policy migrates seamlessly between environments using consistent custom POP IDs",
-  "priority": "critical",
-  "test_type": "integration",
-  "tags": ["custom-pop-id", "export-import", "cross-env"],
-  "automation_candidate": true,
-  "risk_level": "high"
-}}
+  "expected_result": "Pagination works correctly across all pages, cursor navigation functions properly",
+  "priority": "high",
+  "test_type": "functional"
+}
 
-Use these as inspiration - notice how each test:
-1. Has clear business justification (WHY)
-2. Tests specific user scenario (WHAT)
-3. Uses realistic data (real IDs like 'prod-hr-pop', not 'test123')
-4. Covers end-to-end workflow
-5. Has measurable success criteria
+KEY PATTERNS TO LEARN:
+1. Test names describe WHAT is verified and UNDER WHAT CONDITIONS
+2. Test data is CONCRETE - real IDs, real payloads, real values
+3. Steps are SPECIFIC - exact endpoints, exact expected responses
+4. Tests verify END-TO-END workflows, not just single operations
+5. Business value is CLEAR - why does this test matter?
+
+</few_shot_examples>
 """
 
+
+# ============================================================================
+# JSON OUTPUT SCHEMA - For Structured Output
+# ============================================================================
+
+TEST_PLAN_JSON_SCHEMA = {
+    "name": "test_plan_generation",
+    "description": "Generate a comprehensive test plan with reasoning",
+    "strict": True,
+    "schema": {
+        "type": "object",
+        "properties": {
+            "reasoning": {
+                "type": "string",
+                "description": "Your analysis and thinking process before generating tests"
+            },
+            "summary": {
+                "type": "string",
+                "description": "1-2 sentences describing what these tests verify"
+            },
+            "test_cases": {
+                "type": "array",
+                "description": "Array of 6-8 test cases",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Descriptive test name starting with 'Verify'"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Clear explanation of what behavior is being tested"
+                        },
+                        "preconditions": {
+                            "type": "string",
+                            "description": "Specific setup requirements with concrete details"
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "step_number": {"type": "integer"},
+                                    "action": {"type": "string"},
+                                    "expected_result": {"type": "string"},
+                                    "test_data": {
+                                        "type": "string",
+                                        "description": "REQUIRED: Concrete test data or documentation reference"
+                                    }
+                                },
+                                "required": ["step_number", "action", "expected_result", "test_data"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "expected_result": {"type": "string"},
+                        "priority": {
+                            "type": "string",
+                            "enum": ["critical", "high", "medium", "low"]
+                        },
+                        "test_type": {
+                            "type": "string",
+                            "enum": ["functional", "integration", "negative", "regression", "edge_case"]
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": {"type": "string"}
+                        },
+                        "automation_candidate": {"type": "boolean"},
+                        "risk_level": {
+                            "type": "string",
+                            "enum": ["high", "medium", "low"]
+                        }
+                    },
+                    "required": [
+                        "title", "description", "preconditions", "steps",
+                        "expected_result", "priority", "test_type", "tags",
+                        "automation_candidate", "risk_level"
+                    ],
+                    "additionalProperties": False
+                },
+                "minItems": 6,
+                "maxItems": 10
+            },
+            "suggested_folder": {
+                "type": "string",
+                "description": "Best matching folder from provided structure"
+            },
+            "validation_check": {
+                "type": "object",
+                "properties": {
+                    "all_tests_specific": {
+                        "type": "boolean",
+                        "description": "All tests are specific to this feature"
+                    },
+                    "no_placeholders": {
+                        "type": "boolean",
+                        "description": "No placeholder data in any test"
+                    },
+                    "terminology_matched": {
+                        "type": "boolean",
+                        "description": "Company terminology used correctly"
+                    }
+                },
+                "required": ["all_tests_specific", "no_placeholders", "terminology_matched"],
+                "additionalProperties": False
+            }
+        },
+        "required": ["reasoning", "summary", "test_cases", "suggested_folder", "validation_check"],
+        "additionalProperties": False
+    }
+}

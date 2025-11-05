@@ -50,6 +50,13 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
     """
     logger.info(f"API: Generating test plan for {request.issue_key}")
     
+    # Validate request early (before any expensive operations)
+    if request.upload_to_zephyr and not request.project_key:
+        raise HTTPException(
+            status_code=400,
+            detail="project_key is required when upload_to_zephyr is True",
+        )
+    
     import time
     start_time = time.time()
 
@@ -72,11 +79,6 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         zephyr_results = None
         zephyr_ids = []
         if request.upload_to_zephyr:
-            if not request.project_key:
-                raise HTTPException(
-                    status_code=400,
-                    detail="project_key is required when upload_to_zephyr is True",
-                )
 
             logger.info("Step 3: Uploading test plan to Zephyr...")
             zephyr = ZephyrIntegration()

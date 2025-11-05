@@ -31,7 +31,15 @@ async def get_story(issue_key: str):
         return story
     except Exception as e:
         logger.error(f"Failed to fetch story {issue_key}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Check if it's a JiraError with 404 status
+        status_code = 500
+        if hasattr(e, 'status_code') and e.status_code == 404:
+            status_code = 404
+        elif hasattr(e, 'status') and e.status == 404:
+            status_code = 404
+        elif "404" in str(e) or "does not exist" in str(e).lower() or "not found" in str(e).lower():
+            status_code = 404
+        raise HTTPException(status_code=status_code, detail=str(e))
 
 
 @router.get("/{issue_key}/context")
