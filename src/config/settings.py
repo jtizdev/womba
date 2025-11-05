@@ -41,7 +41,10 @@ class Settings(BaseSettings):
 
     # Repository Access
     github_token: Optional[str] = Field(default=None, description="GitHub personal access token (optional)")
-    gitlab_token: Optional[str] = Field(default=None, description="GitLab token (optional)")
+    gitlab_token: Optional[str] = Field(default=None, description="GitLab personal access token (optional)")
+    gitlab_base_url: str = Field(default="https://gitlab.com", description="GitLab base URL")
+    gitlab_group_path: str = Field(default="plainid/srv", description="GitLab group path for service repositories")
+    gitlab_swagger_enabled: bool = Field(default=True, description="Enable GitLab Swagger indexing")
     bitbucket_token: Optional[str] = Field(default=None, description="Bitbucket token (optional)")
 
     # Figma (Optional)
@@ -76,19 +79,44 @@ class Settings(BaseSettings):
     default_ai_model: str = Field(
         default="claude-3-5-sonnet-20241022", description="Default AI model to use"
     )
-    ai_model: str = Field(default="gpt-4o-mini", description="AI model for test generation")
+    ai_model: str = Field(
+        default="gpt-4o-2024-08-06", 
+        description="AI model for test generation (gpt-4o-2024-08-06 supports JSON schema + 16K output tokens)"
+    )
     temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
-    max_tokens: int = Field(default=4000, description="Max tokens for AI responses")
+    max_tokens: int = Field(default=10000, description="Max tokens for AI responses (gpt-4o-2024-08-06 supports up to 16384)")
     
     # RAG Configuration
     enable_rag: bool = Field(default=True, description="Enable RAG for context retrieval")
     rag_collection_path: str = Field(default="./data/chroma", description="ChromaDB storage path")
     embedding_model: str = Field(default="text-embedding-3-small", description="OpenAI embedding model")
-    rag_top_k_tests: int = Field(default=5, description="Number of similar test plans to retrieve")
-    rag_top_k_docs: int = Field(default=10, description="Number of similar docs to retrieve")
-    rag_top_k_stories: int = Field(default=10, description="Number of similar Jira stories to retrieve")
-    rag_top_k_existing: int = Field(default=20, description="Number of similar existing tests to retrieve")
+    # RAG Top-K Configuration (adjust based on your data quality and token budget)
+    # Note: These are starting defaults. Monitor similarity scores and adjust based on:
+    # - Average similarity scores (aim for >0.6)
+    # - Token budget (more results = more tokens)
+    # - Quality of generated tests (too many irrelevant results hurts quality)
+    rag_top_k_tests: int = Field(
+        default=5, 
+        description="Similar test plans to retrieve. Lower is better if test plans are high-quality."
+    )
+    rag_top_k_docs: int = Field(
+        default=10, 
+        description="Similar Confluence docs to retrieve. Docs are valuable context, so higher is OK."
+    )
+    rag_top_k_stories: int = Field(
+        default=10, 
+        description="Similar Jira stories to retrieve. Helps understand domain context."
+    )
+    rag_top_k_existing: int = Field(
+        default=20, 
+        description="Similar existing Zephyr tests to retrieve. Higher helps avoid duplicates but can add noise."
+    )
+    rag_top_k_swagger: int = Field(
+        default=5,
+        description="Similar Swagger/OpenAPI docs to retrieve from GitLab services."
+    )
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
+    rag_min_similarity: float = Field(default=0.5, description="Minimum similarity threshold (0.0-1.0) to filter low-quality results")
     rag_refresh_hours: Optional[float] = Field(default=None, description="Minimum hours between automatic full RAG refresh runs")
 
     # PlainID External Documentation Indexing

@@ -4,6 +4,7 @@ Single Responsibility: Text cleaning, HTML parsing, content extraction.
 """
 
 from typing import Optional
+import yaml
 from loguru import logger
 from src.infrastructure.html_parser import HTMLParser
 from src.models.test_plan import TestPlan
@@ -172,4 +173,137 @@ class DocumentProcessor:
             return None
         
         return f"Source: {url}\nTitle: {title}\n\nContent:\n{text}"
+
+    def build_swagger_document(self, swagger_doc) -> str:
+        """
+        Build searchable document from Swagger/OpenAPI YAML.
+        
+        Args:
+            swagger_doc: SwaggerDocument object with YAML content
+            
+        Returns:
+            Formatted document text with API details
+        """
+        sections = []
+        
+        # Header
+        sections.append(f"Service: {swagger_doc.service_name}")
+        sections.append(f"Source: {swagger_doc.project_url}")
+        sections.append(f"File: {swagger_doc.file_path}")
+        sections.append(f"Branch: {swagger_doc.branch}")
+        sections.append("")
+        
+        try:
+            # Parse YAML
+            spec = yaml.safe_load(swagger_doc.content)
+            
+            # API Info
+            info = spec.get('info', {})
+            if info:
+                sections.append(f"API Title: {info.get('title', 'N/A')}")
+                sections.append(f"Version: {info.get('version', 'N/A')}")
+                if info.get('description'):
+                    sections.append(f"Description: {info.get('description')}")
+                sections.append("")
+            
+            # Servers
+            servers = spec.get('servers', [])
+            if servers:
+                sections.append("Servers:")
+                for server in servers:
+                    sections.append(f"  - {server.get('url', 'N/A')}")
+                    if server.get('description'):
+                        sections.append(f"    {server.get('description')}")
+                sections.append("")
+            
+            # Authentication
+            security_schemes = spec.get('components', {}).get('securitySchemes', {})
+            if security_schemes:
+                sections.append("Authentication:")
+                for name, scheme in security_schemes.items():
+                    scheme_type = scheme.get('type', 'unknown')
+                    sections.append(f"  - {name}: {scheme_type}")
+                    if scheme.get('description'):
+                        sections.append(f"    {scheme.get('description')}")
+                sections.append("")
+            
+            # Paths/Endpoints
+            paths = spec.get('paths', {})
+            if paths:
+                sections.append(f"Endpoints ({len(paths)} total):")
+                sections.append("")
+                
+                for path, methods in paths.items():
+                    for method, details in methods.items():
+                        if method in ['get', 'post', 'put', 'patch', 'delete', 'options', 'head']:
+                            sections.append(f"  {method.upper()} {path}")
+                            
+                            # Operation ID and summary
+                            if details.get('operationId'):
+                                sections.append(f"    Operation: {details['operationId']}")
+                            if details.get('summary'):
+                                sections.append(f"    Summary: {details['summary']}")
+                            if details.get('description'):
+                                sections.append(f"    Description: {details['description']}")
+                            
+                            # Tags
+                            if details.get('tags'):
+                                sections.append(f"    Tags: {', '.join(details['tags'])}")
+                            
+                            # Parameters
+                            params = details.get('parameters', [])
+                            if params:
+                                sections.append(f"    Parameters:")
+                                for param in params:
+                                    param_name = param.get('name', 'unknown')
+                                    param_in = param.get('in', 'unknown')
+                                    param_required = ' (required)' if param.get('required') else ''
+                                    param_type = param.get('schema', {}).get('type', 'unknown')
+                                    sections.append(f"      - {param_name} ({param_in}, {param_type}){param_required}")
+                                    if param.get('description'):
+                                        sections.append(f"        {param.get('description')}")
+                            
+                            # Request Body
+                            request_body = details.get('requestBody', {})
+                            if request_body:
+                                sections.append(f"    Request Body:")
+                                content = request_body.get('content', {})
+                                for content_type in content.keys():
+                                    sections.append(f"      Content-Type: {content_type}")
+                                if request_body.get('description'):
+                                    sections.append(f"      {request_body['description']}")
+                            
+                            # Responses
+                            responses = details.get('responses', {})
+                            if responses:
+                                sections.append(f"    Responses:")
+                                for status_code, response in responses.items():
+                                    desc = response.get('description', 'No description')
+                                    sections.append(f"      {status_code}: {desc}")
+                            
+                            sections.append("")
+            
+            # Schemas (if not too many)
+            schemas = spec.get('components', {}).get('schemas', {})
+            if schemas and len(schemas) <= 20:
+                sections.append(f"Data Models ({len(schemas)} schemas):")
+                for schema_name, schema_def in schemas.items():
+                    sections.append(f"  - {schema_name}")
+                    if schema_def.get('description'):
+                        sections.append(f"    {schema_def['description']}")
+                    # List properties
+                    properties = schema_def.get('properties', {})
+                    if properties:
+                        sections.append(f"    Properties: {', '.join(properties.keys())}")
+                sections.append("")
+            
+        except yaml.YAMLError as e:
+            logger.error(f"Failed to parse Swagger YAML for {swagger_doc.service_name}: {e}")
+            sections.append("ERROR: Failed to parse YAML content")
+            sections.append(f"Raw content preview: {swagger_doc.content[:500]}...")
+        except Exception as e:
+            logger.error(f"Unexpected error processing Swagger doc for {swagger_doc.service_name}: {e}")
+            sections.append("ERROR: Failed to process Swagger document")
+        
+        return "\n".join(sections)
 

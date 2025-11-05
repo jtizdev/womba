@@ -193,8 +193,12 @@ OPENAI_API_KEY=sk-...
 # Default project key
 DEFAULT_PROJECT_KEY=PLAT
 
-# AI model selection
-AI_MODEL=gpt-4o
+# AI Model Configuration
+# Use gpt-4o-2024-08-06 for JSON schema support + 16K output tokens
+# Alternative: gpt-4-turbo (max 4096 tokens), gpt-4o-mini (max 16K tokens)
+AI_MODEL=gpt-4o-2024-08-06
+MAX_TOKENS=10000
+TEMPERATURE=0.8
 
 # Feature flags
 ENABLE_RAG=true

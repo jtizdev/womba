@@ -186,6 +186,7 @@ async def index_all_data(
     print("  2. All Jira stories from the project (Stories, Tasks, Bugs)")
     print("  3. All Confluence docs from project spaces")
     print("  4. PlainID developer portal documentation")
+    print("  5. GitLab Swagger/OpenAPI documentation")
     print("\n⏳ Estimated time: 5-15 minutes for large projects...")
     print("=" * 70 + "\n")
     
@@ -197,7 +198,8 @@ async def index_all_data(
         'tests': 0,
         'stories': 0,
         'docs': 0,
-        'external_docs': 0
+        'external_docs': 0,
+        'swagger_docs': 0
     }
     
     # Phase 1: Zephyr Tests
@@ -234,7 +236,7 @@ async def index_all_data(
         print(f"❌ Phase 3 failed: {e}\n")
     
     # Phase 4: External Docs (PlainID)
-    print("\n🌐 [4/4] PHASE 4: Fetching and indexing PlainID documentation...")
+    print("\n🌐 [4/5] PHASE 4: Fetching and indexing PlainID documentation...")
     phase_start = time.time()
     try:
         results['external_docs'] = await indexer.index_external_docs()
@@ -243,6 +245,17 @@ async def index_all_data(
     except Exception as e:
         logger.error(f"Phase 4 failed: {e}")
         print(f"❌ Phase 4 failed: {e}\n")
+    
+    # Phase 5: GitLab Swagger Docs
+    print("\n🔧 [5/5] PHASE 5: Fetching and indexing GitLab Swagger documentation...")
+    phase_start = time.time()
+    try:
+        results['swagger_docs'] = await indexer.index_gitlab_swagger_docs()
+        phase_duration = time.time() - phase_start
+        print(f"✅ Phase 5 complete in {phase_duration:.1f}s: {results['swagger_docs']} swagger docs indexed\n")
+    except Exception as e:
+        logger.error(f"Phase 5 failed: {e}")
+        print(f"❌ Phase 5 failed: {e}\n")
     
     # Final summary
     total_duration = datetime.now() - start_time
@@ -261,11 +274,12 @@ async def index_all_data(
     print(f"  ✓ Jira Stories:       {results['stories']:,} documents")
     print(f"  ✓ Confluence Docs:    {results['docs']:,} documents")
     print(f"  ✓ External Docs:      {results['external_docs']:,} documents")
+    print(f"  ✓ Swagger Docs:       {results['swagger_docs']:,} documents")
     print(f"  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     print(f"  🎯 TOTAL INDEXED:     {results['total']:,} documents")
     print("=" * 70 + "\n")
     
-    manager.record_refresh(project_key, ['index_all', 'tests', 'stories', 'docs', 'external_docs'])
+    manager.record_refresh(project_key, ['index_all', 'tests', 'stories', 'docs', 'external_docs', 'swagger_docs'])
     return results
 
 
@@ -280,7 +294,9 @@ async def index_specific_sources(
         'jira': 'stories',
         'confluence': 'docs',
         'plainid': 'external_docs',
-        'external': 'external_docs'
+        'external': 'external_docs',
+        'gitlab': 'swagger_docs',
+        'swagger': 'swagger_docs'
     }
 
     normalized_sources = []
@@ -302,7 +318,8 @@ async def index_specific_sources(
         'tests': 0,
         'stories': 0,
         'docs': 0,
-        'external_docs': 0
+        'external_docs': 0,
+        'swagger_docs': 0
     }
 
     manager = refresh_manager or RAGRefreshManager()
@@ -329,6 +346,16 @@ async def index_specific_sources(
             logger.error(f"External documentation indexing failed: {exc}")
             print(f"⚠️  External documentation indexing failed: {exc}")
         canonical_to_record.add('external_docs')
+    
+    if any(src in normalized_sources for src in ('gitlab', 'swagger')):
+        print("\n🔧 Fetching and indexing GitLab Swagger documentation...")
+        try:
+            results['swagger_docs'] = await indexer.index_gitlab_swagger_docs()
+            print(f"✅ Indexed {results['swagger_docs']} swagger docs")
+        except Exception as exc:
+            logger.error(f"GitLab Swagger indexing failed: {exc}")
+            print(f"⚠️  GitLab Swagger indexing failed: {exc}")
+        canonical_to_record.add('swagger_docs')
 
     if canonical_to_record:
         manager.record_refresh(project_key, canonical_to_record)
@@ -336,7 +363,7 @@ async def index_specific_sources(
     print("\n" + "=" * 70)
     print("✅ TARGETED INDEXING COMPLETE")
     print("=" * 70)
-    print(f"📊 Results: tests={results['tests']}, stories={results['stories']}, docs={results['docs']}, external={results['external_docs']}")
+    print(f"📊 Results: tests={results['tests']}, stories={results['stories']}, docs={results['docs']}, external={results['external_docs']}, swagger={results['swagger_docs']}")
     print("=" * 70 + "\n")
 
     return results
