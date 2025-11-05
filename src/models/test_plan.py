@@ -12,7 +12,7 @@ from .test_case import TestCase
 
 
 class TestPlanMetadata(BaseModel):
-    """Metadata about the test plan generation."""
+    """Metadata about the test plan generation with reasoning support."""
 
     generated_at: datetime = Field(default_factory=datetime.utcnow, description="Generation timestamp")
     ai_model: str = Field(description="AI model used for generation")
@@ -22,6 +22,12 @@ class TestPlanMetadata(BaseModel):
     integration_test_count: int = Field(default=0, description="Number of integration tests")
     confidence_score: Optional[float] = Field(
         default=None, description="AI confidence score (0-1)"
+    )
+    ai_reasoning: Optional[str] = Field(
+        default=None, description="AI's chain-of-thought reasoning for test generation"
+    )
+    validation_issues: Optional[List[str]] = Field(
+        default=None, description="Validation issues detected during generation"
     )
 
 

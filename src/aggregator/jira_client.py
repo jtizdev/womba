@@ -289,14 +289,15 @@ class JiraClient(AtlassianClient):
         """Fetch a single Jira issue by key using SDK."""
         jira = self._get_jira_sdk_client()
         if not jira:
-            return None
+            raise ValueError("Jira client not configured")
         
         try:
             issue = jira.issue(issue_key)
             return self._parse_sdk_issue(issue)
         except Exception as e:
             logger.error(f"Error fetching issue with SDK: {e}")
-            return None
+            # Re-raise so caller can handle appropriately (404 vs 500)
+            raise
 
     async def get_linked_issues(self, issue_key: str) -> List[JiraStory]:
         """Fetch all issues linked to the given issue using SDK."""

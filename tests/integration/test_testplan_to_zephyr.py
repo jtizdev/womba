@@ -83,8 +83,8 @@ class TestTestPlanToZephyr:
         assert payload["name"] == sample_test_case.title
         assert payload["objective"] == sample_test_case.description
         assert payload["precondition"] == sample_test_case.preconditions
-        assert "testScript" in payload
-        assert len(payload["testScript"]["steps"]) == len(sample_test_case.steps)
+        # Note: testScript is added separately via _add_test_steps, not in initial payload
+        assert "testScript" not in payload  # Steps are added via separate API call
 
     @pytest.mark.integration
     @pytest.mark.asyncio

@@ -26,13 +26,14 @@ class TestJiraToTestPlan:
         """
         # Mock Jira client
         mock_jira_client = mocker.MagicMock()
+        mock_jira_client.get_issue_with_subtasks = mocker.AsyncMock(return_value=(sample_jira_story, []))
         mock_jira_client.get_issue = mocker.AsyncMock(return_value=sample_jira_story)
         mock_jira_client.get_linked_issues = mocker.AsyncMock(return_value=[])
-        mock_jira_client.search_issues = mocker.AsyncMock(return_value=[])
+        mock_jira_client.search_issues = mocker.Mock(return_value=([], 0))
 
         # Mock Anthropic client
         mocker.patch(
-            "src.ai.test_plan_generator.Anthropic",
+            "anthropic.Anthropic",
             return_value=mock_anthropic_client,
         )
 
@@ -72,11 +73,12 @@ class TestJiraToTestPlan:
         linked_story.summary = "OAuth2 implementation"
 
         mock_jira_client = mocker.MagicMock()
+        mock_jira_client.get_issue_with_subtasks = mocker.AsyncMock(return_value=(sample_jira_story, []))
         mock_jira_client.get_issue = mocker.AsyncMock(return_value=sample_jira_story)
         mock_jira_client.get_linked_issues = mocker.AsyncMock(
             return_value=[linked_story]
         )
-        mock_jira_client.search_issues = mocker.AsyncMock(return_value=[])
+        mock_jira_client.search_issues = mocker.Mock(return_value=([], 0))
 
         collector = StoryCollector(jira_client=mock_jira_client)
         context = await collector.collect_story_context("PROJ-123")
