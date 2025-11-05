@@ -7,9 +7,41 @@ AI-powered test generation from Jira stories
 Womba automatically generates comprehensive test cases by:
 1. Collecting context from Jira (story, subtasks, linked issues, comments)
 2. Retrieving related Confluence documentation
+3. Using RAG (Retrieval-Augmented Generation) with ChromaDB for context-aware test generation
+
 ## Quick Start
 
-### Installation
+### Option 1: Docker (Recommended for Production)
+
+**Prerequisites**: Docker and Docker Compose installed
+
+```bash
+# Clone repository
+git clone https://github.com/plainid/womba.git
+cd womba
+
+# Configure environment
+cp env.example .env
+# Edit .env with your credentials
+
+# Start services
+docker-compose up -d
+
+# Verify deployment
+curl http://localhost:8000/health
+
+# Use CLI
+docker exec -it womba-server womba generate PROJ-123
+
+# Use API
+curl -X POST "http://localhost:8000/api/v1/test-plans/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"issue_key": "PROJ-123"}'
+```
+
+**See [docker/README.md](docker/README.md) for complete Docker deployment guide.**
+
+### Option 2: Local Installation
 
 ```bash
 pip install -r requirements-minimal.txt
@@ -57,7 +89,50 @@ python3 womba_cli.py all PLAT-12345
   - Confluence docs (business requirements)
   - Comments (edge cases)
 
+- **RAG-Powered Generation**: ChromaDB-based retrieval for context-aware test generation
+  - Indexes existing test plans
+  - Learns from your testing patterns
+  - Provides consistent, high-quality tests
+
+- **Flexible Access**:
+  - **API Server**: REST API for integration (FastAPI on port 8000)
+  - **CLI**: Command-line interface via `docker exec`
+  - Both in one unified container with shared ChromaDB persistence
+
 - **Clean Output**: Test titles are clear and specific (no generic prefixes)
+
+## Docker Hub Deployment
+
+Womba is available as Docker images for easy deployment:
+
+```bash
+# Pull image from Docker Hub
+docker pull plainid/womba:latest
+
+# Or use docker-compose (recommended)
+docker-compose up -d
+
+# Use API
+curl http://localhost:8000/health
+
+# Use CLI
+docker exec -it womba-server womba generate PROJ-123
+```
+
+**What's included in the container:**
+- ✅ FastAPI server (port 8000) + CLI access
+- ✅ ChromaDB for RAG functionality
+- ✅ All core features (indexing, searching, test plan generation)
+- ✅ Health checks and automatic restarts
+- ✅ Persistent storage for vector database
+- ✅ Production-ready configuration
+
+**Core functionality available:**
+- Generate test plans via API or CLI
+- Index Jira stories and test plans into RAG
+- Search semantic context from ChromaDB
+- Upload test cases to Zephyr Scale
+- Full workflow automation (generate + upload + PR)
 
 ## Configuration Files
 

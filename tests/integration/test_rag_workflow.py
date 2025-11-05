@@ -9,12 +9,28 @@ from pathlib import Path
 import tempfile
 import shutil
 
+from datetime import datetime
+
 from src.ai.rag_store import RAGVectorStore
 from src.ai.context_indexer import ContextIndexer
 from src.ai.rag_retriever import RAGRetriever
 from src.models.story import JiraStory
 from src.models.test_plan import TestPlan
 from src.aggregator.story_collector import StoryContext
+
+
+def create_test_story(key="TEST-123", summary="Test", description="Test", **kwargs):
+    """Helper to create JiraStory with all required fields."""
+    defaults = {
+        "issue_type": "Story",
+        "status": "Open",
+        "priority": "Medium",
+        "reporter": "test@example.com",
+        "created": datetime.fromisoformat("2024-01-01T00:00:00"),
+        "updated": datetime.fromisoformat("2024-01-02T00:00:00")
+    }
+    defaults.update(kwargs)
+    return JiraStory(key=key, summary=summary, description=description, **defaults)
 
 
 @pytest.fixture
@@ -40,7 +56,7 @@ async def test_end_to_end_indexing_and_retrieval():
     
     try:
         # Mock OpenAI embeddings
-        with patch('src.ai.embedding_service.OpenAI') as mock_openai:
+        with patch('openai.OpenAI') as mock_openai:
             mock_client = Mock()
             
             # Create mock embeddings that are similar for similar text
@@ -58,16 +74,15 @@ async def test_end_to_end_indexing_and_retrieval():
             
             # Create store and indexer
             store = RAGVectorStore(collection_path=temp_dir)
-            indexer = ContextIndexer()
-            indexer.store = store
+            from src.ai.indexing.document_indexer import DocumentIndexer
+            doc_indexer = DocumentIndexer(store=store)
+            indexer = ContextIndexer(indexer=doc_indexer)
             
             # Create test story
-            story = JiraStory(
+            story = create_test_story(
                 key="TEST-123",
                 summary="Add login functionality",
                 description="Implement user login with OAuth",
-                issue_type="Story",
-                status="Open",
                 priority="High",
                 components=["Authentication"]
             )
@@ -83,13 +98,10 @@ async def test_end_to_end_indexing_and_retrieval():
             retriever = RAGRetriever()
             retriever.store = store
             
-            query_story = JiraStory(
+            query_story = create_test_story(
                 key="TEST-124",
                 summary="Add authentication features",
-                description="Need OAuth login",
-                issue_type="Story",
-                status="Open",
-                priority="Medium"
+                description="Need OAuth login"
             )
             
             context = await retriever.retrieve_for_story(query_story, "TEST")
@@ -108,7 +120,7 @@ async def test_index_multiple_types():
     temp_dir = tempfile.mkdtemp()
     
     try:
-        with patch('src.ai.embedding_service.OpenAI') as mock_openai:
+        with patch('openai.OpenAI') as mock_openai:
             # Mock OpenAI
             mock_client = Mock()
             mock_response = Mock()
@@ -117,19 +129,13 @@ async def test_index_multiple_types():
             mock_openai.return_value = mock_client
             
             store = RAGVectorStore(collection_path=temp_dir)
-            indexer = ContextIndexer()
-            indexer.store = store
+            from src.ai.indexing.document_indexer import DocumentIndexer
+            doc_indexer = DocumentIndexer(store=store)
+            indexer = ContextIndexer(indexer=doc_indexer)
             
             # Index Jira stories
             stories = [
-                JiraStory(
-                    key="TEST-1",
-                    summary="Story 1",
-                    description="Description 1",
-                    issue_type="Story",
-                    status="Open",
-                    priority="High"
-                )
+                create_test_story(key="TEST-1", summary="Story 1", description="Description 1", priority="High")
             ]
             await indexer.index_jira_stories(stories, "TEST")
             
@@ -174,7 +180,7 @@ async def test_error_handling_empty_collections():
     temp_dir = tempfile.mkdtemp()
     
     try:
-        with patch('src.ai.embedding_service.OpenAI') as mock_openai:
+        with patch('openai.OpenAI') as mock_openai:
             mock_client = Mock()
             mock_openai.return_value = mock_client
             
@@ -182,14 +188,7 @@ async def test_error_handling_empty_collections():
             retriever = RAGRetriever()
             retriever.store = store
             
-            story = JiraStory(
-                key="TEST-123",
-                summary="Test story",
-                description="Test",
-                issue_type="Story",
-                status="Open",
-                priority="Medium"
-            )
+            story = create_test_story(key="TEST-123", summary="Test story", description="Test")
             
             # Should not raise error with empty collections
             context = await retriever.retrieve_for_story(story, "TEST")
@@ -211,7 +210,7 @@ async def test_clear_collections():
     temp_dir = tempfile.mkdtemp()
     
     try:
-        with patch('src.ai.embedding_service.OpenAI') as mock_openai:
+        with patch('openai.OpenAI') as mock_openai:
             mock_client = Mock()
             mock_response = Mock()
             mock_response.data = [Mock(embedding=[0.1] * 1536)]
@@ -219,18 +218,12 @@ async def test_clear_collections():
             mock_openai.return_value = mock_client
             
             store = RAGVectorStore(collection_path=temp_dir)
-            indexer = ContextIndexer()
-            indexer.store = store
+            from src.ai.indexing.document_indexer import DocumentIndexer
+            doc_indexer = DocumentIndexer(store=store)
+            indexer = ContextIndexer(indexer=doc_indexer)
             
             # Add some documents
-            story = JiraStory(
-                key="TEST-123",
-                summary="Test",
-                description="Test",
-                issue_type="Story",
-                status="Open",
-                priority="Medium"
-            )
+            story = create_test_story()
             await indexer.index_jira_stories([story], "TEST")
             
             # Verify indexed

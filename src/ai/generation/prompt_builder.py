@@ -1,6 +1,12 @@
 """
 Prompt builder for constructing AI prompts from context.
 Single Responsibility: Building prompts with RAG, context, and examples.
+
+Refactored to support:
+- Structured JSON output with schema
+- Chain-of-thought reasoning
+- Optimized section ordering
+- Token-efficient construction
 """
 
 from typing import Optional, List, Dict, Any
@@ -8,11 +14,13 @@ from loguru import logger
 
 from src.aggregator.story_collector import StoryContext
 from src.ai.prompts_qa_focused import (
-    USER_FLOW_GENERATION_PROMPT,
-    BUSINESS_CONTEXT_PROMPT,
-    MANAGEMENT_API_CONTEXT,
-    RAG_GROUNDING_PROMPT,
+    SYSTEM_INSTRUCTION,
+    REASONING_FRAMEWORK,
+    GENERATION_GUIDELINES,
+    QUALITY_CHECKLIST,
+    RAG_GROUNDING_INSTRUCTIONS,
     FEW_SHOT_EXAMPLES,
+    TEST_PLAN_JSON_SCHEMA,
 )
 
 
@@ -34,6 +42,15 @@ class PromptBuilder:
             model: Model name for token budget calculation
         """
         self.model = model.lower() if model else "gpt-4o"
+    
+    def get_json_schema(self) -> Dict[str, Any]:
+        """
+        Get the JSON schema for structured output.
+        
+        Returns:
+            JSON schema dict for test plan generation
+        """
+        return TEST_PLAN_JSON_SCHEMA
 
     def build_generation_prompt(
         self,
@@ -43,7 +60,15 @@ class PromptBuilder:
         folder_structure: Optional[list] = None,
     ) -> str:
         """
-        Build complete prompt for test generation.
+        Build complete prompt for test generation with optimized structure.
+        
+        Optimized ordering:
+        1. RAG grounding (if available)
+        2. Few-shot examples (learn patterns first)
+        3. Reasoning framework
+        4. Generation guidelines
+        5. Story context
+        6. Quality checklist
         
         Args:
             context: Story context
@@ -57,39 +82,67 @@ class PromptBuilder:
         main_story = context.main_story
         full_context = context.get("full_context_text", "")
         
-        # Build sections
+        # Build auxiliary sections
         existing_tests_context = self._build_existing_tests_context(main_story, existing_tests, bool(rag_context))
         tasks_context = self._build_tasks_context(context)
         folder_context = self._build_folder_context(folder_structure)
-        figma_context = "(No Figma designs available)"  # TODO: Integrate Figma
         
-        # Build the final prompt
-        prompt = ""
+        # Build prompt in optimized order
+        sections = []
         
-        # Add RAG grounding if available
+        # 1. RAG grounding (if available) - establishes company-specific patterns
         if rag_context:
-            prompt = RAG_GROUNDING_PROMPT + "\n\n" + rag_context + "\n\n"
+            sections.append(RAG_GROUNDING_INSTRUCTIONS)
+            sections.append(rag_context)
         
-        # Add main generation prompt
-        prompt += USER_FLOW_GENERATION_PROMPT.format(
-            business_context=BUSINESS_CONTEXT_PROMPT,
-            management_api_context=MANAGEMENT_API_CONTEXT,
-            context=full_context,
-            existing_tests_context=existing_tests_context,
-            tasks_context=tasks_context,
-            folder_context=folder_context,
-            figma_context=figma_context
-        )
+        # 2. Few-shot examples - learn patterns before applying them
+        sections.append(FEW_SHOT_EXAMPLES)
         
-        # Add few-shot examples
-        prompt = FEW_SHOT_EXAMPLES + "\n\n" + prompt
+        # 3. Reasoning framework - think before generating
+        sections.append(REASONING_FRAMEWORK)
+        
+        # 4. Generation guidelines - rules for creating tests
+        sections.append(GENERATION_GUIDELINES)
+        
+        # 5. Story context - the specific story to test
+        sections.append("\n<story_context>\n")
+        sections.append(f"=== STORY TO TEST ===\n{full_context}")
+        
+        if existing_tests_context:
+            sections.append(f"\n{existing_tests_context}")
+        
+        if tasks_context:
+            sections.append(f"\n{tasks_context}")
+        
+        if folder_context:
+            sections.append(f"\n{folder_context}")
+        
+        sections.append("\n</story_context>\n")
+        
+        # 6. Quality checklist - final validation before returning
+        sections.append(QUALITY_CHECKLIST)
+        
+        # 7. Output instructions
+        sections.append("""
+<output_format>
+Generate your response as a JSON object matching the schema provided.
+Include your reasoning, then the test plan, then validation check.
+Ensure all required fields are populated with realistic values.
+</output_format>
+""")
+        
+        prompt = "\n\n".join(sections)
+        
+        # Log token estimate
+        estimated_tokens = self._estimate_tokens(prompt)
+        logger.info(f"Built prompt: ~{estimated_tokens} tokens ({len(prompt)} chars)")
         
         return prompt
 
     def build_rag_context(self, retrieved_context) -> str:
         """
         Build RAG context section with smart token budgeting.
-        Dynamically adjusts to fit maximum information under API limits.
+        Simplified headers and better token management.
         
         Args:
             retrieved_context: RetrievedContext object from RAG retriever
@@ -101,22 +154,20 @@ class PromptBuilder:
         if "mini" in self.model or "turbo" in self.model:
             # Large context models
             MAX_TOTAL_TOKENS = 190000
-            RESERVED_FOR_PROMPTS = 20000
+            RESERVED_FOR_PROMPTS = 15000  # Reduced reserve (new prompts are shorter)
             RAG_BUDGET = MAX_TOTAL_TOKENS - RESERVED_FOR_PROMPTS
-            logger.info(f"Using large context model ({self.model}): {RAG_BUDGET} tokens available for RAG")
+            logger.info(f"Using large context model ({self.model}): {RAG_BUDGET} tokens for RAG")
         else:
             # Standard models
             MAX_TOTAL_TOKENS = 28000
-            RESERVED_FOR_PROMPTS = 20000
+            RESERVED_FOR_PROMPTS = 8000  # Reduced reserve
             RAG_BUDGET = MAX_TOTAL_TOKENS - RESERVED_FOR_PROMPTS
-            logger.info(f"Using standard model ({self.model}): {RAG_BUDGET} tokens available for RAG")
+            logger.info(f"Using standard model ({self.model}): {RAG_BUDGET} tokens for RAG")
         
         sections = []
-        sections.append("=" * 80)
-        sections.append("=== RETRIEVED COMPANY-SPECIFIC CONTEXT (RAG) ===")
-        sections.append("=" * 80)
-        sections.append("\nThe following context has been retrieved from your company's actual data.")
-        sections.append("Use this as your PRIMARY reference for generating tests.\n")
+        sections.append("<retrieved_context>")
+        sections.append("=== COMPANY DATA (Retrieved from RAG) ===")
+        sections.append("This is your PRIMARY reference for test generation.\n")
         
         # Track token usage
         header_text = "\n".join(sections)
@@ -139,12 +190,12 @@ class PromptBuilder:
         tokens_remaining = self._add_external_docs_section(sections, retrieved_context, tokens_remaining)
         
         # Footer
-        sections.append("\n" + "=" * 80)
-        sections.append(f"END OF RETRIEVED CONTEXT - Token budget used: ~{RAG_BUDGET - tokens_remaining}/{RAG_BUDGET}")
-        sections.append("=" * 80 + "\n")
+        sections.append(f"\n=== END RETRIEVED CONTEXT ===")
+        sections.append(f"Token budget: {RAG_BUDGET - tokens_remaining}/{RAG_BUDGET} used")
+        sections.append("</retrieved_context>\n")
         
         result = "\n".join(sections)
-        logger.info(f"RAG context built: {self._estimate_tokens(result)} tokens, {len(result)} chars")
+        logger.info(f"RAG context: {self._estimate_tokens(result)} tokens, {len(result)} chars")
         return result
 
     def _build_existing_tests_context(self, main_story, existing_tests: Optional[list], has_rag: bool) -> str:
@@ -311,18 +362,18 @@ class PromptBuilder:
         return tokens_remaining
 
     def _add_external_docs_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add external docs (PlainID API) section with priority budgeting."""
+        """Add external API documentation section with priority budgeting."""
         if not retrieved_context.similar_external_docs or tokens_remaining < 2000:
             return tokens_remaining
         
-        sections.append("\n--- PLAINID API DOCUMENTATION (Use exact endpoints/payloads) ---\n")
-        sections.append("CRITICAL REQUIREMENTS FOR JSON PAYLOADS:")
-        sections.append("1. Copy EXACT JSON structures from these PlainID docs - do NOT modify or simplify")
-        sections.append("2. Include ALL required fields shown in the documentation")
-        sections.append("3. Use the actual field names and data types from the examples")
-        sections.append("4. If a JSON example is shown, it MUST appear in your test steps verbatim")
-        sections.append("5. NEVER write generic placeholders like '<token>' or 'Bearer <value>'")
-        sections.append("6. If you cannot find the exact JSON, explicitly state 'See PlainID docs for payload structure' instead of inventing one\n")
+        sections.append("\n--- EXTERNAL API DOCUMENTATION (Use exact endpoints/payloads) ---\n")
+        sections.append("Requirements for test data:")
+        sections.append("• Copy EXACT JSON structures from documentation - do NOT modify")
+        sections.append("• Include ALL required fields shown in examples")
+        sections.append("• Use actual field names and data types")
+        sections.append("• If JSON example shown, include it verbatim in test steps")
+        sections.append("• NO generic placeholders like '<token>' or 'Bearer <value>'")
+        sections.append("• If exact payload unavailable: state 'Reference [doc name] for payload'\n")
         
         tokens_per_api_doc = min(tokens_remaining // len(retrieved_context.similar_external_docs[:5]), 4000)
         

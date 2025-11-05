@@ -401,3 +401,82 @@ def clear_rag_database(confirm: bool = False) -> None:
     store.clear_all_collections()
     print("✅ RAG database cleared")
 
+
+def view_rag_documents(
+    collection: str,
+    limit: int = 10,
+    project_key: Optional[str] = None,
+    show_full: bool = False
+) -> None:
+    """
+    View documents in a RAG collection.
+    
+    Args:
+        collection: Collection name to view
+        limit: Number of documents to show
+        project_key: Filter by project key
+        show_full: Show full document content
+    """
+    store = RAGVectorStore()
+    
+    print(f"\n📚 Viewing {collection} (limit: {limit})")
+    if project_key:
+        print(f"   Filtered by project: {project_key}")
+    print("=" * 60)
+    
+    try:
+        # Get collection stats first
+        stats = store.get_all_stats()
+        collection_stats = stats.get(collection, {})
+        
+        if not collection_stats.get('exists'):
+            print(f"❌ Collection '{collection}' does not exist")
+            print("\nAvailable collections:")
+            for name, stat in stats.items():
+                if isinstance(stat, dict) and stat.get('exists'):
+                    print(f"  - {name}: {stat.get('count', 0)} documents")
+            return
+        
+        total_count = collection_stats.get('count', 0)
+        print(f"Total documents in {collection}: {total_count}\n")
+        
+        # Query the collection
+        # Note: ChromaDB's get() doesn't support filtering by metadata directly in a simple way
+        # We'll get all and filter in Python if needed
+        collection_obj = store.chroma_client.get_collection(name=collection)
+        
+        # Get documents with limit
+        results = collection_obj.get(
+            limit=limit,
+            include=['documents', 'metadatas']
+        )
+        
+        if not results['ids']:
+            print("No documents found")
+            return
+        
+        # Display documents
+        for i, (doc_id, doc, metadata) in enumerate(zip(results['ids'], results['documents'], results['metadatas']), 1):
+            # Filter by project_key if specified
+            if project_key and metadata.get('project_key') != project_key:
+                continue
+                
+            print(f"\n📄 Document {i}/{len(results['ids'])}")
+            print(f"   ID: {doc_id}")
+            if metadata:
+                for key, value in metadata.items():
+                    print(f"   {key}: {value}")
+            
+            if show_full:
+                print(f"\n   Content:\n   {doc}\n")
+            else:
+                preview = doc[:200] + "..." if len(doc) > 200 else doc
+                print(f"   Preview: {preview}\n")
+            print("-" * 60)
+        
+        print(f"\n✅ Displayed {min(limit, len(results['ids']))} documents")
+        
+    except Exception as e:
+        logger.error(f"Failed to view RAG documents: {e}")
+        print(f"❌ Error viewing documents: {e}")
+

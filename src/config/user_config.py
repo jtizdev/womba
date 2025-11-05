@@ -81,6 +81,7 @@ class WombaConfig:
             "zephyr_api_token": self.zephyr_api_token,
             "project_key": self.project_key,
             "openai_api_key": self.openai_api_key,
+            "anthropic_api_key": self.anthropic_api_key,
             "ai_model": self.ai_model,
             "womba_api_url": self.womba_api_url,
             "womba_api_key": self.womba_api_key,

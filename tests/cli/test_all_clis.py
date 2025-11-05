@@ -28,12 +28,16 @@ class TestCLIContract:
         )
         return result.returncode, result.stdout, result.stderr
     
+    @pytest.mark.integration
     def test_python_cli_generate(self):
         """Test Python CLI: womba generate"""
-        env = {
+        import os
+        env = os.environ.copy()
+        env.update({
             "WOMBA_API_URL": WOMBA_API_URL,
             "WOMBA_API_KEY": WOMBA_API_KEY,
-        }
+            "PYTHONPATH": str(Path.cwd())
+        })
         
         returncode, stdout, stderr = self._run_cli(
             "python3",
