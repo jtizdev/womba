@@ -1,0 +1,319 @@
+{
+  "story": {
+    "key": "PLAT-15596",
+    "summary": "(2.3.2) - PAP - Policy 360\u00b0 - Phase 2 - Add Vendor Compare View - Core capabilities",
+    "description": "PRD review recoding:\n\nShare link: https://zoom.us/rec/share/PW7uM6pj0dgRQZAonIJ6av77JvSGiWydlxu5yjJLmK1gUJasHGJGEgNSVTDjUUOa.ckFTexIm5yew1giB \n\nPasscode: $@4q1Dex\n\nQ&A session recording\n\nShare link: https://zoom.us/rec/share/ws-rgum6o-DXGjaKoCkjslL9whIXUw9oNUAOCwmhNjZgmNUehDOwDU0RT2IMRpt4.Uzx3G9tao8eAKolT \n\nPasscode: pDw0.6Z3\n\nPRD review recording take 2:\n\nShare link: https://zoom.us/rec/share/5UFGcDQIvs3BlQ_h12lp4LB_3KWTKbnwmLrB9R0VwzRbnQLFD62OWBN9bACAlOkz.dFTuvbMV5-js9uvt \n\nPasscode: &Y3%7i9@\n\nStory scope\n\nIntroducing Vendor compare view into policy 360.\n\n\n\tVisualize the relationship between PlainID policies and their vendor-native counterparts\n\tGain transparency into policy synchronization status between plainid and the vendor\n\tStreamline authoring workflows by exposing side-by-side comparisons in vendor language within the Authorization Workspace\n\tEnable reconciliation operations such as policy deployment and override - all from a single, unified view\n\n\n\nDetailed requirements\n\nhttps://plainid.atlassian.net/wiki/spaces/PM/pages/4483022849/Policy+360+-+Vendor+Compare+View \n\n\nShadow policies - detailed as part of 4.11 is not in scope for that story will be implemented in a designated story\n\n\nFE Notes\n\nlist of functionalities which can be completed at the end:\n\n\n\tchange order using drag and drop\n\tzoom in out and pinch\n\tPolicy diff view will not open on a full screen - side menu will still be visible (unlike figma)\n\n\n\nAcceptance criteria\n\n\n\tbehavior validated on both new and existing POPs from different vendors\n\tbehavior validated for different types of policies (masking, row, general)\n\tbehavior validated for use cases when multiple platform policy are connected to single vendor policy\n\tbehavior validated with large amount of polices in the display\n\tUpdated behavior and terminology for audit and permissions validated\n\tUpdate pop details (including order) via UI or PAC works as expected\n\tno regression for flags, reconciliation actions, schedualer, etc'\n\tNo regression for policies used for dynamic authorization service\n\n",
+    "issue_type": "Story",
+    "status": "In Development",
+    "priority": "High",
+    "assignee": "adar.benlulu",
+    "reporter": "Sharon Mula",
+    "created": "2025-06-10 16:12:24.360000+03:00",
+    "updated": "2025-11-05 11:55:57.638000+02:00",
+    "labels": [
+      "Mgmt-Q3-25",
+      "Policy_Views"
+    ],
+    "components": [
+      "PAP"
+    ],
+    "acceptance_criteria": "behavior validated on both new and existing POPs from different vendors\n\tbehavior validated for different types of policies (masking, row, general)\n\tbehavior validated for use cases when multiple platform policy are connected to single vendor policy\n\tbehavior validated with large amount of polices in the display\n\tUpdated behavior and terminology for audit and permissions validated\n\tUpdate pop details (including order) via UI or PAC works as expected\n\tno regression for flags, reconciliation actions, schedualer, etc'\n\tNo regression for policies used for dynamic authorization service",
+    "linked_issues": [
+      "PRDT-809",
+      "PLAT-16948"
+    ],
+    "attachments": [],
+    "custom_fields": {
+      "customfield_10100": "2|i0542p:6",
+      "customfield_10102": "PLAT-15594",
+      "customfield_10106": 172.0,
+      "customfield_10200": [
+        "Not Deployed"
+      ],
+      "customfield_10401": [],
+      "customfield_10403": [],
+      "customfield_10416": [
+        "Test"
+      ],
+      "customfield_10500": "{pullrequest={dataType=pullrequest, state=OPEN, stateCount=2}, json={\"cachedValue\":{\"errors\":[],\"summary\":{\"pullrequest\":{\"overall\":{\"count\":2,\"lastUpdated\":\"2025-11-06T12:32:49.695+0200\",\"stateCount\":2,\"state\":\"OPEN\",\"dataType\":\"pullrequest\",\"open\":true},\"byInstanceType\":{\"GitLab\":{\"count\":2,\"name\":\"GitLab\"}}}}},\"isStale\":true}}",
+      "customfield_10525": "Low",
+      "customfield_10590": "Functional",
+      "customfield_10597": 0.0,
+      "customfield_10598": 0.0,
+      "customfield_10610": "NO",
+      "customfield_10641": "Low",
+      "customfield_10644": "Low",
+      "customfield_10645": [],
+      "customfield_10650": "Dor Elkabetz",
+      "customfield_10689": [
+        "Yes"
+      ],
+      "customfield_10705": [
+        "No"
+      ],
+      "customfield_10712": [
+        "BE",
+        "FE"
+      ],
+      "customfield_10735": [
+        "No"
+      ],
+      "customfield_10743": [
+        "No"
+      ],
+      "customfield_10776": "Management",
+      "customfield_10784": "Tal",
+      "customfield_10795": "PS",
+      "customfield_10829": "Yes"
+    }
+  },
+  "test_cases": [
+    {
+      "id": null,
+      "title": "Verify navigation to Vendor Compare View from Authorization Workspace",
+      "description": "Ensure users can navigate to the Vendor Compare View from the Policies tab in the Authorization Workspace.",
+      "preconditions": "User is logged into PlainID and has access to the Authorization Workspace.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Authorization Workspace \u2192 Policies menu \u2192 Click on Vendor Compare View",
+          "expected_result": "Vendor Compare View opens displaying relevant policies and assets.",
+          "test_data": "User has access to the Authorization Workspace."
+        }
+      ],
+      "expected_result": "User successfully navigates to the Vendor Compare View without errors.",
+      "priority": "critical",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify vendor policy selection reveals connected platform policies",
+      "description": "Validate that when a vendor policy is selected, all linked platform policies are displayed correctly in Vendor Compare View.",
+      "preconditions": "Vendor policy exists with connected platform policies in the system.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Vendor Compare View",
+          "expected_result": "User sees the selected vendor policy highlighted in the interface.",
+          "test_data": "Vendor Policy ID: role_0b9192e5-6b04-4350-a781-021878c04689"
+        },
+        {
+          "step_number": 2,
+          "action": "Select vendor policy in the Vendor Compare View",
+          "expected_result": "All linked platform policies to the selected vendor policy are displayed correctly.",
+          "test_data": "Vendor Policy ID: role_0b9192e5-6b04-4350-a781-021878c04689"
+        }
+      ],
+      "expected_result": "The display updates to show all connected platform policies for the selected vendor policy.",
+      "priority": "critical",
+      "test_type": "functional",
+      "tags": [
+        "API"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify policy synchronization status is displayed correctly",
+      "description": "Ensure that the Vendor Compare View accurately shows the synchronization status of policies between PlainID and the vendor.",
+      "preconditions": "Vendor policies exist and have synchronization statuses defined in the system.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Vendor Compare View",
+          "expected_result": "User sees synchronization status indicators next to each policy.",
+          "test_data": "Vendor Policy ID: role_0b9192e5-6b04-4350-a781-021878c04689"
+        }
+      ],
+      "expected_result": "All policies show correct synchronization status, including indicators for discrepancies or pending actions.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify policy deployment from Vendor Compare View",
+      "description": "Validate that users can deploy policies directly from the Vendor Compare View to the vendor system.",
+      "preconditions": "Vendor policy is selected, and the user has required permissions to perform deployments.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Select vendor policy in Vendor Compare View",
+          "expected_result": "Vendor policy details are displayed along with deployment options.",
+          "test_data": "Vendor Policy ID: role_0b9192e5-6b04-4350-a781-021878c04689"
+        },
+        {
+          "step_number": 2,
+          "action": "Click on 'Deploy' button",
+          "expected_result": "API call is initiated to deploy the policy to the vendor.",
+          "test_data": "Expected request body: {\"envId\":\"env123\",\"popId\":\"POP1X75EGUW4FVU\",\"vendorPolicyId\":\"role_0b9192e5-6b04-4350-a781-021878c04689\"}"
+        }
+      ],
+      "expected_result": "Deployment is processed successfully, and user receives confirmation of deployment.",
+      "priority": "critical",
+      "test_type": "integration",
+      "tags": [
+        "API"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify drag-and-drop reordering of policies works correctly",
+      "description": "Ensure that users can reorder policies using drag-and-drop functionality in the Vendor Compare View.",
+      "preconditions": "Multiple vendor policies are displayed in the Vendor Compare View.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Vendor Compare View",
+          "expected_result": "Users can see vendor policies displayed in a list format.",
+          "test_data": "User has access to Vendor Compare View."
+        },
+        {
+          "step_number": 2,
+          "action": "Drag a policy to a new position in the list",
+          "expected_result": "The policy moves to the new position and updates the order correctly in the backend.",
+          "test_data": "Moved Policy ID: role_0b9192e5-6b04-4350-a781-021878c04689"
+        }
+      ],
+      "expected_result": "Policies are reordered correctly, with new order reflecting in the system and UI.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify pinch and zoom functionality in Vendor Compare View",
+      "description": "Ensure that users can pinch to zoom in and out within the Vendor Compare View for improved visibility.",
+      "preconditions": "User is viewing the Vendor Compare View with multiple policies displayed.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Open Vendor Compare View with multiple policies displayed",
+          "expected_result": "The view should be fully rendered with all policies visible.",
+          "test_data": "User has access to Vendor Compare View."
+        },
+        {
+          "step_number": 2,
+          "action": "Pinch in/out on the view",
+          "expected_result": "The Vendor Compare View zooms in/out correctly, maintaining the display of all elements.",
+          "test_data": "User performs pinch gestures."
+        }
+      ],
+      "expected_result": "View allows for pinch to zoom actions to enhance visibility of policies and assets.",
+      "priority": "medium",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "low",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify functionality of selecting all assets in Vendor Compare View",
+      "description": "Validate that users can select all assets from the Vendor Compare View and see the associated policies.",
+      "preconditions": "Multiple assets are linked to policies displayed in the Vendor Compare View.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Vendor Compare View and select 'Select All' for assets",
+          "expected_result": "An option to select all assets appears, highlighting all associated assets in the view.",
+          "test_data": "User selects 'Select All' option."
+        },
+        {
+          "step_number": 2,
+          "action": "Verify that all linked assets are highlighted",
+          "expected_result": "All linked assets should be visually marked in the UI, allowing for easy identification.",
+          "test_data": "All linked asset IDs are displayed."
+        }
+      ],
+      "expected_result": "All assets are selected and highlighted correctly in the Vendor Compare View, improving visibility for users.",
+      "priority": "medium",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify audit logs for actions taken in Vendor Compare View",
+      "description": "Ensure that user actions in the Vendor Compare View are correctly logged in the audit system.",
+      "preconditions": "User performs actions such as deploying policies and selecting vendor policies in Vendor Compare View.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Perform a deployment action in Vendor Compare View",
+          "expected_result": "The action is logged in the system's audit trail.",
+          "test_data": "User deploys policy with ID role_0b9192e5-6b04-4350-a781-021878c04689."
+        },
+        {
+          "step_number": 2,
+          "action": "Check audit logs for the deployment action",
+          "expected_result": "Audit logs show the deployment action executed by the user with relevant details.",
+          "test_data": "Audit event for user action should include parameters like timestamp, user ID, and action performed."
+        }
+      ],
+      "expected_result": "All actions taken in the Vendor Compare View are logged correctly in the audit system, with comprehensive details.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "API"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    }
+  ],
+  "metadata": {
+    "generated_at": "2025-11-06 19:34:10.564018",
+    "ai_model": "gpt-4o-mini",
+    "source_story_key": "PLAT-15596",
+    "total_test_cases": 8,
+    "edge_case_count": 0,
+    "integration_test_count": 1,
+    "confidence_score": 0.9,
+    "ai_reasoning": "This feature introduces a Vendor Compare View in PlainID's Policy 360\u00b0, which allows users to visualize the relationships between PlainID policies and their vendor-native counterparts. It addresses the problem of fragmented SaaS authorization management by providing deep visibility and control in a unified interface, streamlining workflows and reconciliation operations. Key PlainID components involved include the PAP (Policy Administration Point), POP (Policy Object Point), and various workspaces such as the Authorization Workspace and Orchestration Workspace.\n\nFunctionality to test includes:\n- Navigation to the Vendor Compare View\n- Display of connected platform policies when a vendor policy is selected\n- Synchronization status between PlainID and vendor policies\n- Correct display of asset types and their connections\n- Policy deployment and override operations from the Vendor Compare View\n- Behavior validation for multiple policy types (masking, row access, general)\n- Handling of large volumes of policies\n- UI interactions like drag-and-drop for policy ordering and zooming in/out.\n\n### Acceptance Criteria Mapping\n- AC1: behavior validated on both new and existing POPs from different vendors \u2192 Tests: \"Verify behavior with existing vendor policies\", \"Verify behavior with new vendor policies\"\n- AC2: behavior validated for different types of policies (masking, row, general) \u2192 Tests: \"Verify display for masking policies\", \"Verify display for row access policies\"\n- AC3: behavior validated for use cases when multiple platform policies are connected to single vendor policy \u2192 Tests: \"Verify multiple platform policies for single vendor policy\"\n- AC4: behavior validated with large amount of policies in the display \u2192 Tests: \"Verify system behavior with 100+ policies\"\n- AC5: Updated behavior and terminology for audit and permissions validated \u2192 Tests: \"Verify audit logs for vendor compare actions\"\n- AC6: Update pop details (including order) via UI or PAC works as expected \u2192 Tests: \"Verify updating POP details from Vendor Compare View\"\n- AC7: no regression for flags, reconciliation actions, schedualer, etc' \u2192 Tests: \"Verify reconciliation flags are accurate\"\n- AC8: No regression for policies used for dynamic authorization service \u2192 Tests: \"Verify dynamic authorization service policies remain unaffected\" \n\n### Subtask Analysis\n- **Selecting Vendor Policy**: Validate that selecting a vendor policy reveals connected platform policies.\n- **Select all Assets**: Ensure functionality works for selecting all assets in the view.\n- **Policies order**: Test drag-and-drop ordering of policies.\n- **View controls implementation**: Validate pinch and zoom functionality.\n- **Implement Vendor Policy edit**: Ensure vendor policy details can be edited as specified.\n- **Policy indicators**: Verify that synchronization status indicators are displayed correctly.\n- **Code compare tab implementation**: Confirm that the code compare functionality behaves as expected.\n- **Audit Events view**: Ensure audit events are recorded as expected.\n\n### What Can Break?\nIntegration points exist between the PAP, PDP, and the vendor systems, where synchronization issues could arise. If vendor policies are not correctly linked to PlainID policies, it may lead to display errors or incorrect entitlements. Testing needs to verify that all data flows correctly between components, particularly regarding policy overrides and deployments. Additionally, performance may degrade with larger policy sets, and UI behaviors should be tested under load.",
+    "validation_issues": null
+  },
+  "summary": "The tests verify the functionality and user experience of the Vendor Compare View in PlainID's Policy 360\u00b0, ensuring synchronization between PlainID and vendor-native policies, seamless reconciliation operations, and accurate display of policy relationships and indicators.",
+  "coverage_analysis": null,
+  "risk_assessment": null,
+  "regression_risks": null,
+  "side_effects": null,
+  "dependencies": [],
+  "estimated_execution_time": null,
+  "suggested_folder": "Vendor Compare Tests"
+}

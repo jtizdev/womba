@@ -2,7 +2,7 @@
   "story": {
     "key": "PLAT-16698",
     "summary": "(1.8) - PORCH - Generic - Add table\\view full path to right panel",
-    "description": "<jira.resources.PropertyHolder object at 0x10b307230>",
+    "description": "<jira.resources.PropertyHolder object at 0x128be35f0>",
     "issue_type": "Story",
     "status": "Product Done",
     "priority": "Medium",
@@ -70,195 +70,245 @@
   "test_cases": [
     {
       "id": null,
-      "title": "Verify full path for table displays in the right panel",
-      "description": "Validate that the full path (Catalog/DB/Schema) for a table is displayed correctly in the right panel when selected.",
-      "preconditions": "A table named 'Sales' exists in the 'Finance' schema under the 'MainDB' catalog.",
+      "title": "Verify full path is displayed for existing tables",
+      "description": "Ensure that the full path for an existing table is correctly displayed in the right panel of the POP interface.",
+      "preconditions": "User is logged into the system and has navigation to the right panel. Table 'SalesData' exists in the database with a full path of 'Catalog/DB/SalesData'.",
       "steps": [
         {
           "step_number": 1,
-          "action": "Select table 'Sales' from the left panel",
-          "expected_result": "The right panel updates to show the 'Sales' table details with the full path: 'MainDB/Finance/Sales'",
-          "test_data": "{\"table_name\": \"Sales\", \"schema\": \"Finance\", \"catalog\": \"MainDB\"}"
+          "action": "Navigate to the POP main interface and select the right panel.",
+          "expected_result": "The right panel is displayed correctly.",
+          "test_data": "None"
         },
         {
           "step_number": 2,
-          "action": "Verify the displayed path in the right panel",
-          "expected_result": "The displayed path is exactly 'MainDB/Finance/Sales' in the right panel",
-          "test_data": "{\"expected_path\": \"MainDB/Finance/Sales\"}"
+          "action": "Locate the table 'SalesData' in the right panel.",
+          "expected_result": "The table 'SalesData' appears with its full path 'Catalog/DB/SalesData'.",
+          "test_data": "None"
         }
       ],
-      "expected_result": "Full path is displayed correctly for the table in the right panel",
+      "expected_result": "The full path displays correctly for existing tables in the right panel.",
       "priority": "critical",
       "test_type": "functional",
       "tags": [
         "UI",
-        "TableView"
+        "POP"
       ],
       "estimated_time": null,
       "automation_candidate": true,
-      "risk_level": "high",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify full path for view displays in the right panel",
-      "description": "Validate that the full path (Catalog/DB/Schema) for a view is displayed correctly in the right panel when selected.",
-      "preconditions": "A view named 'MonthlyReport' exists in the 'Finance' schema under the 'MainDB' catalog.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Select view 'MonthlyReport' from the left panel",
-          "expected_result": "The right panel updates to show the 'MonthlyReport' view details with the full path: 'MainDB/Finance/MonthlyReport'",
-          "test_data": "{\"view_name\": \"MonthlyReport\", \"schema\": \"Finance\", \"catalog\": \"MainDB\"}"
-        },
-        {
-          "step_number": 2,
-          "action": "Verify the displayed path in the right panel",
-          "expected_result": "The displayed path is exactly 'MainDB/Finance/MonthlyReport' in the right panel",
-          "test_data": "{\"expected_path\": \"MainDB/Finance/MonthlyReport\"}"
-        }
-      ],
-      "expected_result": "Full path is displayed correctly for the view in the right panel",
-      "priority": "critical",
-      "test_type": "functional",
-      "tags": [
-        "UI",
-        "TableView"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "high",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify integration with existing user interface components",
-      "description": "Ensure the full path display integrates properly with existing table/view selection workflows in the right panel.",
-      "preconditions": "User is logged into the platform with access to the 'MainDB' catalog.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Select 'MainDB' catalog from the left panel",
-          "expected_result": "The right panel displays all tables/views available in 'MainDB'",
-          "test_data": "{\"catalog\": \"MainDB\"}"
-        },
-        {
-          "step_number": 2,
-          "action": "Select a table and view from the displayed options",
-          "expected_result": "The right panel updates to show the selected table/view and its full path",
-          "test_data": "{\"selected_item\": \"Sales\"}"
-        }
-      ],
-      "expected_result": "Full paths are displayed correctly after selecting from different components",
-      "priority": "high",
-      "test_type": "integration",
-      "tags": [
-        "UI",
-        "Integration"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify user receives error message when selecting non-existent table/view",
-      "description": "Check that the user is informed with an error when attempting to select a table/view that does not exist.",
-      "preconditions": "User is logged in and no item named 'FakeTable' exists in the 'MainDB' catalog.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Attempt to select 'FakeTable' from the left panel",
-          "expected_result": "Error message displayed: 'Table/View not found'",
-          "test_data": "{\"table_name\": \"FakeTable\", \"catalog\": \"MainDB\"}"
-        }
-      ],
-      "expected_result": "User is alerted with an appropriate error message when selecting a non-existent item",
-      "priority": "high",
-      "test_type": "negative",
-      "tags": [
-        "ErrorHandling"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify the full path display respects character limits",
-      "description": "Ensure the full path displayed does not exceed character limits as outlined in company guidelines.",
-      "preconditions": "A table named 'VeryLongTableNameThatExceedsNormalLength' exists in the 'Finance' schema under the 'MainDB' catalog.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Select table 'VeryLongTableNameThatExceedsNormalLength' from the left panel",
-          "expected_result": "The right panel shows an abbreviated or truncated full path if it exceeds character limits",
-          "test_data": "{\"table_name\": \"VeryLongTableNameThatExceedsNormalLength\", \"schema\": \"Finance\", \"catalog\": \"MainDB\"}"
-        }
-      ],
-      "expected_result": "The full path is displayed within character limits and handled appropriately",
-      "priority": "medium",
-      "test_type": "edge_case",
-      "tags": [
-        "UI",
-        "EdgeCase"
-      ],
-      "estimated_time": null,
-      "automation_candidate": false,
       "risk_level": "low",
       "related_existing_tests": []
     },
     {
       "id": null,
-      "title": "Verify full path updates correctly after schema change",
-      "description": "Validate that the full path in the right panel updates accurately when the schema of a table/view changes.",
-      "preconditions": "A table 'Sales' exists in the 'Finance' schema under 'MainDB'.",
+      "title": "Verify full path is displayed for existing views",
+      "description": "Ensure that the full path for an existing view is correctly displayed in the right panel of the POP interface.",
+      "preconditions": "User is logged into the system and has access to the right panel. View 'DailySalesView' exists in the database with a full path of 'Catalog/DB/DailySalesView'.",
       "steps": [
         {
           "step_number": 1,
-          "action": "Change the schema of 'Sales' from 'Finance' to 'SalesData' in the database.",
-          "expected_result": "Right panel should reflect the updated path to 'MainDB/SalesData/Sales' after the change",
-          "test_data": "{\"old_schema\": \"Finance\", \"new_schema\": \"SalesData\", \"table_name\": \"Sales\", \"catalog\": \"MainDB\"}"
+          "action": "Navigate to the POP main interface and select the right panel.",
+          "expected_result": "The right panel is displayed correctly.",
+          "test_data": "None"
         },
         {
           "step_number": 2,
-          "action": "Select table 'Sales' again",
-          "expected_result": "The right panel shows the updated full path: 'MainDB/SalesData/Sales'",
-          "test_data": "{\"table_name\": \"Sales\"}"
+          "action": "Locate the view 'DailySalesView' in the right panel.",
+          "expected_result": "The view 'DailySalesView' appears with its full path 'Catalog/DB/DailySalesView'.",
+          "test_data": "None"
         }
       ],
-      "expected_result": "Full path reflects the updated schema correctly in the right panel",
+      "expected_result": "The full path displays correctly for existing views in the right panel.",
+      "priority": "critical",
+      "test_type": "functional",
+      "tags": [
+        "UI",
+        "POP"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "low",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify error handling when table path is missing",
+      "description": "Verify that an appropriate message is shown when a table's full path is not available in the backend.",
+      "preconditions": "User is logged into the system and has access to the right panel. Table 'MissingTable' does not have an associated path in the database.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to the POP main interface and select the right panel.",
+          "expected_result": "The right panel is displayed correctly.",
+          "test_data": "None"
+        },
+        {
+          "step_number": 2,
+          "action": "Locate the table 'MissingTable' in the right panel.",
+          "expected_result": "An error message is displayed indicating path is unavailable for 'MissingTable'.",
+          "test_data": "None"
+        }
+      ],
+      "expected_result": "User receives an appropriate error message when the table path is missing.",
+      "priority": "high",
+      "test_type": "negative",
+      "tags": [
+        "UI",
+        "POP"
+      ],
+      "estimated_time": null,
+      "automation_candidate": false,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify UI updates correctly after data refresh",
+      "description": "Check that the full paths in the right panel update correctly after a data refresh action is performed.",
+      "preconditions": "User is logged into the system, has access to the right panel, and initiates a data refresh. 'SalesData' exists with a full path of 'Catalog/DB/SalesData'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to the POP main interface and select the right panel.",
+          "expected_result": "The right panel is displayed correctly.",
+          "test_data": "None"
+        },
+        {
+          "step_number": 2,
+          "action": "Initiate a data refresh in the POP interface.",
+          "expected_result": "The data refresh is processed without errors.",
+          "test_data": "None"
+        },
+        {
+          "step_number": 3,
+          "action": "Review the right panel for the 'SalesData' table.",
+          "expected_result": "The table 'SalesData' appears with its full path 'Catalog/DB/SalesData'.",
+          "test_data": "None"
+        }
+      ],
+      "expected_result": "The right panel correctly reflects updated table paths after a data refresh.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI",
+        "POP"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "low",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify full path display for newly created tables",
+      "description": "Ensure that newly created tables display their full path in the right panel immediately after creation.",
+      "preconditions": "User is logged into the system and has permission to create tables. A new table 'NewTable' is created with a path 'Catalog/DB/NewTable'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Create a new table 'NewTable' via the POP interface with specified full path.",
+          "expected_result": "New table is created successfully without errors.",
+          "test_data": "{\"table_name\": \"NewTable\", \"full_path\": \"Catalog/DB/NewTable\"}"
+        },
+        {
+          "step_number": 2,
+          "action": "Navigate to the right panel and locate 'NewTable'.",
+          "expected_result": "The new table 'NewTable' appears with its full path 'Catalog/DB/NewTable'.",
+          "test_data": "None"
+        }
+      ],
+      "expected_result": "Newly created tables display their full path correctly in the right panel.",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI",
+        "POP"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "low",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify display format consistency for paths",
+      "description": "Check that all displayed paths in the right panel follow the same format for consistency.",
+      "preconditions": "User is logged into the system and has tables/views with various paths in the database.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to the right panel and list all tables/views.",
+          "expected_result": "All tables/views are displayed without errors.",
+          "test_data": "None"
+        },
+        {
+          "step_number": 2,
+          "action": "Verify the format of each displayed path for consistency.",
+          "expected_result": "All paths follow the format 'Catalog/DB/ObjectName'.",
+          "test_data": "None"
+        }
+      ],
+      "expected_result": "All displayed paths in the right panel maintain format consistency.",
       "priority": "medium",
       "test_type": "functional",
       "tags": [
         "UI",
-        "Update"
+        "POP"
+      ],
+      "estimated_time": null,
+      "automation_candidate": false,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify backward compatibility with existing paths",
+      "description": "Ensure existing tables and views retain their display paths after the enhancement.",
+      "preconditions": "User is logged into the system and has access to the right panel. Existing table 'OldData' has path 'Catalog/DB/OldData'.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to the right panel and locate 'OldData'.",
+          "expected_result": "The right panel is displayed correctly.",
+          "test_data": "None"
+        },
+        {
+          "step_number": 2,
+          "action": "Check the path for 'OldData'.",
+          "expected_result": "The existing table 'OldData' appears with its full path 'Catalog/DB/OldData'.",
+          "test_data": "None"
+        }
+      ],
+      "expected_result": "Existing paths are displayed correctly without disruption after enhancement.",
+      "priority": "medium",
+      "test_type": "regression",
+      "tags": [
+        "UI",
+        "POP"
       ],
       "estimated_time": null,
       "automation_candidate": true,
-      "risk_level": "medium",
+      "risk_level": "low",
       "related_existing_tests": []
     }
   ],
   "metadata": {
-    "generated_at": "2025-11-05 21:50:41.738005",
+    "generated_at": "2025-11-05 23:26:27.914295",
     "ai_model": "gpt-4o-mini",
     "source_story_key": "PLAT-16698",
-    "total_test_cases": 6,
-    "edge_case_count": 1,
-    "integration_test_count": 1,
+    "total_test_cases": 7,
+    "edge_case_count": 0,
+    "integration_test_count": 0,
     "confidence_score": 0.9,
-    "ai_reasoning": "The main change in this story is the addition of the full path for tables/views displayed in the right panel of the user interface. This enhancement is intended to improve user understanding of the context of each table/view by providing a complete path (e.g., Catalog/DB/Schema). The acceptance criteria indicate that this update should be functional and is labeled with specific components and tasks. Therefore, it is crucial to ensure that the display of table/view paths is accurate and that it integrates well with existing features. The tests will cover core functionalities, integration with existing workflows, and potential error cases. Additionally, given that this feature relates to data visibility, edge cases will be included to test limits of data display. Based on the story context and company documentation, the following tests have been formulated to validate that the implementation meets its requirements.",
+    "ai_reasoning": "1. **FEATURE ANALYSIS**: The user-facing change involves adding the full path for tables/views to the right panel in the POP interface, which improves user clarity when navigating data structures. Acceptance criteria likely focus on ensuring the full path is displayed correctly and consistently across various data interactions. \n\n2. **CONTEXT REVIEW**: Similar past stories indicate a focus on UI enhancements and data presentation. The terminology and detail level should align with previous test cases, particularly around the right panel functionality in the POP application.\n\n3. **COMPLEXITY ASSESSMENT & TEST COUNT DECISION**: Given the change is medium priority and involves UI elements, I anticipate it affecting user interactions directly. The addition of full paths could have multiple integration points, such as correct data retrieval from databases and accurate representation in the UI. Therefore, I estimate between 8-12 tests would be robust enough to cover key workflows and potential edge cases, ensuring we capture any critical issues that might arise in production while not overloading with unnecessary tests.\n\n4. **TEST STRATEGY**: Core workflows must ensure that the full path is displayed correctly under normal circumstances. Integration tests will focus on interactions with the data layer and UI rendering. Error handling could involve testing scenarios where data retrieval fails or where incorrect data formats might be returned. \n\n5. **VALIDATION CHECK**: Each test will be evaluated to ensure it aligns with the specified requirements, terminology from company docs, and specific scenarios related to this feature enhancement. \n\nThe test cases generated are designed to cover all stated requirements comprehensively, providing clear value and ensuring we have no critical gaps in testing coverage.",
     "validation_issues": null
   },
-  "summary": "These tests verify that the table/view full paths are displayed correctly in the right panel, ensuring complete and accurate representation of data context, integration with existing components, and proper error handling.",
+  "summary": "This test plan verifies that the full path to tables/views displays correctly in the right panel of the POP interface, ensuring better data navigation for users.",
   "coverage_analysis": null,
   "risk_assessment": null,
   "regression_risks": null,
   "side_effects": null,
   "dependencies": [],
   "estimated_execution_time": null,
-  "suggested_folder": "User Interface Tests/Path Display"
+  "suggested_folder": "unknown"
 }

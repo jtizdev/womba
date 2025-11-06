@@ -72,7 +72,8 @@ class RAGRetriever:
     async def retrieve_for_story(
         self,
         story: JiraStory,
-        project_key: Optional[str] = None
+        project_key: Optional[str] = None,
+        story_context: Optional[Any] = None
     ) -> RetrievedContext:
         """
         Retrieve relevant context for a story from all RAG collections.
@@ -80,6 +81,7 @@ class RAGRetriever:
         Args:
             story: Jira story to retrieve context for
             project_key: Optional project key for filtering
+            story_context: Optional StoryContext with additional context (subtasks, etc.)
             
         Returns:
             RetrievedContext with all retrieved information
@@ -90,8 +92,12 @@ class RAGRetriever:
         if not project_key:
             project_key = story.key.split('-')[0]
         
-        # Build query from story
-        query = self._build_query(story)
+        # Build comprehensive query from story and context
+        query = self._build_query(story, story_context)
+        
+        # Log query preview
+        query_preview = query[:300] + "..." if len(query) > 300 else query
+        logger.debug(f"RAG query preview: {query_preview}")
         
         # Metadata filter for project
         metadata_filter = {"project_key": project_key}
@@ -141,27 +147,71 @@ class RAGRetriever:
         logger.info(context.get_summary())
         return context
     
-    def _build_query(self, story: JiraStory) -> str:
+    def _build_query(self, story: JiraStory, story_context: Optional[Any] = None) -> str:
         """
-        Build search query from story.
+        Build comprehensive search query from story and context.
+        
+        This query is the PRIMARY input for semantic search across all RAG collections.
+        The richer the query, the better the retrieval quality.
         
         Args:
             story: Jira story
+            story_context: Optional StoryContext with subtasks, linked issues, etc.
             
         Returns:
             Query string for semantic search
         """
-        # Combine summary and key parts of description
-        query_parts = [story.summary]
+        query_parts = []
+        
+        # 1. Core story information - ALWAYS INCLUDED
+        query_parts.append(f"Story: {story.summary}")
         
         if story.description:
-            # Take first 500 chars of description
-            query_parts.append(story.description[:500])
+            # Include more description - up to 1000 chars for better semantic matching
+            desc_text = story.description[:1000]
+            query_parts.append(f"Description: {desc_text}")
         
+        # 2. Acceptance Criteria - CRITICAL for matching relevant docs and APIs
+        if story.acceptance_criteria:
+            # This often contains specific requirements that match swagger endpoints
+            query_parts.append(f"Acceptance Criteria: {story.acceptance_criteria[:800]}")
+        
+        # 3. Components and Labels - categorization for filtering
         if story.components:
             query_parts.append(f"Components: {', '.join(story.components)}")
         
-        return "\n".join(query_parts)
+        if story.labels:
+            # Labels often indicate feature areas that match documentation
+            query_parts.append(f"Labels: {', '.join(story.labels[:10])}")
+        
+        # 4. Issue type and priority - context for search ranking
+        query_parts.append(f"Type: {story.issue_type}")
+        if story.priority != "Medium":  # Only include if not default
+            query_parts.append(f"Priority: {story.priority}")
+        
+        # 5. Subtasks/Engineering Tasks - CRITICAL for matching swagger endpoints
+        # Subtasks often mention specific endpoint paths, API methods, database changes
+        if story_context:
+            subtasks = story_context.get("subtasks", [])
+            if subtasks:
+                query_parts.append("\nEngineering Tasks:")
+                for task in subtasks[:8]:  # Include up to 8 subtasks
+                    query_parts.append(f"- {task.summary}")
+                    # Include task description if it's short and meaningful
+                    if task.description and len(task.description) < 200:
+                        query_parts.append(f"  {task.description}")
+        
+        # 6. Linked issues - related work that might share APIs/docs
+        if story.linked_issues:
+            # Just the keys - helps find related documentation
+            query_parts.append(f"Related: {', '.join(story.linked_issues[:5])}")
+        
+        query = "\n".join(query_parts)
+        
+        # Log query length for debugging
+        logger.debug(f"Built RAG query: {len(query)} characters, {len(query_parts)} parts")
+        
+        return query
     
     async def _retrieve_similar_test_plans(
         self,

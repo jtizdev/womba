@@ -96,24 +96,24 @@ class Settings(BaseSettings):
     # - Token budget (more results = more tokens)
     # - Quality of generated tests (too many irrelevant results hurts quality)
     rag_top_k_tests: int = Field(
-        default=5, 
-        description="Similar test plans to retrieve. Lower is better if test plans are high-quality."
+        default=8, 
+        description="Similar test plans to retrieve (increased for better style learning)"
     )
     rag_top_k_docs: int = Field(
-        default=10, 
-        description="Similar Confluence docs to retrieve. Docs are valuable context, so higher is OK."
+        default=20, 
+        description="Similar Confluence docs to retrieve (2x increase - docs are valuable context)"
     )
     rag_top_k_stories: int = Field(
-        default=10, 
-        description="Similar Jira stories to retrieve. Helps understand domain context."
+        default=15, 
+        description="Similar Jira stories to retrieve (50% increase for more domain context)"
     )
     rag_top_k_existing: int = Field(
-        default=20, 
-        description="Similar existing Zephyr tests to retrieve. Higher helps avoid duplicates but can add noise."
+        default=40, 
+        description="Similar existing Zephyr tests to retrieve (2x increase for better duplicate detection)"
     )
     rag_top_k_swagger: int = Field(
-        default=5,
-        description="Similar Swagger/OpenAPI docs to retrieve from GitLab services."
+        default=10,
+        description="Similar Swagger/OpenAPI docs to retrieve (2x increase for complete API coverage)"
     )
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
     rag_min_similarity: float = Field(default=0.5, description="Minimum similarity threshold (0.0-1.0) to filter low-quality results")
@@ -134,6 +134,13 @@ class Settings(BaseSettings):
     plainid_doc_max_depth: int = Field(default=5, description="Maximum crawl depth for PlainID docs")
     plainid_doc_request_delay: float = Field(default=0.3, description="Delay between requests (seconds)")
     plainid_doc_project_key: str = Field(default="PLAT", description="Project key for PlainID docs")
+
+    # Story Enrichment Configuration
+    enable_story_enrichment: bool = Field(default=True, description="Enable story preprocessing/enrichment pipeline")
+    enrichment_max_hops: int = Field(default=2, description="Maximum hops for recursive story link following (0=none, 1=direct, 2=2-level)")
+    enrichment_cache_ttl_days: int = Field(default=7, description="Cache TTL in days - invalidate if story updated or cache older than this")
+    enrichment_max_apis: int = Field(default=5, description="Maximum number of API endpoints to extract from Swagger")
+    enrichment_cache_dir: str = Field(default="./data/enrichment_cache", description="Directory for enrichment cache storage")
 
 
 # Global settings instance

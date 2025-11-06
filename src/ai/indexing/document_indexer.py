@@ -70,7 +70,7 @@ class DocumentIndexer:
                 "ai_model": test_plan.metadata.ai_model
             }
             metadata = self._normalize_metadata(metadata)
-            doc_id = self.create_timestamped_id("testplan", test_plan.story.key)
+            doc_id = self.create_stable_id("testplan", test_plan.story.key)
             await self.store.add_documents(
                 collection_name=self.store.TEST_PLANS_COLLECTION,
                 documents=[doc_text],
