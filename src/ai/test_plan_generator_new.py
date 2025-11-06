@@ -90,8 +90,8 @@ class TestPlanGenerator:
         if use_rag is None:
             use_rag = settings.enable_rag
         
-        # Step 1: Retrieve RAG context if enabled
-        rag_context = await self._retrieve_rag_context(main_story, use_rag)
+        # Step 1: Retrieve RAG context if enabled (pass full context for better matching)
+        rag_context = await self._retrieve_rag_context(main_story, context, use_rag)
         
         # Step 2: Build prompt
         prompt = self.prompt_builder.build_generation_prompt(
@@ -128,12 +128,13 @@ class TestPlanGenerator:
         
         return test_plan
 
-    async def _retrieve_rag_context(self, main_story, use_rag: bool) -> Optional[str]:
+    async def _retrieve_rag_context(self, main_story, story_context, use_rag: bool) -> Optional[str]:
         """
         Retrieve RAG context for the story.
         
         Args:
             main_story: Jira story
+            story_context: Full StoryContext with subtasks, linked issues, etc.
             use_rag: Whether to use RAG
             
         Returns:
@@ -145,12 +146,13 @@ class TestPlanGenerator:
         try:
             from src.ai.rag_retriever import RAGRetriever
             
-            logger.info("Retrieving RAG context...")
+            logger.info("Retrieving RAG context with enhanced query...")
             rag_retriever = RAGRetriever()
             project_key = main_story.key.split('-')[0]
             retrieved_context = await rag_retriever.retrieve_for_story(
                 story=main_story,
-                project_key=project_key
+                project_key=project_key,
+                story_context=story_context  # Pass full context for richer query
             )
             
             if retrieved_context.has_context():
@@ -175,6 +177,13 @@ class TestPlanGenerator:
             AI response text
         """
         try:
+            # Debug: print the exact prompt being sent (visible when log level is DEBUG)
+            try:
+                approx_tokens = len(prompt) // 4
+                logger.debug(f"AI prompt (~{approx_tokens} tokens, {len(prompt)} chars):\n{prompt}")
+                logger.info(f"Max output tokens configured: {self.max_tokens}")
+            except Exception:
+                pass
             if self.use_openai:
                 logger.info(f"Calling OpenAI API with model: {self.model}")
                 response = self.client.chat.completions.create(

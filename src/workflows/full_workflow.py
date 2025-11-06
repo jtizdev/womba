@@ -137,7 +137,7 @@ class FullWorkflowOrchestrator:
         results = await zephyr.upload_test_plan(
             test_plan=self.test_plan,
             project_key=project_key,
-            folder_path=self.folder_path
+            folder_path=(self.folder_path or (self.test_plan.suggested_folder if getattr(self.test_plan, 'suggested_folder', None) else None))
         )
         
         self.zephyr_ids = [value for value in results.values() if not str(value).startswith('ERROR')]

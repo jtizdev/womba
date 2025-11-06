@@ -9,10 +9,13 @@ from loguru import logger
 from src.aggregator.story_collector import StoryContext
 from src.config.settings import settings
 from src.models.test_plan import TestPlan
+from src.models.enriched_story import EnrichedStory
 from src.ai.generation.ai_client_factory import AIClientFactory
 from src.ai.generation.prompt_builder import PromptBuilder
 from src.ai.generation.response_parser import ResponseParser
 from src.ai.prompts_qa_focused import SYSTEM_INSTRUCTION
+from src.ai.enrichment_cache import EnrichmentCache
+from src.ai.story_enricher import StoryEnricher
 
 
 class TestPlanGenerator:
@@ -59,6 +62,10 @@ class TestPlanGenerator:
         self.prompt_builder = prompt_builder or PromptBuilder(model=self.model)
         self.response_parser = response_parser or ResponseParser()
         
+        # Story enrichment services
+        self.enrichment_cache = EnrichmentCache()
+        self.story_enricher = StoryEnricher()
+        
         logger.info(f"TestPlanGenerator initialized with model: {self.model}")
 
     async def generate_test_plan(
@@ -90,16 +97,30 @@ class TestPlanGenerator:
         if use_rag is None:
             use_rag = settings.enable_rag
         
-        # Step 1: Retrieve RAG context if enabled
-        rag_context = await self._retrieve_rag_context(main_story, use_rag)
+        # Step 0: Enrich story (preprocess and compress) if enabled
+        enriched_story = await self._enrich_story(main_story, context) if settings.enable_story_enrichment else None
         
-        # Step 2: Build prompt
+        # Step 1: Retrieve RAG context if enabled (pass full context for better matching)
+        rag_context = await self._retrieve_rag_context(main_story, context, use_rag)
+        
+        # Step 2: Build prompt (with enriched story if available)
         prompt = self.prompt_builder.build_generation_prompt(
             context=context,
             rag_context=rag_context,
             existing_tests=existing_tests,
             folder_structure=folder_structure,
+            enriched_story=enriched_story,
         )
+        
+        # DEBUG: Save prompt to file for inspection
+        try:
+            from pathlib import Path
+            prompt_file = Path("./debug_prompts") / f"prompt_{main_story.key}.txt"
+            prompt_file.parent.mkdir(exist_ok=True)
+            prompt_file.write_text(prompt, encoding='utf-8')
+            logger.info(f"Saved prompt to: {prompt_file}")
+        except Exception as e:
+            logger.debug(f"Failed to save prompt to file: {e}")
         
         # Step 3: Call AI API
         response_text = await self._call_ai_api(prompt)
@@ -133,12 +154,69 @@ class TestPlanGenerator:
         
         return test_plan
 
-    async def _retrieve_rag_context(self, main_story, use_rag: bool) -> Optional[str]:
+    async def _enrich_story(self, main_story, story_context: StoryContext) -> Optional[EnrichedStory]:
+        """
+        Enrich story with comprehensive context (uses cache if available).
+        
+        Args:
+            main_story: Jira story
+            story_context: Full StoryContext
+            
+        Returns:
+            EnrichedStory if successful, None otherwise
+        """
+        try:
+            # Check cache first
+            cached = self.enrichment_cache.get_cached(
+                story_key=main_story.key,
+                story_updated=main_story.updated
+            )
+            
+            if cached:
+                logger.info(f"Using cached enrichment for {main_story.key}")
+                return cached
+            
+            # Enrich story
+            logger.info(f"Enriching story {main_story.key} (not in cache)...")
+            enriched = await self.story_enricher.enrich_story(
+                main_story=main_story,
+                story_context=story_context
+            )
+            
+            # Cache result
+            self.enrichment_cache.save_cached(enriched, main_story.updated)
+            
+            # Debug: Log enrichment summary
+            logger.debug("=" * 80)
+            logger.debug(f"NEW ENRICHMENT CREATED FOR: {main_story.key}")
+            logger.debug("=" * 80)
+            logger.debug(f"Stories analyzed: {enriched.source_story_ids}")
+            apis_list = [f"{' '.join(api.http_methods)} {api.endpoint_path}" for api in enriched.api_specifications]
+            logger.debug(f"APIs extracted: {apis_list}")
+            logger.debug(f"Acceptance Criteria count: {len(enriched.acceptance_criteria)}")
+            logger.debug(f"PlainID Components: {enriched.plainid_components}")
+            logger.debug(f"Risk Areas: {enriched.risk_areas}")
+            logger.debug("=" * 80)
+            
+            logger.info(
+                f"Story enriched: {len(enriched.source_story_ids)} stories analyzed, "
+                f"{len(enriched.api_specifications)} APIs extracted, "
+                f"{len(enriched.acceptance_criteria)} ACs collected"
+            )
+            
+            return enriched
+            
+        except Exception as e:
+            logger.warning(f"Story enrichment failed (will use raw context): {e}")
+            return None
+
+    async def _retrieve_rag_context(self, main_story, story_context, use_rag: bool) -> Optional[str]:
         """
         Retrieve RAG context for the story.
         
         Args:
             main_story: Jira story
+            story_context: Full StoryContext with subtasks, linked issues, etc.
             use_rag: Whether to use RAG
             
         Returns:
@@ -150,12 +228,13 @@ class TestPlanGenerator:
         try:
             from src.ai.rag_retriever import RAGRetriever
             
-            logger.info("Retrieving RAG context...")
+            logger.info("Retrieving RAG context with enhanced query...")
             rag_retriever = RAGRetriever()
             project_key = main_story.key.split('-')[0]
             retrieved_context = await rag_retriever.retrieve_for_story(
                 story=main_story,
-                project_key=project_key
+                project_key=project_key,
+                story_context=story_context  # Pass full context for richer query
             )
             
             if retrieved_context.has_context():
@@ -183,6 +262,14 @@ class TestPlanGenerator:
             AI response text (JSON string for OpenAI, text with JSON for Claude)
         """
         try:
+            # Debug: print the exact prompt being sent (visible when log level is DEBUG)
+            try:
+                approx_tokens = len(prompt) // 4
+                logger.debug(f"AI prompt (~{approx_tokens} tokens, {len(prompt)} chars):\n{prompt}")
+                logger.info(f"Max output tokens configured: {self.max_tokens}")
+            except Exception:
+                # Never block the API call on logging issues
+                pass
             if self.use_openai:
                 # Check if model supports json_schema (gpt-4o-2024-08-06+, gpt-4o-mini-2024-07-18+)
                 supports_json_schema = (

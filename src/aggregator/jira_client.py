@@ -44,11 +44,47 @@ class JiraClient(AtlassianClient):
         """
         # DEBUG logging removed for performance (was being called thousands of times)
         
+        # Handle Jira SDK PropertyHolder objects
+        # PropertyHolder wraps the actual data - access via iteration or dict-like methods
+        if adf_content is None:
+            return ""
+        
+        # Try to unwrap PropertyHolder
+        try:
+            # PropertyHolder has dict-like access but str() returns object repr
+            # Try to access as dict first
+            if hasattr(adf_content, '__getitem__') and not isinstance(adf_content, (str, list)):
+                # It's dict-like (PropertyHolder behaves like a dict)
+                # Convert to actual dict to get the ADF JSON
+                if hasattr(adf_content, 'raw'):
+                    adf_content = adf_content.raw
+                else:
+                    # Try to convert PropertyHolder to dict
+                    try:
+                        adf_content = dict(adf_content)
+                    except:
+                        # Fallback: try to get 'value' or 'content' attributes
+                        for attr in ['value', 'content', '_value', '_raw']:
+                            if hasattr(adf_content, attr):
+                                val = getattr(adf_content, attr)
+                                if val is not None:
+                                    adf_content = val
+                                    break
+        except Exception as e:
+            logger.debug(f"PropertyHolder unwrap failed: {e}, using str repr")
+
         if isinstance(adf_content, str):
             return adf_content
         
-        if not isinstance(adf_content, dict):
-            return str(adf_content) if adf_content else ""
+        # We can handle dict or list (ADF may be a dict or a list of nodes)
+        if not isinstance(adf_content, (dict, list)):
+            # Last resort: stringify (will give object repr if unwrap failed)
+            result = str(adf_content) if adf_content else ""
+            # If it's an object repr, return empty instead
+            if result.startswith('<') and 'object at 0x' in result:
+                logger.warning(f"Failed to extract text from PropertyHolder - got object repr: {result[:80]}")
+                return ""
+            return result
         
         text_parts = []
         
@@ -90,6 +126,10 @@ class JiraClient(AtlassianClient):
             elif isinstance(node, list):
                 for item in node:
                     extract_recursive(item)
+            else:
+                # Fallback for unexpected scalar values
+                if isinstance(node, str):
+                    text_parts.append(node)
         
         extract_recursive(adf_content)
         return ' '.join(text_parts)
@@ -147,8 +187,28 @@ class JiraClient(AtlassianClient):
         summary = issue.fields.summary or ""
         
         # Extract description (handle ADF format)
-        description_raw = issue.fields.description
-        description = self._extract_text_from_adf(description_raw) if description_raw else ""
+        # Try renderedFields first (plain HTML) which is easier to parse, fallback to fields.description (ADF)
+        description_raw = None
+        if hasattr(issue, 'renderedFields') and hasattr(issue.renderedFields, 'description'):
+            description_raw = issue.renderedFields.description
+            # renderedFields.description is HTML string, strip HTML tags
+            if description_raw and isinstance(description_raw, str):
+                import re
+                # Simple HTML strip
+                description = re.sub(r'<[^>]+>', '', description_raw)
+                description = description.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                logger.debug(f"Using renderedFields description for {key}: {len(description)} chars")
+            else:
+                description_raw = issue.fields.description
+                description = self._extract_text_from_adf(description_raw) if description_raw else ""
+        else:
+            description_raw = issue.fields.description
+            description = self._extract_text_from_adf(description_raw) if description_raw else ""
+        
+        try:
+            logger.debug(f"Final parsed description for {key}: len={len(description)} chars, preview: {description[:100]}")
+        except Exception:
+            pass
         
         # Extract issue type, status, priority
         issue_type = issue.fields.issuetype.name if issue.fields.issuetype else "Unknown"
@@ -220,6 +280,19 @@ class JiraClient(AtlassianClient):
         Returns:
             Acceptance criteria string or None
         """
+        # Try renderedFields first (easier to parse)
+        if hasattr(fields, '__dict__') and 'renderedFields' in fields.__dict__:
+            rendered = fields.__dict__['renderedFields']
+            if rendered and hasattr(rendered, 'customfield_10100'):
+                ac_rendered = getattr(rendered, 'customfield_10100', None)
+                if ac_rendered and isinstance(ac_rendered, str) and len(ac_rendered) > 10:
+                    import re
+                    # Strip HTML
+                    ac_clean = re.sub(r'<[^>]+>', '', ac_rendered)
+                    ac_clean = ac_clean.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+                    if ac_clean and not ac_clean.startswith('<'):
+                        return ac_clean.strip()
+        
         # Check common custom field names for acceptance criteria
         ac_field_names = [
             "customfield_10100",  # Common AC field
@@ -231,18 +304,41 @@ class JiraClient(AtlassianClient):
             if hasattr(fields, field_name):
                 ac_value = getattr(fields, field_name)
                 if ac_value:
-                    if isinstance(ac_value, str):
-                        return ac_value
-                    elif isinstance(ac_value, dict):
-                        return self._extract_text_from_adf(ac_value)
+                    # Handle PropertyHolder
+                    ac_text = self._extract_text_from_adf(ac_value)
+                    # If we got garbage (object repr or very short), skip
+                    if ac_text and len(ac_text) > 10 and not ac_text.startswith('<') and 'object at 0x' not in ac_text:
+                        return ac_text
 
-        # Try to find AC in description
+        # Try to find AC in description (case-insensitive)
         if description and "acceptance criteria" in description.lower():
-            parts = description.lower().split("acceptance criteria")
-            if len(parts) > 1:
-                # Get the part after "acceptance criteria"
-                ac_part = parts[1].split("\n\n")[0]  # Until next paragraph
-                return ac_part.strip()
+            import re
+            # Find "Acceptance Criteria" section (case-insensitive)
+            ac_pattern = re.compile(r'acceptance\s+criteria[:\s]*\n*(.*?)(?=\n\n[A-Z]|\n\n\n|$)', re.IGNORECASE | re.DOTALL)
+            match = ac_pattern.search(description)
+            if match:
+                ac_text = match.group(1).strip()
+                if ac_text and len(ac_text) > 5:
+                    return ac_text
+            
+            # Fallback: simple split
+            desc_lower_idx = description.lower().find("acceptance criteria")
+            if desc_lower_idx >= 0:
+                after_ac = description[desc_lower_idx + len("acceptance criteria"):]
+                # Skip past any colons/dashes/newlines
+                after_ac = after_ac.lstrip(':-\n ')
+                # Take until next major section or end
+                lines = after_ac.split('\n')
+                ac_lines = []
+                for line in lines[:20]:  # Max 20 lines
+                    if not line.strip():
+                        continue
+                    # Stop if we hit another section header
+                    if re.match(r'^[A-Z][a-z]+(\s+[A-Z][a-z]+)*:?\s*$', line.strip()):
+                        break
+                    ac_lines.append(line)
+                if ac_lines:
+                    return '\n'.join(ac_lines).strip()
 
         return None
 
@@ -263,7 +359,7 @@ class JiraClient(AtlassianClient):
             return main_story, []
         
         try:
-            issue = jira.issue(issue_key, expand='subtasks')
+            issue = jira.issue(issue_key, expand='subtasks,renderedFields', fields='*all')
             main_story = self._parse_sdk_issue(issue)
             
             subtasks = []
@@ -271,8 +367,8 @@ class JiraClient(AtlassianClient):
                 logger.info(f"Found {len(issue.fields.subtasks)} subtasks for {issue_key}")
                 for subtask in issue.fields.subtasks:
                     try:
-                        # Fetch subtask with full data
-                        full_subtask = jira.issue(subtask.key)
+                        # Fetch subtask with full data including renderedFields
+                        full_subtask = jira.issue(subtask.key, expand='renderedFields', fields='*all')
                         subtasks.append(self._parse_sdk_issue(full_subtask))
                     except Exception as e:
                         logger.warning(f"Could not fetch subtask {subtask.key}: {e}")
@@ -292,7 +388,7 @@ class JiraClient(AtlassianClient):
             raise ValueError("Jira client not configured")
         
         try:
-            issue = jira.issue(issue_key)
+            issue = jira.issue(issue_key, expand='renderedFields', fields='*all')
             return self._parse_sdk_issue(issue)
         except Exception as e:
             logger.error(f"Error fetching issue with SDK: {e}")
@@ -319,8 +415,8 @@ class JiraClient(AtlassianClient):
                     
                     if linked_issue:
                         try:
-                            # Fetch linked issue with full data
-                            full_linked = jira.issue(linked_issue.key)
+                            # Fetch linked issue with full data including rendered fields
+                            full_linked = jira.issue(linked_issue.key, expand='renderedFields', fields='*all')
                             story = self._parse_sdk_issue(full_linked)
                             linked_stories.append(story)
                         except Exception as e:
@@ -410,6 +506,7 @@ class JiraClient(AtlassianClient):
                 jql_str=jql,
                 startAt=start_at,
                 maxResults=max_results,
+                expand='renderedFields',
                 fields='*all'
             )
             

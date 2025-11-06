@@ -363,7 +363,8 @@ class RAGVectorStore:
             self.CONFLUENCE_DOCS_COLLECTION,
             self.JIRA_STORIES_COLLECTION,
             self.EXISTING_TESTS_COLLECTION,
-            self.EXTERNAL_DOCS_COLLECTION
+            self.EXTERNAL_DOCS_COLLECTION,
+            self.SWAGGER_DOCS_COLLECTION
         ]
         
         stats = {}
@@ -404,7 +405,8 @@ class RAGVectorStore:
             self.CONFLUENCE_DOCS_COLLECTION,
             self.JIRA_STORIES_COLLECTION,
             self.EXISTING_TESTS_COLLECTION,
-            self.EXTERNAL_DOCS_COLLECTION
+            self.EXTERNAL_DOCS_COLLECTION,
+            self.SWAGGER_DOCS_COLLECTION
         ]
         
         # First, delete all collections
