@@ -65,10 +65,20 @@ class ZephyrIntegration:
 
         if folder_path and not folder_id:
             try:
-                folder_id = await self.ensure_folder(project_key, folder_path)
-                logger.info(f"Resolved folder path '{folder_path}' to ID {folder_id}")
+                # First, try to find matching existing folder
+                match = await self.find_best_matching_folder(project_key, folder_path)
+                if match:
+                    folder_id, matched_path = match
+                    logger.info(f"Using existing folder: '{matched_path}' (ID: {folder_id})")
+                    if matched_path != folder_path:
+                        logger.info(f"  (Suggested was: '{folder_path}')")
+                else:
+                    # No match found, create new folder
+                    logger.info(f"No matching folder found, creating: '{folder_path}'")
+                    folder_id = await self.ensure_folder(project_key, folder_path)
+                    logger.info(f"Created folder '{folder_path}' with ID {folder_id}")
             except Exception as exc:
-                logger.error(f"Failed to ensure folder '{folder_path}': {exc}")
+                logger.error(f"Failed to resolve/create folder '{folder_path}': {exc}")
                 raise
 
         for test_case in test_plan.test_cases:
@@ -436,15 +446,90 @@ class ZephyrIntegration:
 
         return data.get("values", [])
 
+    async def find_best_matching_folder(self, project_key: str, suggested_folder: str) -> Optional[tuple[str, str]]:
+        """
+        Find best matching existing folder before creating new one.
+        
+        Args:
+            project_key: Jira project key
+            suggested_folder: AI-suggested folder name
+            
+        Returns:
+            Tuple of (folder_id, folder_path) if match found, None otherwise
+        """
+        try:
+            existing = await self.get_folder_structure(project_key)
+            flat_folders = self._flatten_folders(existing)
+            
+            # Build map of folder paths
+            folder_paths = {}
+            for folder in flat_folders:
+                name = folder.get('name', '').strip()
+                folder_id = folder.get('id')
+                parent_id = folder.get('parentId')
+                
+                # Build full path
+                path_parts = [name]
+                current_parent = parent_id
+                while current_parent:
+                    parent = next((f for f in flat_folders if f.get('id') == current_parent), None)
+                    if parent:
+                        path_parts.insert(0, parent.get('name', ''))
+                        current_parent = parent.get('parentId')
+                    else:
+                        break
+                
+                full_path = '/'.join(path_parts)
+                folder_paths[full_path] = (folder_id, name)
+            
+            # Try to find match
+            suggested_lower = suggested_folder.lower()
+            
+            # 1. Exact match (case-insensitive)
+            for path, (fid, name) in folder_paths.items():
+                if path.lower() == suggested_lower:
+                    logger.info(f"Found exact folder match: {path}")
+                    return (fid, path)
+            
+            # 2. Partial match (suggested name in path)
+            for path, (fid, name) in folder_paths.items():
+                if suggested_lower in path.lower() or path.lower() in suggested_lower:
+                    logger.info(f"Found similar folder: {path} (suggested: {suggested_folder})")
+                    return (fid, path)
+            
+            # 3. Keyword match (key words from suggestion match folder name)
+            suggestion_words = set(suggested_lower.split())
+            best_match = None
+            best_score = 0
+            
+            for path, (fid, name) in folder_paths.items():
+                path_words = set(path.lower().split('/'))
+                # Count matching words
+                matches = len(suggestion_words & path_words)
+                if matches > best_score and matches >= 2:  # At least 2 matching words
+                    best_score = matches
+                    best_match = (fid, path)
+            
+            if best_match:
+                logger.info(f"Found keyword match: {best_match[1]} (suggested: {suggested_folder}, score: {best_score})")
+                return best_match
+            
+            logger.info(f"No matching folder found for '{suggested_folder}'")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Failed to search for matching folder: {e}")
+            return None
+    
     async def ensure_folder(self, project_key: str, folder_path: str) -> Optional[str]:
         """Ensure the full folder path exists and return the final folder ID."""
         if not folder_path:
             return None
-
+        
         segments = [seg.strip() for seg in folder_path.split('/') if seg.strip()]
         if not segments:
             return None
-
+        
         existing = await self.get_folder_structure(project_key)
         flat_folders = self._flatten_folders(existing)
         by_parent: Dict[Optional[str], List[Dict]] = defaultdict(list)

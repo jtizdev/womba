@@ -154,7 +154,7 @@ class ContextIndexer:
             doc_text = self.processor.build_test_case_document(test)
             metadata = self.indexer.create_test_metadata(test, project_key)
             test_key = test.get('key', test.get('name', 'unknown'))
-            doc_id = self.indexer.create_timestamped_id("test", test_key)
+            doc_id = self.indexer.create_stable_id("test", test_key)
             
             doc_texts.append(doc_text)
             metadatas.append(metadata)
@@ -177,21 +177,10 @@ class ContextIndexer:
         if not plainid_docs:
             return 0
         
-        # Process documents
+        # Process documents (ChromaDB will handle upserts based on stable IDs)
         doc_texts = []
         metadatas = []
         ids = []
-        
-        # Get existing hashes to avoid duplicates
-        existing_hashes = set()
-        try:
-            existing_docs = self.store.get_all_documents(self.store.EXTERNAL_DOCS_COLLECTION)
-            for doc in existing_docs:
-                meta = doc.get('metadata', {})
-                if meta.get('doc_hash'):
-                    existing_hashes.add(meta['doc_hash'])
-        except Exception as exc:
-            logger.debug(f"Could not fetch existing external docs: {exc}")
         
         for doc in plainid_docs:
             # Process document text
@@ -203,15 +192,9 @@ class ContextIndexer:
             metadata = self.indexer.create_external_doc_metadata(doc.url, doc.title, doc_text)
             doc_hash = metadata['doc_hash']
             
-            # Skip duplicates
-            if doc_hash in existing_hashes:
-                logger.debug(f"Skipping already indexed documentation: {doc.url}")
-                continue
-            
             doc_texts.append(doc_text)
             metadatas.append(metadata)
-            ids.append(f"plainid_{doc_hash}_{datetime.now().strftime('%Y%m%d')}")
-            existing_hashes.add(doc_hash)
+            ids.append(f"plainid_{doc_hash}")
         
         if not doc_texts:
             logger.warning("No new external documentation to index")
@@ -248,4 +231,46 @@ class ContextIndexer:
         await self.index_jira_stories([context.main_story], project_key)
         
         logger.info(f"Successfully indexed context for {context.main_story.key}")
+
+    async def index_gitlab_swagger_docs(self) -> int:
+        """
+        Index GitLab Swagger/OpenAPI documentation.
+        Uses DocumentFetcher and DocumentIndexer services.
+        
+        Returns:
+            Number of documents indexed
+        """
+        # Fetch GitLab Swagger documents
+        swagger_docs = await self.fetcher.fetch_gitlab_swagger_docs()
+        
+        if not swagger_docs:
+            return 0
+        
+        # Process documents (ChromaDB will handle upserts based on stable IDs)
+        doc_texts = []
+        metadatas = []
+        ids = []
+        
+        for doc in swagger_docs:
+            # Process document text
+            doc_text = self.processor.build_swagger_document(doc)
+            if not doc_text:
+                continue
+            
+            # Create metadata
+            # Extract project key from service name or use default
+            project_key = doc.service_name.split('-')[0].upper() if '-' in doc.service_name else 'PLAT'
+            metadata = self.indexer.create_swagger_metadata(doc, project_key)
+            doc_hash = metadata['doc_hash']
+            
+            doc_texts.append(doc_text)
+            metadatas.append(metadata)
+            ids.append(f"swagger_{doc_hash}")
+        
+        if not doc_texts:
+            logger.warning("No new Swagger documentation to index")
+            return 0
+        
+        # Index documents
+        return await self.indexer.index_swagger_docs(doc_texts, metadatas, ids)
 

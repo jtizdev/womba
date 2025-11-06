@@ -1,6 +1,6 @@
 """
 Document fetching service for retrieving documents from external sources.
-Single Responsibility: Fetching documents from PlainID, web, etc.
+Single Responsibility: Fetching documents from PlainID, GitLab, web, etc.
 """
 
 import asyncio
@@ -9,6 +9,7 @@ from loguru import logger
 
 from src.config.settings import settings
 from src.external.plainid_crawler import PlainIDDocCrawler, PlainIDDocument
+from src.external.gitlab_swagger_fetcher import GitLabSwaggerFetcher, SwaggerDocument
 
 
 class DocumentFetcher:
@@ -108,4 +109,42 @@ class DocumentFetcher:
         logger.info(f"Total discovered URLs: {len(urls_to_index)}")
         
         return urls_to_index
+
+    async def fetch_gitlab_swagger_docs(self) -> List[SwaggerDocument]:
+        """
+        Fetch Swagger/OpenAPI documentation from GitLab services.
+        
+        Returns:
+            List of SwaggerDocument objects
+        """
+        if not settings.gitlab_swagger_enabled:
+            logger.info("GitLab Swagger indexing disabled via settings")
+            return []
+        
+        if not settings.gitlab_token:
+            logger.warning("GitLab token not configured, skipping Swagger fetch")
+            return []
+        
+        logger.info("Fetching Swagger/OpenAPI docs from GitLab")
+        
+        try:
+            fetcher = GitLabSwaggerFetcher()
+            
+            if not fetcher.is_available():
+                logger.warning("GitLab Swagger fetcher not available")
+                return []
+            
+            # Fetch all swagger docs from the configured group
+            docs = await asyncio.to_thread(fetcher.fetch_all)
+            
+            if not docs:
+                logger.warning("No Swagger documentation found in GitLab")
+                return []
+            
+            logger.info(f"Successfully fetched {len(docs)} Swagger documents from GitLab")
+            return docs
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch GitLab Swagger docs: {e}")
+            return []
 

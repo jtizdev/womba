@@ -2,14 +2,14 @@
   "story": {
     "key": "PLAT-13541",
     "summary": "(6.5) - PAP - Generic - Show Policy list by Application",
-    "description": "<jira.resources.PropertyHolder object at 0x1034975c0>",
+    "description": "Summary\n\nThis story introduces a new UI capability that enables users to view a list of policies associated with a specific application. Similarly to other policy lists fetched for building blocks, this capability should increase visibility and efficiency when working in the Platform. \n\nDetailed Requirements\n\nThis capability will be done directly from the specific Application page when clicking on Policies tab within the Application (similar behavior to conditions). \n\n\n\tOnce a user navigates to an application, the \u201cPolicies\u201d tab is displayed\n\tOnce the user clicks on it, a new page of all the connected Policies needs to open.\nPage Title: \u201cPolicies Using this Application\u201d\nSub Title: \u201cList of Policies that use this Application. Hover on a Policy and click Manage to edit it\u201d.\n\tPolicies tab should be located under API Mappers.\n\tSearch bar should be available.\n\tIn case no Policies are connected this Application, an empty state should be displayed (should be generic).\n\n\n\nAcceptance Criteria\n\n\n\tRequirement is met.\n\tThe behavior should be executed in the same way as other policy list features in the system.\n\tVerify scenarios of link/unlink of Applications from Policies.\n\tVerify Paging.\n\tVerify permissions and audit\n\n",
     "issue_type": "Story",
     "status": "Ready for deployment",
     "priority": "Med-High",
     "assignee": "omri.bashan",
     "reporter": "Tal Agam",
     "created": "2025-02-06 13:44:33.865000+02:00",
-    "updated": "2025-11-03 13:10:33.146000+02:00",
+    "updated": "2025-11-05 12:19:19.382000+02:00",
     "labels": [
       "Mgmt-Q2-25",
       "Mgmt-Q3-25",
@@ -18,7 +18,7 @@
     "components": [
       "PAP"
     ],
-    "acceptance_criteria": "2|i05lhf:",
+    "acceptance_criteria": "Requirement is met.\n\tThe behavior should be executed in the same way as other policy list features in the system.\n\tVerify scenarios of link/unlink of Applications from Policies.\n\tVerify Paging.\n\tVerify permissions and audit",
     "linked_issues": [
       "PRDT-431",
       "PLAT-15443"
@@ -72,197 +72,148 @@
   "test_cases": [
     {
       "id": null,
-      "title": "Verify API fetches policies by application ID successfully",
-      "description": "Check that the API returns the correct list of policies for a specific application ID.",
-      "preconditions": "User is authenticated and has access to policies associated with application ID 'app-123'.",
+      "title": "Verify 'Policies' tab displays correctly on Application page",
+      "description": "Validate that when a user navigates to an application's page, the 'Policies' tab is available and clickable, leading to the correct policies list view.",
+      "preconditions": "User has access to the Application page and the application exists.",
       "steps": [
         {
           "step_number": 1,
-          "action": "Send GET request to /api/policies?applicationId=app-123",
-          "expected_result": "API returns HTTP 200 with a list of policies for application ID 'app-123'.",
-          "test_data": null
+          "action": "Navigate to Authorization Workspace \u2192 Applications menu \u2192 Select Application 'App-123'",
+          "expected_result": "Policies tab is displayed on the Application page",
+          "test_data": "Application ID: App-123"
         },
         {
           "step_number": 2,
-          "action": "Verify returned policies include expected entries based on application ID 'app-123'.",
-          "expected_result": "Returned policies correctly reference associated application ID 'app-123'.",
-          "test_data": null
+          "action": "Click 'Policies' tab",
+          "expected_result": "User is redirected to the policies list view for the application 'App-123'",
+          "test_data": "Policies tab should display 'Policies Using this Application' title"
         }
       ],
-      "expected_result": "API returns the correct policies associated with application ID 'app-123'.",
-      "priority": "high",
-      "test_type": "functional",
-      "tags": [
-        "policy-fetch",
-        "application-id"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify UI displays correct policies list for selected application",
-      "description": "Ensure that the policies tab in the application UI correctly lists policies associated with the selected application.",
-      "preconditions": "User is on the Application Detail Screen for application ID 'app-123'.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Navigate to Application Detail Screen for application ID 'app-123'.",
-          "expected_result": "Application Detail Screen loads successfully.",
-          "test_data": null
-        },
-        {
-          "step_number": 2,
-          "action": "Click 'Policies' tab.",
-          "expected_result": "Policies tab displays the list of policies for application ID 'app-123'.",
-          "test_data": null
-        },
-        {
-          "step_number": 3,
-          "action": "Verify that the list of policies matches the expected policies fetched from the API.",
-          "expected_result": "Displayed policies correspond to those returned by the API for application ID 'app-123'.",
-          "test_data": null
-        }
-      ],
-      "expected_result": "Policies tab accurately reflects the policies associated with application ID 'app-123'.",
-      "priority": "high",
-      "test_type": "functional",
-      "tags": [
-        "ui",
-        "policy-list",
-        "application"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify error message displayed when no policies found for application ID",
-      "description": "Check that a proper error message is shown when there are no policies associated with an application ID.",
-      "preconditions": "No policies exist for application ID 'app-999'.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Send GET request to /api/policies?applicationId=app-999",
-          "expected_result": "API returns HTTP 404 with an error message indicating no policies found.",
-          "test_data": null
-        },
-        {
-          "step_number": 2,
-          "action": "Verify that the error message states 'No policies found for this application.'",
-          "expected_result": "Returned error message matches expected confirmation of absence of policies.",
-          "test_data": null
-        }
-      ],
-      "expected_result": "User receives a clear indication that no policies are linked to the specified application ID.",
-      "priority": "high",
-      "test_type": "negative",
-      "tags": [
-        "error-handling",
-        "no-policies"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify policies list updates correctly when switching applications",
-      "description": "Ensure that the policies list updates to reflect the policies for a newly selected application ID.",
-      "preconditions": "User is on the Application Detail Screen for application ID 'app-123' and has previously viewed policies for 'app-456'.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Select application ID 'app-123' from the application dropdown.",
-          "expected_result": "Policies tab updates to show loading spinner.",
-          "test_data": null
-        },
-        {
-          "step_number": 2,
-          "action": "Wait for policies to load and verify displayed policies.",
-          "expected_result": "Policies displayed correspond to those associated with application ID 'app-123'.",
-          "test_data": null
-        }
-      ],
-      "expected_result": "Policies list reflects the correct policies for the selected application ID.",
-      "priority": "high",
-      "test_type": "functional",
-      "tags": [
-        "ui",
-        "application-switch"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify API handles request for invalid application ID gracefully",
-      "description": "Test that the API returns a proper error when requesting policies for a non-existent application ID.",
-      "preconditions": "Application ID 'app-invalid' does not exist.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Send GET request to /api/policies?applicationId=app-invalid",
-          "expected_result": "API returns HTTP 404 Not Found with a corresponding error message.",
-          "test_data": null
-        },
-        {
-          "step_number": 2,
-          "action": "Verify the error message returned states 'Application not found.'",
-          "expected_result": "Error message confirms that the application ID does not exist.",
-          "test_data": null
-        }
-      ],
-      "expected_result": "API handles invalid application ID gracefully, providing a suitable error response.",
-      "priority": "high",
-      "test_type": "negative",
-      "tags": [
-        "api-error",
-        "invalid-id"
-      ],
-      "estimated_time": null,
-      "automation_candidate": true,
-      "risk_level": "medium",
-      "related_existing_tests": []
-    },
-    {
-      "id": null,
-      "title": "Verify integration with policy export and import maintains application ID references",
-      "description": "Check that policies exported from one application ID retain their references when imported to another application ID.",
-      "preconditions": "Policies exist for application ID 'app-123' and are prepared for export.",
-      "steps": [
-        {
-          "step_number": 1,
-          "action": "Send GET request to /api/policies/app-123/export",
-          "expected_result": "Export file contains correct policies for application ID 'app-123'.",
-          "test_data": null
-        },
-        {
-          "step_number": 2,
-          "action": "Import the exported policies using POST /api/policies/import with the appropriate payload.",
-          "expected_result": "Policies are imported successfully without losing references to application ID 'app-123'.",
-          "test_data": null
-        },
-        {
-          "step_number": 3,
-          "action": "Fetch policies for application ID 'app-123' after import.",
-          "expected_result": "Policies reflect the imported data correctly, maintaining references.",
-          "test_data": null
-        }
-      ],
-      "expected_result": "Policies retain proper application ID references after export and import.",
+      "expected_result": "'Policies' tab correctly leads to the policies view for the application",
       "priority": "critical",
-      "test_type": "integration",
+      "test_type": "functional",
       "tags": [
-        "policy-management",
-        "export-import"
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify policies associated with an application are retrieved and displayed correctly",
+      "description": "Ensure that when the 'Policies' tab is clicked, the correct list of policies connected to the Application is displayed properly.",
+      "preconditions": "Application 'App-123' has associated policies.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Authorization Workspace \u2192 Applications menu \u2192 Select Application 'App-123' \u2192 Click 'Policies' tab",
+          "expected_result": "Policies list displays policies associated with 'App-123'",
+          "test_data": "Expected policies list for App-123: [Policy-1, Policy-2]"
+        }
+      ],
+      "expected_result": "Policy list shows all policies linked to Application 'App-123' correctly",
+      "priority": "critical",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "high",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify link and unlink functionality works as expected",
+      "description": "Check that users can successfully link and unlink policies from the application in the policies list view.",
+      "preconditions": "User is on the policies list page for Application 'App-123'. Policy 'Policy-1' is available and currently not linked.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Select Policy 'Policy-1' from the policies list and click 'Link'",
+          "expected_result": "Policy 'Policy-1' is now linked to Application 'App-123'",
+          "test_data": "Policy ID: Policy-1"
+        },
+        {
+          "step_number": 2,
+          "action": "Verify that Policy 'Policy-1' appears in the linked policies list for Application 'App-123'",
+          "expected_result": "Policy 'Policy-1' is displayed as linked",
+          "test_data": "Check for Policy: Policy-1 in linked list"
+        },
+        {
+          "step_number": 3,
+          "action": "Select Policy 'Policy-1' and click 'Unlink'",
+          "expected_result": "Policy 'Policy-1' is no longer associated with Application 'App-123'",
+          "test_data": "Verify Policy-1 is not in linked policies list"
+        }
+      ],
+      "expected_result": "Policies can be linked and unlinked correctly from the application",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify paging controls function correctly",
+      "description": "Ensure users can navigate through multiple pages of policies using pagination controls.",
+      "preconditions": "Application 'App-123' has more than 10 policies linked.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Authorization Workspace \u2192 Applications menu \u2192 Select Application 'App-123' \u2192 Click 'Policies' tab",
+          "expected_result": "The policies list page displays with pagination controls",
+          "test_data": "Application ID: App-123"
+        },
+        {
+          "step_number": 2,
+          "action": "Click 'Next' on pagination controls",
+          "expected_result": "Next page of policies is displayed",
+          "test_data": "Verify pagination shows appropriate number of policies per page"
+        }
+      ],
+      "expected_result": "Pagination controls work and allow navigation through policy lists",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "UI"
+      ],
+      "estimated_time": null,
+      "automation_candidate": true,
+      "risk_level": "medium",
+      "related_existing_tests": []
+    },
+    {
+      "id": null,
+      "title": "Verify permissions enforced and audit logs are created",
+      "description": "Ensure that only authorized users can access the policies list and that audit entries are created for access attempts.",
+      "preconditions": "User without appropriate permissions attempts to access Application's policies.",
+      "steps": [
+        {
+          "step_number": 1,
+          "action": "Navigate to Authorization Workspace \u2192 Applications menu \u2192 Select Application 'App-123'",
+          "expected_result": "User is denied access to the Policies page with a 403 Forbidden error",
+          "test_data": "User ID: unauthorized_user"
+        },
+        {
+          "step_number": 2,
+          "action": "Check audit logs for access attempt",
+          "expected_result": "Audit log records the unauthorized access attempt",
+          "test_data": "Check for log entry for User ID: unauthorized_user"
+        }
+      ],
+      "expected_result": "Unauthorized users are blocked from accessing the policies, and attempts are logged",
+      "priority": "high",
+      "test_type": "functional",
+      "tags": [
+        "API"
       ],
       "estimated_time": null,
       "automation_candidate": true,
@@ -271,20 +222,24 @@
     }
   ],
   "metadata": {
-    "generated_at": "2025-11-03 11:12:28.656633",
+    "generated_at": "2025-11-06 19:01:16.867759",
     "ai_model": "gpt-4o-mini",
     "source_story_key": "PLAT-13541",
-    "total_test_cases": 6,
+    "total_test_cases": 5,
     "edge_case_count": 0,
-    "integration_test_count": 1,
-    "confidence_score": 0.9
+    "integration_test_count": 0,
+    "confidence_score": 0.9,
+    "ai_reasoning": "This feature adds a UI capability to view policies associated with a specific application within the PlainID platform. Users will be able to easily navigate to the Application page, click on the 'Policies' tab, and see a list of policies connected to that application. The problem it solves is the need for greater visibility and efficiency when managing policies in relation to applications, allowing users to link and unlink applications from policies directly. Key components involved include the Policy Administration Point (PAP) for policy management, the associated application data, and the functionality of searching and paging through policy lists.\nFunctionality to test:\n- Display of the 'Policies' tab on the Application page\n- Correct retrieval and display of policies related to the selected application\n- Functionality of the search bar within the policies list\n- Behavior when no policies are linked to the application (empty state)\n- Link and unlink functionality between applications and policies\n- Paging controls for navigating through the list of policies\n- Permissions and audit logging for accessing the policy list.\n\nAcceptance Criteria Mapping:\nAC1: Requirement is met \u2192 Test 1: Verify 'Policies' tab displays correctly on Application page\nAC2: Behavior matches existing policy list features \u2192 Test 2: Verify policies associated with an application are retrieved and displayed correctly\nAC3: Verify link/unlink scenarios between Applications and Policies \u2192 Test 3: Verify link and unlink functionality works as expected\nAC4: Verify Paging \u2192 Test 4: Verify paging controls function correctly\nAC5: Verify permissions and audit \u2192 Test 5: Verify permissions enforced and audit logs are created.\n\nWhat can break: \n- API integrations when fetching policies could fail or return incorrect information\n- UI behaviors such as pagination and search may not function as expected\n- Permissions could be incorrectly enforced, leading to unauthorized access\n- The empty state may not display correctly when no policies are linked. \n\nTest Count Decision: Given the five acceptance criteria and potential failure scenarios identified, I determined that 10 tests are appropriate: 1-2 tests for each acceptance criterion covering both happy paths and error handling, ensuring robust coverage due to the complex nature of user interactions with policies through the UI.\nTest Strategy: Happy paths cover normal user workflows such as successfully viewing, linking, and unlinking policies. Error handling tests will ensure correct behavior when there are no policies linked or when API calls fail. Integration points include the API for fetching policies and the UI displaying those policies. The workspaces involved are the Authorization Workspace for policy management.",
+    "validation_issues": [
+      "Placeholder data detected in tests"
+    ]
   },
-  "summary": "These tests verify the functionality of fetching and displaying policies by application ID, ensuring proper integration with the policy management APIs and UI components.",
+  "summary": "These tests verify the functionality of viewing and managing policies associated with an application in PlainID, including the correct display of the policies tab, retrieval of policies, search functionality, and link/unlink operations.",
   "coverage_analysis": null,
   "risk_assessment": null,
   "regression_risks": null,
   "side_effects": null,
   "dependencies": [],
   "estimated_execution_time": null,
-  "suggested_folder": "PAP/Policy Management"
+  "suggested_folder": "Authorization Workspace"
 }

@@ -17,6 +17,7 @@ config = {
     'atlassian_api_token': os.getenv('ATLASSIAN_API_TOKEN', ''),
     'zephyr_api_token': os.getenv('ZEPHYR_API_TOKEN', ''),
     'openai_api_key': os.getenv('OPENAI_API_KEY', ''),
+    'gitlab_token': os.getenv('GITLAB_TOKEN', ''),
     'project_key': os.getenv('DEFAULT_PROJECT_KEY', 'PLAT'),
     'ai_model': os.getenv('AI_MODEL', 'gpt-4o'),
     'auto_upload': os.getenv('AUTO_UPLOAD', 'false').lower() == 'true',

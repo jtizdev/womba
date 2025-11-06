@@ -33,6 +33,11 @@ Examples:
   womba automate PLAT-12991 --repo /path/to/test/repo --framework playwright
   womba automate PLAT-12991 --repo /path/to/test/repo --ai-tool cursor
   
+  # Story enrichment (preprocessing & analysis):
+  womba enrich PLAT-12991                # Enrich story with context
+  womba enrich PLAT-12991 --no-cache     # Force re-enrichment
+  womba enrich PLAT-12991 --export enriched.json  # Export to file
+  
   # RAG (Retrieval-Augmented Generation) management:
   womba index PLAT-12991                 # Index a story's context
   womba index-all                        # Index all available data (batch)
@@ -47,7 +52,7 @@ Examples:
     parser.add_argument(
         'command',
         choices=['generate', 'upload', 'upload-plan', 'evaluate', 'configure', 'automate', 'all', 
-                 'index', 'index-all', 'index-source', 'rag-stats', 'rag-clear', 'rag-view'],
+                 'index', 'index-all', 'index-source', 'rag-stats', 'rag-clear', 'rag-view', 'enrich'],
         help='Command to execute'
     )
     
@@ -111,7 +116,7 @@ Examples:
         '--source',
         dest='sources',
         action='append',
-        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid. Repeatable.'
+        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid, gitlab, swagger. Repeatable.'
     )
     
     parser.add_argument(
@@ -124,6 +129,12 @@ Examples:
         '--file',
         dest='file_path',
         help='Path to test plan JSON file (use with upload-plan)'
+    )
+
+    parser.add_argument(
+        '--export',
+        dest='export_path',
+        help='Export enriched story to JSON file (use with enrich)'
     )
 
     parser.add_argument(
@@ -173,6 +184,20 @@ Examples:
             project_key=getattr(args, 'project_key', None),
             show_full=getattr(args, 'full', False)
         )
+        return
+    
+    if args.command == 'enrich':
+        import asyncio
+        from src.cli.enrich_commands import enrich_story_command
+        
+        if not args.story_key:
+            parser.error("Story key is required for 'enrich' command")
+        
+        asyncio.run(enrich_story_command(
+            story_key=args.story_key,
+            use_cache=not args.no_cache,
+            export_path=args.export_path
+        ))
         return
     
     if args.command == 'index-all':
@@ -259,13 +284,15 @@ Examples:
             print("💡 Run 'womba configure' or provide --project-key")
             return
 
-        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external'}
+        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external', 'gitlab', 'swagger'}
         canonical_map = {
             'zephyr': 'tests',
             'jira': 'stories',
             'confluence': 'docs',
             'plainid': 'external_docs',
-            'external': 'external_docs'
+            'external': 'external_docs',
+            'gitlab': 'swagger_docs',
+            'swagger': 'swagger_docs'
         }
         normalized_sources = []
         for src in sources:
@@ -335,10 +362,16 @@ Examples:
         if folder_path:
             print(f"📁 Target folder: {folder_path}")
 
+        # Fallback to suggested_folder from plan if --folder not provided
+        effective_folder = folder_path or getattr(test_plan, 'suggested_folder', None)
+        if effective_folder and effective_folder.lower() != 'unknown':
+            print(f"📁 Using folder: {effective_folder}")
+        else:
+            effective_folder = None
         results = asyncio.run(zephyr.upload_test_plan(
             test_plan=test_plan,
             project_key=project_key,
-            folder_path=folder_path
+            folder_path=effective_folder
         ))
 
         success = {k: v for k, v in results.items() if not str(v).startswith('ERROR')}
@@ -383,7 +416,6 @@ Examples:
     elif args.command == 'generate':
         import asyncio
         import json
-        from pathlib import Path
         from src.workflows.full_workflow import FullWorkflowOrchestrator
         from src.cli.rag_commands import index_all_data
 
@@ -407,6 +439,12 @@ Examples:
         orchestrator.story_key = args.story_key
         orchestrator.folder_path = args.folder_path
         result = asyncio.run(orchestrator._generate_test_plan())
+        # If no explicit folder provided, use suggested folder from generated plan
+        if not orchestrator.folder_path and getattr(orchestrator.test_plan, 'suggested_folder', None):
+            sf = orchestrator.test_plan.suggested_folder
+            if sf and sf.lower() != 'unknown':
+                orchestrator.folder_path = sf
+                print(f"📁 Selected suggested folder: {sf}")
         
         # Save test plan to JSON file
         output_dir = Path("test_plans")
@@ -459,6 +497,11 @@ Examples:
         orchestrator.folder_path = args.folder_path
         # First generate test plan, then upload
         asyncio.run(orchestrator._generate_test_plan())
+        if not orchestrator.folder_path and getattr(orchestrator.test_plan, 'suggested_folder', None):
+            sf = orchestrator.test_plan.suggested_folder
+            if sf and sf.lower() != 'unknown':
+                orchestrator.folder_path = sf
+                print(f"📁 Selected suggested folder: {sf}")
         result = asyncio.run(orchestrator._upload_to_zephyr(force=True))
         print(f"✅ Uploaded to Zephyr: {len(result)}")
     

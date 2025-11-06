@@ -220,10 +220,23 @@ class StoryCollector:
             import re
             import httpx
             confluence_links = []
+            raw_urls = set()
             if story.description:
-                # Find full Confluence page URLs: /wiki/spaces/SPACE/pages/12345
+                # Debug: show description sample and generic URLs
+                try:
+                    sample = story.description[:500].replace('\n', ' ')
+                    logger.debug(f"Story description sample (first 500 chars): {sample}")
+                except Exception:
+                    pass
+
+                # Collect any URLs (generic) then filter wiki/atlassian
+                all_urls = set(re.findall(r'https?://[^\s)]+', story.description))
+                wiki_urls = {u for u in all_urls if '/wiki/' in u or 'atlassian.net' in u}
+                raw_urls = {u for u in wiki_urls if '/wiki/' in u}
+
+                # Find full Confluence page URLs: /wiki/spaces/SPACE/pages/12345/Title
                 full_links = re.findall(
-                    r'https://[^/]+/wiki/spaces/([^/]+)/pages/([^/#\s]+)(?:/([^#\s]+))?',
+                    r'https://[^/]+/wiki/spaces/([^/]+)/pages/(\d+)(?:/[^#\s]+)?',
                     story.description
                 )
                 for match in full_links:
@@ -236,18 +249,24 @@ class StoryCollector:
                     r'https://([^/]+)/wiki/x/([a-zA-Z0-9_-]+)',
                     story.description
                 )
-                for domain, short_id in short_links:
-                    # Resolve short URL to get page ID
+                # Atlassian smart links: /l/c/<token>
+                lc_links = re.findall(
+                    r'https://([^/]+)/l/c/([a-zA-Z0-9_-]+)',
+                    story.description
+                )
+                
+                # Resolve short/smart links
+                resolve_list = [(domain, sid, f"https://{domain}/wiki/x/{sid}") for domain, sid in short_links]
+                resolve_list += [(domain, sid, f"https://{domain}/l/c/{sid}") for domain, sid in lc_links]
+                for domain, sid, short_url in resolve_list:
                     try:
-                        short_url = f"https://{domain}/wiki/x/{short_id}"
-                        logger.info(f"Resolving short Confluence URL: {short_url}")
+                        logger.info(f"Resolving Confluence short link: {short_url}")
                         async with httpx.AsyncClient(follow_redirects=True) as client:
                             response = await client.get(
                                 short_url,
                                 auth=(self.confluence_client.email, self.confluence_client.api_token),
                                 timeout=10.0
                             )
-                            # Extract page ID from final URL
                             final_url = str(response.url)
                             page_id_match = re.search(r'/pages/(\d+)', final_url)
                             space_match = re.search(r'/spaces/([^/]+)', final_url)
@@ -256,10 +275,17 @@ class StoryCollector:
                                 space_key = space_match.group(1) if space_match else "UNKNOWN"
                                 confluence_links.append((space_key, page_id))
                                 logger.info(f"Resolved {short_url} to page ID: {page_id}")
+                                raw_urls.add(final_url)
+                            else:
+                                # Keep raw final URL as reference
+                                raw_urls.add(final_url)
                     except Exception as e:
                         logger.warning(f"Failed to resolve short URL {short_url}: {e}")
             
-            logger.info(f"Found {len(confluence_links)} Confluence links in story description")
+            # Log discovered links for transparency
+            logger.info(f"Found {len(confluence_links)} Confluence page references; raw wiki URLs detected: {len(raw_urls) if story.description else 0}")
+            if raw_urls:
+                logger.debug(f"Wiki URLs detected in description: {list(raw_urls)[:5]}")
             
             # Fetch pages directly by ID
             confluence_docs = []
@@ -297,6 +323,19 @@ class StoryCollector:
                         "content": self.confluence_client.extract_page_content(page),
                     }
                     confluence_docs.append(doc)
+
+            # If still no content but we detected raw wiki URLs, include them as references
+            if not confluence_docs and story.description:
+                for url in raw_urls:
+                    confluence_docs.append({
+                        "id": None,
+                        "title": None,
+                        "space": None,
+                        "url": url,
+                        "content": ""  # No content available yet
+                    })
+                if raw_urls:
+                    logger.info(f"Added {len(raw_urls)} raw Confluence URL(s) as references")
 
             return confluence_docs
         except Exception as e:
@@ -393,8 +432,8 @@ class StoryCollector:
                 sections.append(f"\n{task.key}: {task.summary}")
                 sections.append(f"Status: {task.status}")
                 if task.description:
-                    desc = task.description[:200] + "..." if len(task.description) > 200 else task.description
-                    sections.append(f"Details: {desc}")
+                    # NO TRUNCATION - full subtask context needed
+                    sections.append(f"Details: {task.description}")
 
         # Linked stories section
         if linked_stories:
@@ -403,9 +442,8 @@ class StoryCollector:
                 sections.append(f"\n{story.key}: {story.summary}")
                 sections.append(f"Type: {story.issue_type}, Status: {story.status}")
                 if story.description:
-                    # Truncate long descriptions
-                    desc = story.description[:300] + "..." if len(story.description) > 300 else story.description
-                    sections.append(f"Description: {desc}")
+                    # NO TRUNCATION - full linked story details needed
+                    sections.append(f"Description: {story.description}")
 
         # Related bugs section
         if related_bugs:
