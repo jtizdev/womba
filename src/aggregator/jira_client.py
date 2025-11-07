@@ -239,13 +239,14 @@ class JiraClient(AtlassianClient):
                 elif hasattr(link, 'outwardIssue') and link.outwardIssue:
                     linked_issues.append(link.outwardIssue.key)
         
-        # Extract custom fields
+        # Extract custom fields and convert Jira objects to serializable types
         custom_fields = {}
         for field_name in dir(issue.fields):
             if field_name.startswith('customfield_') and not field_name.startswith('_'):
                 field_value = getattr(issue.fields, field_name, None)
                 if field_value is not None:
-                    custom_fields[field_name] = field_value
+                    # Convert Jira objects to serializable types
+                    custom_fields[field_name] = self._serialize_custom_field_value(field_value)
         
         # Try to find acceptance criteria
         acceptance_criteria = self._extract_acceptance_criteria_from_sdk(issue.fields, description)
@@ -268,6 +269,55 @@ class JiraClient(AtlassianClient):
             attachments=attachments,
             custom_fields=custom_fields,
         )
+
+    def _serialize_custom_field_value(self, value: Any) -> Any:
+        """
+        Convert Jira objects to serializable types.
+        
+        Args:
+            value: Jira field value (may be CustomFieldOption, list, dict, etc.)
+            
+        Returns:
+            Serializable value (str, dict, list, or primitive type)
+        """
+        # Handle None
+        if value is None:
+            return None
+        
+        # Handle primitive types
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        
+        # Handle lists
+        if isinstance(value, (list, tuple)):
+            return [self._serialize_custom_field_value(item) for item in value]
+        
+        # Handle dicts
+        if isinstance(value, dict):
+            return {k: self._serialize_custom_field_value(v) for k, v in value.items()}
+        
+        # Handle Jira CustomFieldOption objects
+        if hasattr(value, '__class__') and 'CustomFieldOption' in str(value.__class__):
+            # Extract useful attributes from CustomFieldOption
+            result = {}
+            if hasattr(value, 'value'):
+                result['value'] = str(value.value)
+            if hasattr(value, 'id'):
+                result['id'] = str(value.id)
+            if hasattr(value, 'self'):
+                result['self'] = str(value.self)
+            return result if result else str(value)
+        
+        # Handle other Jira objects with attributes
+        if hasattr(value, '__dict__'):
+            result = {}
+            for key, val in value.__dict__.items():
+                if not key.startswith('_'):
+                    result[key] = self._serialize_custom_field_value(val)
+            return result if result else str(value)
+        
+        # Fallback: convert to string
+        return str(value)
 
     def _extract_acceptance_criteria_from_sdk(self, fields, description: str) -> Optional[str]:
         """
@@ -582,11 +632,11 @@ class JiraClient(AtlassianClient):
             if linked_issue:
                 linked_issues.append(linked_issue.get("key", ""))
 
-        # Extract custom fields
+        # Extract custom fields and convert Jira objects to serializable types
         custom_fields = {}
         for field_key, field_value in fields.items():
             if field_key.startswith("customfield_") and field_value is not None:
-                custom_fields[field_key] = field_value
+                custom_fields[field_key] = self._serialize_custom_field_value(field_value)
 
         # Try to find acceptance criteria in common custom field names or description
         acceptance_criteria = self._extract_acceptance_criteria(fields, description)

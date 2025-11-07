@@ -117,6 +117,54 @@ async def index_all_tests(project_key: str, max_tests: int = 1000):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/index/stories/all")
+async def index_all_stories(project_key: str):
+    """
+    Batch index ALL Jira stories for a project (with automatic pagination).
+    
+    Args:
+        project_key: Project key to index stories for
+        
+    Returns:
+        Success message with indexing results
+    """
+    try:
+        logger.info(f"API: Batch indexing ALL stories for project {project_key}")
+        
+        # Import JiraClient
+        from src.aggregator.jira_client import JiraClient
+        
+        # Fetch ALL stories using the pagination method
+        jira_client = JiraClient()
+        jql = f"project = {project_key} ORDER BY created DESC"
+        stories = jira_client.search_all_issues(jql)
+        
+        logger.info(f"Found {len(stories)} stories to index for {project_key}")
+        
+        if len(stories) == 0:
+            return {
+                "status": "success",
+                "message": f"No stories found for project {project_key}",
+                "project_key": project_key,
+                "stories_indexed": 0
+            }
+        
+        # Index stories
+        indexer = ContextIndexer()
+        await indexer.index_jira_stories(stories, project_key)
+        
+        return {
+            "status": "success",
+            "message": f"Successfully indexed ALL {len(stories)} stories",
+            "project_key": project_key,
+            "stories_indexed": len(stories)
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to batch index all stories: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/search")
 async def search_rag(request: SearchRequest):
     """

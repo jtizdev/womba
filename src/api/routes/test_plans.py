@@ -75,12 +75,27 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             f"Generated {len(test_plan.test_cases)} test cases for {request.issue_key}"
         )
 
-        # Step 3: Upload to Zephyr if requested
+        # Step 3: Save test plan to JSON file for history
+        test_plan_file = None
+        try:
+            from pathlib import Path
+            import json
+            test_plans_dir = Path("test_plans")
+            test_plans_dir.mkdir(exist_ok=True)
+            test_plan_file = test_plans_dir / f"test_plan_{request.issue_key}.json"
+            
+            with open(test_plan_file, 'w') as f:
+                json.dump(test_plan.dict(), f, indent=2, default=str)
+            logger.info(f"Saved test plan to {test_plan_file}")
+        except Exception as e:
+            logger.error(f"Failed to save test plan to file: {e}")
+
+        # Step 4: Upload to Zephyr if requested
         zephyr_results = None
         zephyr_ids = []
         if request.upload_to_zephyr:
 
-            logger.info("Step 3: Uploading test plan to Zephyr...")
+            logger.info("Step 4: Uploading test plan to Zephyr...")
             zephyr = ZephyrIntegration()
             zephyr_results = await zephyr.upload_test_plan(
                 test_plan=test_plan,
@@ -93,7 +108,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             if zephyr_results and 'test_case_ids' in zephyr_results:
                 zephyr_ids = zephyr_results['test_case_ids']
         
-        # Track in history
+        # Track in history with test plan file path
         duration = int(time.time() - start_time)
         from .ui import track_test_generation
         track_test_generation(
@@ -101,7 +116,8 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             test_count=len(test_plan.test_cases),
             status='success',
             duration=duration,
-            zephyr_ids=zephyr_ids if zephyr_ids else None
+            zephyr_ids=zephyr_ids if zephyr_ids else None,
+            test_plan_file=str(test_plan_file) if test_plan_file else None
         )
 
         return GenerateTestPlanResponse(

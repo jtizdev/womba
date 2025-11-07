@@ -80,11 +80,11 @@ class Settings(BaseSettings):
         default="claude-3-5-sonnet-20241022", description="Default AI model to use"
     )
     ai_model: str = Field(
-        default="gpt-4o-2024-08-06", 
-        description="AI model for test generation (gpt-4o-2024-08-06 supports JSON schema + 16K output tokens)"
+        default="gpt-4o-mini", 
+        description="AI model for test generation (gpt-4o-mini: 17x cheaper, 500K TPM limit, supports JSON schema + 16K output tokens)"
     )
     temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
-    max_tokens: int = Field(default=10000, description="Max tokens for AI responses (gpt-4o-2024-08-06 supports up to 16384)")
+    max_tokens: int = Field(default=16000, description="Max tokens for AI responses (gpt-4o-mini supports up to 16384, increased back from 10K)")
     
     # RAG Configuration
     enable_rag: bool = Field(default=True, description="Enable RAG for context retrieval")
@@ -97,26 +97,26 @@ class Settings(BaseSettings):
     # - Quality of generated tests (too many irrelevant results hurts quality)
     rag_top_k_tests: int = Field(
         default=8, 
-        description="Similar test plans to retrieve (increased for better style learning)"
+        description="Similar test plans to retrieve (critical for test style learning)"
     )
     rag_top_k_docs: int = Field(
         default=20, 
-        description="Similar Confluence docs to retrieve (2x increase - docs are valuable context)"
+        description="Similar Confluence docs to retrieve (RESTORED - gpt-4o-mini has 500K TPM limit)"
     )
     rag_top_k_stories: int = Field(
         default=15, 
-        description="Similar Jira stories to retrieve (50% increase for more domain context)"
+        description="Similar Jira stories to retrieve (RESTORED - gpt-4o-mini has 500K TPM limit)"
     )
     rag_top_k_existing: int = Field(
         default=40, 
-        description="Similar existing Zephyr tests to retrieve (2x increase for better duplicate detection)"
+        description="Similar existing Zephyr tests to retrieve (RESTORED - gpt-4o-mini has 500K TPM limit)"
     )
     rag_top_k_swagger: int = Field(
         default=10,
-        description="Similar Swagger/OpenAPI docs to retrieve (2x increase for complete API coverage)"
+        description="Similar Swagger/OpenAPI docs to retrieve (API specs are essential)"
     )
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
-    rag_min_similarity: float = Field(default=0.5, description="Minimum similarity threshold (0.0-1.0) to filter low-quality results")
+    rag_min_similarity: float = Field(default=0.4, description="Minimum similarity threshold (0.0-1.0) - balanced for quality (kept lower than 0.45 to get more results)")
     rag_refresh_hours: Optional[float] = Field(default=None, description="Minimum hours between automatic full RAG refresh runs")
 
     # PlainID External Documentation Indexing

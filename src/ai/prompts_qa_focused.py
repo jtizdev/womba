@@ -126,6 +126,34 @@ YOUR ROLE:
 4. Generate the right number of high-quality, specific test cases for THIS story
 5. Self-validate output before returning
 
+🚨 CRITICAL QUALITY RULES (NEVER VIOLATE THESE):
+
+1. NO TRIVIAL TESTS:
+   - NEVER create tests that only verify "component X is displayed" or "tab Y is visible"
+   - NEVER test UI elements in isolation without functional validation
+   - Tests like "Verify policies tab is displayed" are FORBIDDEN unless merged with functional validation
+   - Example BAD: "Verify policies tab is displayed"
+   - Example GOOD: "Verify policies are correctly listed with pagination when navigating to policies tab"
+
+2. SUFFICIENT TEST STEPS (MANDATORY):
+   - Functional tests MUST have 3-6 steps minimum (each step = distinct action OR verification)
+   - DO NOT artificially limit step count - use as many as needed to thoroughly test
+   - Each step must be meaningful: setup, action, validation, or verification
+   - Tests with only 1-2 steps are TOO SHALLOW and will be rejected
+
+3. NEGATIVE & EDGE CASES (MANDATORY):
+   - EVERY feature MUST include at least 1-2 negative test cases
+   - EVERY feature MUST include at least 1 edge case test
+   - Think analytically: What can break? What happens with invalid input? What are the boundaries?
+   - Examples: missing required fields, unauthorized access, data limits, concurrent operations
+
+4. HUMAN-READABLE WRITING:
+   - Write like a human QA engineer, NOT a robot
+   - Use concise but specific language
+   - Avoid generic phrases like "Validate that the system..." - be specific about WHAT and HOW
+   - Example BAD: "Validate that the system processes the request correctly"
+   - Example GOOD: "Verify API returns 200 and creates policy with correct resource IDs"
+
 CRITICAL: THINK SMARTLY ABOUT TEST COUNT
 - No minimum or maximum - generate the RIGHT number for THIS story
 - NEVER pad with generic/low-value tests just to hit a count
@@ -188,13 +216,45 @@ STEP 3: SUBTASK ANALYSIS (CRITICAL - Engineering tasks reveal implementation det
      * Edge cases and error scenarios
    - Use subtask details to derive specific test scenarios
 
-STEP 4: WHAT CAN BREAK? (Risk Analysis)
-   - Based on the story description and subtasks, what could go wrong?
-   - What integration points exist?
+STEP 4: WHAT CAN BREAK? (Risk Analysis - BE ANALYTICAL!)
+   Think like a QA engineer trying to BREAK the system:
+   
+   NEGATIVE CASES (What if inputs are wrong?):
+   - Missing required fields in requests
+   - Invalid data types or formats
+   - Unauthorized access attempts
+   - Invalid IDs or non-existent resources
+   - Malformed request payloads
+   
+   EDGE CASES (What about boundaries?):
+   - Empty lists/arrays
+   - Maximum length inputs
+   - Special characters in text fields
+   - Concurrent operations
+   - Large data volumes (pagination boundaries)
+   - First/last items in collections
+   
+   INTEGRATION FAILURES (What if dependencies fail?):
+   - External API returns error
+   - Database connection issues
+   - Network timeouts
+   - Service unavailable scenarios
+   
+   For THIS feature specifically:
    - What PlainID components are affected (policies, POPs, authorizers, etc.)?
-   - What are the failure scenarios specific to THIS feature?
+   - What could fail in the workflow?
+   - What data validation is needed?
+   - What permission/authorization checks exist?
+   - What are the realistic failure scenarios?
 
-STEP 5: TEST COUNT DECISION
+STEP 5: CHECK FOR EXISTING TESTS (CRITICAL - Avoid Duplicates!)
+   - Review the EXISTING TEST CASES in RAG context carefully
+   - Does a test already cover this same functionality?
+   - If similar test exists: Note it and either skip creating duplicate OR explain how your test differs
+   - Format: "Checked existing tests: [test key] covers similar scenario but mine focuses on [difference]"
+   - If no duplicates found: "Confirmed no existing tests cover this scenario"
+
+STEP 6: TEST COUNT DECISION
    - How many acceptance criteria? (Primary driver!)
    - How many subtasks? (Each may need verification!)
    - How many failure scenarios identified above?
@@ -202,17 +262,29 @@ STEP 5: TEST COUNT DECISION
    - DECIDE: How many tests needed? (Usually 1-3 tests per acceptance criterion + key failure scenarios + subtask coverage)
    - JUSTIFY: Why is this count appropriate for THIS specific story?
 
-STEP 6: TEST STRATEGY
-   - Happy paths: Which acceptance criteria cover normal workflow?
-   - Error handling: What specific errors can this feature produce?
-   - Integration: What PlainID components interact in this feature?
-   - PlainID-specific: Which workspace(s), POPs, authorizers are involved?
+STEP 7: TEST STRATEGY (MANDATORY COVERAGE)
+   Ensure comprehensive coverage across these categories:
+   
+   - Happy path: At least 1 test for normal workflow
+   - Negative cases: At least 1-2 tests (invalid input, unauthorized access, error handling)
+   - Edge cases: At least 1 test (empty data, boundary conditions, special characters)
+   - Integration: If feature touches multiple components, test the integration
+   
+   Don't just test "it works" - test "it fails gracefully" and "it handles edge cases"
+   
+   For THIS feature:
+   - Which acceptance criteria cover normal workflow?
+   - What specific errors can this feature produce?
+   - What PlainID components interact in this feature?
+   - Which workspace(s), POPs, authorizers are involved?
 
 VALIDATION CHECK:
    - Can I explain this feature clearly? (If no, re-read the story!)
    - Do my tests map to actual acceptance criteria?
    - Are tests specific to THIS feature (not generic)?
    - Do tests use correct PlainID terminology?
+   - Have I eliminated trivial "component is shown" tests by merging them into functional tests?
+   - Do my tests cover negative cases and edge cases, not just happy paths?
 
 OUTPUT YOUR REASONING:
 Write your analysis in the "reasoning" field.
@@ -270,13 +342,41 @@ QUALITY GUIDELINES:
 - Stop when coverage is robust - not before, not after
 
 TEST NAMING CONVENTION:
-✅ GOOD: "Verify (service name here) returns 400 error when request missing required user_id field"
+✅ GOOD: "PERMIT DENY - Validate that when using a permitted policy, the API returns PERMIT"
 ✅ GOOD: "Verify policy export preserves custom resource IDs during environment migration"
 ❌ BAD: "Test API - Error Handling"
 ❌ BAD: "Happy Path Test"
 
-Format: "Verify [specific behavior] [under specific conditions]"
+Format: "[COMPONENT/API] - Validate that [condition], [expected behavior]"
 Be descriptive and precise.
+
+WRITING STYLE (CRITICAL - Write like a human, not a robot!):
+- Test descriptions should sound natural, like you're explaining to a teammate
+- DON'T over-explain or be overly verbose - be concise but specific
+- Focus on WHAT you're testing and WHY it matters, not minute implementation details
+- Use as many steps as needed to thoroughly test the scenario (usually 3-6 steps for functional tests, more for complex workflows)
+- Each step should be a distinct action or verification - don't artificially limit step count
+- Prioritize business-critical functionality over trivial UI details
+- Example: Instead of "Test pagination functionality", write "Validate that the list works correctly with multiple pages of data"
+
+AVOID TRIVIAL TESTS (CRITICAL):
+❌ DON'T write tests that only verify "X component/tab/button is displayed/shown"
+❌ DON'T split tests unnecessarily - if Test B requires Test A to pass, merge them
+❌ DON'T test that UI elements exist unless visibility itself is the feature being tested
+✅ DO merge "component is shown" checks into the functional test that uses that component
+✅ DO write tests that validate actual functionality, not just UI element existence
+✅ DO think: "Would this test catch a real bug, or just verify the UI rendered?"
+
+Examples of TRIVIAL tests to AVOID:
+- "Verify Policies tab is displayed" (too trivial - merge into functional test)
+- "Verify button is shown on page" (unless button visibility is the feature)
+- "Verify list component renders" (merge into "Verify list displays correct data")
+
+Examples of GOOD merged tests:
+- Instead of: "Test 1: Verify policies tab displays" + "Test 2: Verify policies list shows data"
+- Write: "Verify policies tab displays policy list with correct data and filtering"
+- Instead of: "Test 1: Verify search box appears" + "Test 2: Verify search works"
+- Write: "Verify search functionality filters results correctly based on user input"
 
 TEST DATA REQUIREMENTS (CRITICAL):
 - Every test step MUST include populated test_data field
@@ -305,12 +405,17 @@ GROUNDING IN CONTEXT:
 - If RAG provided examples, follow their patterns closely
 - Tests should demonstrate deep understanding of PlainID's PBAC model
 
-TEST STRUCTURE:
-- Preconditions: Specific setup (not "user is logged in" - specify what data exists)
-- Steps: Appropriate number of detailed, actionable steps with concrete examples
-- Expected results: Specific, measurable outcomes
-- Test data: Real examples or documentation references
-- In the test description, explicitly mention which "Functionality to test" bullet and AC the test covers
+TEST STRUCTURE (Follow this format):
+- Title: [COMPONENT] - Validate that [condition], [expected behavior]
+- Description: Natural language explaining the scenario (1-2 sentences, like explaining to a colleague)
+- Prerequisites: Specific setup required (e.g., "Active policy exists with configured dynamic group")
+- Expected Result: Brief statement of what should happen overall
+- Steps: Use as many steps as needed (usually 3-6 for functional tests, each step should be a distinct action or verification)
+  * Step 1: Setup/preparation action
+  * Step 2: Primary action with specifics (e.g., "Call POST /pdp/permit-deny with request body...")
+  * Step 3: Validation (e.g., "Validate response returns status PERMIT...")
+  * Step 4+: Additional verifications, edge case checks, or cleanup as needed
+- Test Data: Include actual payloads or reference where to find them
 
 TEST TYPE SPECIFICS (CRITICAL - DO NOT MIX):
 
@@ -442,15 +547,24 @@ CRITICAL: You are testing PlainID's PBAC platform - demonstrate domain expertise
 - Show understanding of policy lifecycle and runtime flows
 - Use PlainID-specific concepts: vendor IDs, policy promotion, deny reasons, entitlements
 
+DUPLICATE DETECTION (CRITICAL):
+🚨 BEFORE generating ANY test, check the EXISTING TEST CASES section in RAG context!
+- Review similar existing tests carefully
+- If a test already covers the same scenario → DO NOT create a duplicate
+- If similar test exists → Reference it in your reasoning and explain how yours differs
+- Document in reasoning: "Checked existing tests: [result of check]"
+- Better to skip a duplicate test than create redundant coverage
+
 USAGE RULES:
 1. Read the story description, acceptance criteria, and subtasks FIRST
 2. Understand what the feature does before looking at examples
-3. If swagger docs are provided → use EXACT endpoint paths, parameters, schemas from the story's API
-4. If examples show PlainID terminology → use that terminology for YOUR story
-5. If examples show test structure → match that structure for YOUR feature
-6. NEVER copy test scenarios from examples - generate scenarios from the STORY
-7. Tests must map to acceptance criteria from the STORY
-8. Test data must be relevant to the STORY's feature (not example features)
+3. CHECK EXISTING TESTS in RAG context - avoid duplicates!
+4. If swagger docs are provided → use EXACT endpoint paths, parameters, schemas from the story's API
+5. If examples show PlainID terminology → use that terminology for YOUR story
+6. If examples show test structure → match that structure for YOUR feature
+7. NEVER copy test scenarios from examples - generate scenarios from the STORY
+8. Tests must map to acceptance criteria from the STORY
+9. Test data must be relevant to the STORY's feature (not example features)
 
 SWAGGER/OPENAPI CONTEXT:
 When Swagger/OpenAPI documentation is provided:
@@ -483,33 +597,40 @@ They DO NOT show you WHAT to test - that comes from the story above.
 
 These examples demonstrate high-quality test cases across different domains:
 
-=== EXAMPLE 1: API Feature (E-commerce) ===
+=== EXAMPLE 1: PlainID PERMIT DENY API (REAL EXAMPLE - Use this style!) ===
 
-Story: "Add gift card payment method to checkout API"
+Story: "Implement permit-deny endpoint for policy evaluation"
 
-GOOD TEST:
+EXCELLENT TEST (This is how tests should be written):
 {
-  "title": "Verify checkout processes gift card payment and deducts balance correctly",
-  "description": "Validate that API accepts gift card as payment method, verifies sufficient balance, processes payment, and updates gift card balance accordingly",
-  "preconditions": "Gift card GC-2024-ABC123 exists with $100 balance. Cart total is $75.50",
+  "title": "PERMIT DENY - Validate that when using a permitted policy, the API returns PERMIT",
+  "description": "When calling Permit Deny endpoint with a user that fits the policy's dynamic group and the correct ruleset, the endpoint returns PERMIT",
+  "preconditions": "Active policy exists with configured dynamic group and ruleset for test-user-123",
   "steps": [
     {
       "step_number": 1,
-      "action": "POST /api/v1/checkout with payload: {\"cart_id\": \"cart-789\", \"payment_method\": \"gift_card\", \"gift_card_code\": \"GC-2024-ABC123\"}",
-      "expected_result": "API returns 200 OK with order confirmation and remaining gift card balance: $24.50",
-      "test_data": "{\"cart_id\": \"cart-789\", \"payment_method\": \"gift_card\", \"gift_card_code\": \"GC-2024-ABC123\", \"amount\": 75.50}"
+      "action": "Call POST /pdp/permit-deny with request body containing user credentials, asset, and action",
+      "expected_result": "API returns 200 OK with status PERMIT and matching policy evaluation details",
+      "test_data": "{\"user\": \"test-user-123\", \"asset\": \"resource-xyz\", \"action\": \"read\", \"context\": {\"department\": \"engineering\"}}"
     },
     {
       "step_number": 2,
-      "action": "GET /api/v1/gift-cards/GC-2024-ABC123/balance",
-      "expected_result": "Balance shows $24.50 (original $100 - $75.50 purchase)",
-      "test_data": "gift_card_code: GC-2024-ABC123"
+      "action": "Validate response body contains permit decision with policy details",
+      "expected_result": "Response includes decision=PERMIT, matched_policy_id, and evaluation metadata",
+      "test_data": "Expected response: {\"decision\": \"PERMIT\", \"policy_id\": \"pol-123\", \"reason\": \"User matches dynamic group criteria\"}"
     }
   ],
-  "expected_result": "Payment processed successfully, gift card balance updated, order created",
+  "expected_result": "The API returns PERMIT for the given entity and asset",
   "priority": "critical",
   "test_type": "functional"
 }
+
+WHAT TO LEARN FROM THIS EXAMPLE:
+- Title is clear: COMPONENT - Validate that [condition], [result]
+- Description is concise and human-readable (1-2 sentences)
+- Steps are specific but not overly verbose (2-3 steps typically)
+- Test data includes actual payloads
+- Focus is on WHAT is being tested, not minute HOW details
 
 === EXAMPLE 2: Access Control (SaaS) ===
 
@@ -627,15 +748,23 @@ TEST_PLAN_JSON_SCHEMA = {
                         },
                         "steps": {
                             "type": "array",
+                            "description": "Array of test steps - MUST have at least 3 steps for functional tests",
+                            "minItems": 3,
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "step_number": {"type": "integer"},
-                                    "action": {"type": "string"},
-                                    "expected_result": {"type": "string"},
+                                    "action": {
+                                        "type": "string",
+                                        "description": "Specific action to perform (be concrete and detailed)"
+                                    },
+                                    "expected_result": {
+                                        "type": "string",
+                                        "description": "Expected outcome of this step (be specific and measurable)"
+                                    },
                                     "test_data": {
                                         "type": "string",
-                                        "description": "REQUIRED: Concrete test data or documentation reference"
+                                        "description": "REQUIRED: Concrete test data with real values (NO null, NO placeholders like '<value>')"
                                     }
                                 },
                                 "required": ["step_number", "action", "expected_result", "test_data"],

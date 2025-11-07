@@ -240,22 +240,24 @@ class PromptBuilder:
         sections.append("Examples below are for STYLE/TERMINOLOGY ONLY - not for copying scenarios.")
         sections.append("=" * 80 + "\n")
         
-        # 2. RAG grounding (if available) - examples to learn patterns from
+        # 2. REASONING FRAMEWORK - think before generating (MOVED UP - instructions BEFORE examples!)
+        sections.append(REASONING_FRAMEWORK)
+        
+        # 3. GENERATION GUIDELINES - rules for creating tests (MOVED UP - instructions BEFORE examples!)
+        sections.append(GENERATION_GUIDELINES)
+        
+        # 4. RAG grounding (if available) - examples to learn patterns from (MOVED DOWN - after instructions!)
         if rag_context:
             sections.append("\n<reference_examples>")
-            sections.append("Learn patterns and terminology from these examples, but TEST THE STORY ABOVE")
+            sections.append("⚠️  REMINDER: You've seen the RULES above. Now learn patterns and terminology from these examples.")
+            sections.append("DO NOT copy scenarios from examples - they are for STYLE and TERMINOLOGY only.")
+            sections.append("Your tests must be specific to the STORY you just read, following the RULES you just learned.")
             sections.append(RAG_GROUNDING_INSTRUCTIONS)
             sections.append(rag_context)
             sections.append("</reference_examples>\n")
         
-        # 3. Few-shot examples - learn test structure
+        # 5. Few-shot examples - learn test structure (after RAG context)
         sections.append(FEW_SHOT_EXAMPLES)
-        
-        # 4. Reasoning framework - think before generating
-        sections.append(REASONING_FRAMEWORK)
-        
-        # 5. Generation guidelines - rules for creating tests
-        sections.append(GENERATION_GUIDELINES)
         
         # 6. Quality checklist - final validation before returning
         sections.append(QUALITY_CHECKLIST)
@@ -487,7 +489,13 @@ Ensure all required fields are populated with realistic values.
         if not retrieved_context.similar_existing_tests or tokens_remaining < 1000:
             return tokens_remaining
         
-        sections.append("\n--- EXISTING TESTS (Match this style, avoid duplicates) ---\n")
+        sections.append("\n--- EXISTING TESTS (CRITICAL: Check for duplicates before generating!) ---\n")
+        sections.append("⚠️  DUPLICATE DETECTION REQUIREMENT:\n")
+        sections.append("• Review these existing tests carefully - do they already cover your scenario?\n")
+        sections.append("• If a test already exists for this functionality → DO NOT create a duplicate!\n")
+        sections.append("• Document in your reasoning: 'Checked existing tests: [found/not found duplicates]'\n")
+        sections.append("• If similar test exists: Reference it and explain how yours differs, or skip it\n")
+        sections.append("• Better to skip a test than create redundant coverage\n\n")
         # Increased per-test budget from 1500 to 2500 tokens for complete test examples
         tokens_per_test = min(tokens_remaining // len(retrieved_context.similar_existing_tests[:20]), 2500)
         

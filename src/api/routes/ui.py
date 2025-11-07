@@ -51,16 +51,59 @@ class ConfigResponse(BaseModel):
     ai_tool: str = "aider"
 
 
-# In-memory storage (replace with database in production)
-_history_store: List[dict] = []
-_stats_cache = {
-    "total_tests": 0,
-    "total_stories": 0,
-    "time_saved": 0,
-    "success_rate": 100.0,
-    "tests_this_week": 0,
-    "stories_this_week": 0
-}
+# Persistent storage paths
+HISTORY_FILE = Path("data/history.json")
+STATS_FILE = Path("data/stats.json")
+
+# Ensure data directory exists
+HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+
+def _load_history() -> List[dict]:
+    """Load history from disk."""
+    if HISTORY_FILE.exists():
+        try:
+            with open(HISTORY_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load history: {e}")
+    return []
+
+def _save_history(history: List[dict]):
+    """Save history to disk."""
+    try:
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=2, default=str)
+    except Exception as e:
+        logger.error(f"Failed to save history: {e}")
+
+def _load_stats() -> dict:
+    """Load stats from disk."""
+    if STATS_FILE.exists():
+        try:
+            with open(STATS_FILE, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load stats: {e}")
+    return {
+        "total_tests": 0,
+        "total_stories": 0,
+        "time_saved": 0,
+        "success_rate": 100.0,
+        "tests_this_week": 0,
+        "stories_this_week": 0
+    }
+
+def _save_stats(stats: dict):
+    """Save stats to disk."""
+    try:
+        with open(STATS_FILE, 'w') as f:
+            json.dump(stats, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save stats: {e}")
+
+# Load from disk on startup
+_history_store = _load_history()
+_stats_cache = _load_stats()
 
 
 @router.get("/health")
@@ -105,12 +148,25 @@ async def get_history(limit: int = 50, offset: int = 0):
 @router.get("/history/{history_id}")
 async def get_history_details(history_id: str):
     """
-    Get details for a specific history item.
+    Get details for a specific history item including test plan JSON.
     """
     try:
         item = next((h for h in _history_store if h.get('id') == history_id), None)
         if not item:
             raise HTTPException(status_code=404, detail="History item not found")
+        
+        # If test_plan_file is stored, load the test plan JSON
+        if 'test_plan_file' in item and item['test_plan_file']:
+            test_plan_path = Path(item['test_plan_file'])
+            if test_plan_path.exists():
+                try:
+                    with open(test_plan_path, 'r') as f:
+                        test_plan_data = json.load(f)
+                        item['test_plan'] = test_plan_data
+                        logger.info(f"Loaded test plan from {test_plan_path}")
+                except Exception as e:
+                    logger.error(f"Failed to load test plan from {test_plan_path}: {e}")
+        
         return item
     except HTTPException:
         raise
@@ -128,6 +184,7 @@ async def add_history_item(item: dict):
         item['id'] = f"hist_{len(_history_store) + 1}"
         item['created_at'] = item.get('created_at', datetime.now().isoformat())
         _history_store.append(item)
+        _save_history(_history_store)  # Save to disk
         
         # Update stats
         _stats_cache['total_tests'] += item.get('test_count', 0)
@@ -145,6 +202,7 @@ async def add_history_item(item: dict):
         total = len(_history_store)
         success = sum(1 for h in _history_store if h.get('status') == 'success')
         _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
+        _save_stats(_stats_cache)  # Save to disk
         
         return {"id": item['id'], "status": "created"}
     except Exception as e:
@@ -259,10 +317,19 @@ async def validate_config(validation_request: dict):
 
 # Helper function to track test generation
 def track_test_generation(story_key: str, test_count: int, status: str, 
-                          duration: Optional[int] = None, zephyr_ids: Optional[List[str]] = None):
+                          duration: Optional[int] = None, zephyr_ids: Optional[List[str]] = None,
+                          test_plan_file: Optional[str] = None):
     """
     Helper function to track test generation for history and stats.
     Call this after successful test generation.
+    
+    Args:
+        story_key: Jira story key
+        test_count: Number of test cases generated
+        status: 'success' or 'failed'
+        duration: Duration in seconds
+        zephyr_ids: List of Zephyr test case IDs if uploaded
+        test_plan_file: Path to the saved test plan JSON file
     """
     item = {
         'id': f"hist_{len(_history_store) + 1}",
@@ -271,10 +338,12 @@ def track_test_generation(story_key: str, test_count: int, status: str,
         'test_count': test_count,
         'status': status,
         'duration': duration,
-        'zephyr_ids': zephyr_ids
+        'zephyr_ids': zephyr_ids,
+        'test_plan_file': test_plan_file  # Store the path to the test plan JSON
     }
     
     _history_store.append(item)
+    _save_history(_history_store)  # Persist to disk
     
     # Update stats
     if status == 'success':
@@ -288,6 +357,7 @@ def track_test_generation(story_key: str, test_count: int, status: str,
     total = len(_history_store)
     success = sum(1 for h in _history_store if h.get('status') == 'success')
     _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
+    _save_stats(_stats_cache)  # Persist to disk
     
     logger.info(f"Tracked test generation: {story_key} ({test_count} tests, {status})")
 

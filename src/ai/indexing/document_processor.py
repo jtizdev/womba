@@ -118,10 +118,18 @@ class DocumentProcessor:
         doc_text = f"Story: {story.key} - {story.summary}\n\n"
         
         if story.description:
-            doc_text += f"Description: {story.description}\n\n"
+            # Ensure description is a string, not a PropertyHolder object
+            description = str(story.description)
+            # Remove object representations like "<jira.resources.PropertyHolder object at 0x...>"
+            if description.startswith('<') and 'object at 0x' in description:
+                description = ""  # Skip invalid descriptions
+            doc_text += f"Description: {description}\n\n"
         
         if hasattr(story, 'acceptance_criteria') and story.acceptance_criteria:
-            doc_text += f"Acceptance Criteria: {story.acceptance_criteria}"
+            # Ensure acceptance criteria is a string
+            ac = str(story.acceptance_criteria)
+            if not ac.startswith('<') or 'object at 0x' not in ac:
+                doc_text += f"Acceptance Criteria: {ac}"
         
         return doc_text
 
