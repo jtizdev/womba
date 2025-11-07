@@ -154,6 +154,17 @@ YOUR ROLE:
    - Example BAD: "Validate that the system processes the request correctly"
    - Example GOOD: "Verify API returns 200 and creates policy with correct resource IDs"
 
+5. NATURAL TEST NAMING (CRITICAL):
+   - NEVER use prefixes like "UI -", "API -", "NEGATIVE -", "Integration -" in test names
+   - Test names should be natural, feature-focused descriptions
+   - Example BAD: "UI - UI - Verify Policies tab displays list of policies"
+   - Example BAD: "API - API - Verify fetching policies by Application ID returns correct policies"
+   - Example BAD: "NEGATIVE - Verify error handling"
+   - Example BAD: "Integration - Verify link/unlink actions for policies"
+   - Example GOOD: "Application policy list has correct number of associated policies"
+   - Example GOOD: "Policy list handles empty list gracefully"
+   - Example GOOD: "Policy list updates for application after unlinking and linking"
+
 CRITICAL: THINK SMARTLY ABOUT TEST COUNT
 - No minimum or maximum - generate the RIGHT number for THIS story
 - NEVER pad with generic/low-value tests just to hit a count
@@ -341,14 +352,28 @@ QUALITY GUIDELINES:
 - But better 15 excellent tests than 8 tests that miss important scenarios
 - Stop when coverage is robust - not before, not after
 
-TEST NAMING CONVENTION:
-✅ GOOD: "PERMIT DENY - Validate that when using a permitted policy, the API returns PERMIT"
-✅ GOOD: "Verify policy export preserves custom resource IDs during environment migration"
+TEST NAMING CONVENTION (CRITICAL - Write like a human QA engineer!):
+🚨 NEVER use prefixes like "UI -", "API -", "NEGATIVE -", "Integration -" in test names!
+🚨 Test names should be natural, feature-focused, and describe what you're testing.
+
+✅ GOOD: "Application policy list has correct number of associated policies"
+✅ GOOD: "Policy list handles empty list gracefully"
+✅ GOOD: "Policy list updates for application after unlinking and linking"
+✅ GOOD: "Permit-deny API returns PERMIT when policy allows access"
+✅ GOOD: "Policy export preserves custom resource IDs during environment migration"
+
+❌ BAD: "UI - UI - Verify Policies tab displays list of policies"
+❌ BAD: "API - API - Verify fetching policies by Application ID returns correct policies"
+❌ BAD: "NEGATIVE - Verify error handling"
+❌ BAD: "Integration - Verify link/unlink actions for policies"
 ❌ BAD: "Test API - Error Handling"
 ❌ BAD: "Happy Path Test"
 
-Format: "[COMPONENT/API] - Validate that [condition], [expected behavior]"
-Be descriptive and precise.
+Format: Natural, feature-focused description of what you're testing
+- Focus on the FEATURE and what BEHAVIOR you're validating
+- Use natural language like you're explaining to a teammate
+- Include the feature name (e.g., "Application policy list", "Policy export", "Permit-deny API")
+- Describe the specific behavior or condition being tested
 
 WRITING STYLE (CRITICAL - Write like a human, not a robot!):
 - Test descriptions should sound natural, like you're explaining to a teammate
@@ -406,7 +431,9 @@ GROUNDING IN CONTEXT:
 - Tests should demonstrate deep understanding of PlainID's PBAC model
 
 TEST STRUCTURE (Follow this format):
-- Title: [COMPONENT] - Validate that [condition], [expected behavior]
+- Title: Natural, feature-focused description (e.g., "Application policy list has correct number of associated policies")
+  🚨 NEVER use prefixes like "UI -", "API -", "NEGATIVE -", "Integration -" in test names!
+  🚨 Focus on the FEATURE and what BEHAVIOR you're testing
 - Description: Natural language explaining the scenario (1-2 sentences, like explaining to a colleague)
 - Prerequisites: Specific setup required (e.g., "Active policy exists with configured dynamic group")
 - Expected Result: Brief statement of what should happen overall
@@ -492,7 +519,8 @@ QUALITY_CHECKLIST = """
 Before returning your test plan, verify each item:
 
 □ Each test has clear business value tied to story requirements
-□ Test names are descriptive (no "Happy Path" or "Test Case 1")
+□ Test names are natural, feature-focused descriptions (no "Happy Path", "Test Case 1", or prefixes like "UI -", "API -", "NEGATIVE -", "Integration -")
+□ Test names describe the FEATURE and what BEHAVIOR is being tested (e.g., "Application policy list has correct number of associated policies")
 □ ALL test_data fields are populated (no null, no empty strings)
 □ API steps (if any) include method, exact path, and payload/params derived from Swagger/API SPECIFICATIONS
 □ Each test step references story-specific entities/fields from description/acceptance criteria
@@ -603,7 +631,7 @@ Story: "Implement permit-deny endpoint for policy evaluation"
 
 EXCELLENT TEST (This is how tests should be written):
 {
-  "title": "PERMIT DENY - Validate that when using a permitted policy, the API returns PERMIT",
+  "title": "Permit-deny API returns PERMIT when policy allows access",
   "description": "When calling Permit Deny endpoint with a user that fits the policy's dynamic group and the correct ruleset, the endpoint returns PERMIT",
   "preconditions": "Active policy exists with configured dynamic group and ruleset for test-user-123",
   "steps": [
@@ -626,7 +654,8 @@ EXCELLENT TEST (This is how tests should be written):
 }
 
 WHAT TO LEARN FROM THIS EXAMPLE:
-- Title is clear: COMPONENT - Validate that [condition], [result]
+- Title is natural and feature-focused: describes the feature and what behavior is being tested
+- 🚨 NO prefixes like "UI -", "API -", "NEGATIVE -", "Integration -" in test names!
 - Description is concise and human-readable (1-2 sentences)
 - Steps are specific but not overly verbose (2-3 steps typically)
 - Test data includes actual payloads
@@ -736,7 +765,7 @@ TEST_PLAN_JSON_SCHEMA = {
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Descriptive test name starting with 'Verify'"
+                            "description": "Natural, feature-focused test name describing the feature and what behavior is being tested. NEVER use prefixes like 'UI -', 'API -', 'NEGATIVE -', 'Integration -'. Examples: 'Application policy list has correct number of associated policies', 'Policy list handles empty list gracefully', 'Policy list updates for application after unlinking and linking'"
                         },
                         "description": {
                             "type": "string",
