@@ -443,6 +443,14 @@ TEST STRUCTURE (Follow this format):
   * Step 3: Validation (e.g., "Validate response returns status PERMIT...")
   * Step 4+: Additional verifications, edge case checks, or cleanup as needed
 - Test Data: Include actual payloads or reference where to find them
+- Tags: REQUIRED - Must include tags based on test type and scope:
+  * UI tests: Include "UI" tag
+  * API tests: Include "API" tag
+  * Integration tests: Include "INTEGRATION" tag
+  * Negative tests: Include "NEGATIVE" tag
+  * Edge case tests: Include "EDGE_CASE" tag
+  * Regression tests: Include "REGRESSION" tag
+  * Add feature-specific tags (e.g., "POLICY", "AUTHENTICATION", "AUTHORIZATION") based on what's being tested
 
 TEST TYPE SPECIFICS (CRITICAL - DO NOT MIX):
 
