@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     # Figma (Optional)
     figma_api_token: Optional[str] = Field(default=None, description="Figma API token (optional)")
     
+    # Company Overview (Optional, used in AI prompts)
+    company_overview: Optional[str] = Field(
+        default=None,
+        description="Company overview/terminology guidance to inject into AI prompts (supports Markdown/HTML). "
+                    "If not provided, the default PlainID overview is used."
+    )
+
     # API Documentation (Optional, customer-specific)
     api_docs_url: Optional[str] = Field(
         default=None, 

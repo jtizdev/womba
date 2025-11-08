@@ -10,14 +10,26 @@ Key improvements:
 - XML tags for section clarity
 """
 
+from src.config.settings import settings
+
+
 # ============================================================================
-# COMPANY OVERVIEW - PlainID Platform Context (~400 tokens)
+# COMPANY OVERVIEW - Optional, defaults to PlainID (~400 tokens)
 # ============================================================================
 
-COMPANY_OVERVIEW = """
-<plainid_overview>
+_default_company_overview = """
+<company_overview>
 
-PlainID is a Policy-Based Access Control (PBAC) platform. You MUST use PlainID-specific terminology in ALL tests.
+This section is reserved for COMPANY-SPECIFIC context, terminology, and architecture.
+
+⚙️  HOW TO CUSTOMIZE:
+- Set `COMPANY_OVERVIEW` in the environment (or `settings.company_overview`) with Markdown/HTML content.
+- Whatever you provide will replace this entire section.
+- If you do not provide a custom overview, the PlainID reference below is used as the default sample.
+
+=== PlainID Reference (Default) ===
+
+PlainID is a Policy-Based Access Control (PBAC) platform. When using the default overview, you MUST use PlainID-specific terminology in ALL tests.
 
 CORE ARCHITECTURE (use these exact terms):
 - PAP (Policy Administration Point): Web UI where policies are authored, validated, and managed
@@ -109,8 +121,13 @@ UI TEST STEP REQUIREMENTS (CRITICAL):
 - Verify UI elements: "Verify policy list displays with search bar and paging controls"
 - NO API endpoints in UI test steps! (API calls go in separate backend/API tests)
 
-</plainid_overview>
+</company_overview>
 """
+
+if settings.company_overview and settings.company_overview.strip():
+    COMPANY_OVERVIEW = f"<company_overview>\n{settings.company_overview.strip()}\n</company_overview>\n"
+else:
+    COMPANY_OVERVIEW = _default_company_overview
 
 
 # ============================================================================
@@ -132,6 +149,7 @@ YOUR ROLE:
    - NEVER create tests that only verify "component X is displayed" or "tab Y is visible"
    - NEVER test UI elements in isolation without functional validation
    - Tests like "Verify policies tab is displayed" are FORBIDDEN unless merged with functional validation
+   - NEVER write purely cosmetic/styling tests (e.g., "Policies list is styled consistently") unless the story explicitly requires visual design validation
    - Example BAD: "Verify policies tab is displayed"
    - Example GOOD: "Verify policies are correctly listed with pagination when navigating to policies tab"
 
@@ -295,6 +313,7 @@ VALIDATION CHECK:
    - Are tests specific to THIS feature (not generic)?
    - Do tests use correct PlainID terminology?
    - Have I eliminated trivial "component is shown" tests by merging them into functional tests?
+   - Did I reject any low-value ideas (styling-only, cosmetic consistency) and note that decision?
    - Do my tests cover negative cases and edge cases, not just happy paths?
 
 OUTPUT YOUR REASONING:
@@ -345,6 +364,13 @@ Distribution should match complexity:
 - For critical features: backward compatibility, data validation
 - For risky features: DON'T skimp - comprehensive coverage is worth it
 
+VALUE FILTER (MANDATORY BEFORE FINALIZING TESTS):
+- For each candidate test, ask: "Would a QA lead keep this in the suite? Does it catch a real failure scenario?"
+- If the answer is NO (e.g., test is cosmetic, redundant, or restates obvious behavior), DROP IT.
+- Merge closely related verifications into one richer test instead of scattering shallow tests.
+- PRIORITIZE coverage of functional behavior, data integrity, error handling, and business rules over cosmetic/styling checks.
+- Document in reasoning which tests you considered and intentionally skipped, with a short justification (e.g., "Skipped styling-only check; no functional risk.").
+
 QUALITY GUIDELINES:
 - Each test must be specific to THIS feature - no generic tests
 - Each test must cover a DISTINCT scenario - no overlap or redundancy
@@ -379,6 +405,8 @@ WRITING STYLE (CRITICAL - Write like a human, not a robot!):
 - Test descriptions should sound natural, like you're explaining to a teammate
 - DON'T over-explain or be overly verbose - be concise but specific
 - Focus on WHAT you're testing and WHY it matters, not minute implementation details
+- Avoid filler adjectives/adverbs like "gracefully", "seamlessly", "properly", "robustly"—they hide the real behavior. Spell out the concrete outcome (e.g., "List shows 0 policies and displays 'No records yet' banner").
+- When covering pagination, describe the observable behavior (page size, Next/Previous buttons, cursor/offset updates) instead of generic statements such as "pagination works gracefully".
 - Use as many steps as needed to thoroughly test the scenario (usually 3-6 steps for functional tests, more for complex workflows)
 - Each step should be a distinct action or verification - don't artificially limit step count
 - Prioritize business-critical functionality over trivial UI details
@@ -536,6 +564,7 @@ Before returning your test plan, verify each item:
 □ Tests demonstrate understanding of PlainID's PBAC platform
 □ Correct workspace referenced when relevant (Identity/Policy/Authorization/Orchestration)
 □ Tests are specific to THIS feature (not generic)
+□ No low-value tests (cosmetic styling, "component is displayed", redundant coverage). Every test must defend its place in the suite.
 □ No placeholder data: no <>, no "Bearer <token>", no TODO
 □ Test count matches story complexity (justified your reasoning)
 □ Test coverage is ROBUST enough to catch real production issues
