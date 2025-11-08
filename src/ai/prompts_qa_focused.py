@@ -151,7 +151,7 @@ YOUR ROLE:
    - Tests like "Verify policies tab is displayed" are FORBIDDEN unless merged with functional validation
    - NEVER write purely cosmetic/styling tests (e.g., "Policies list is styled consistently") unless the story explicitly requires visual design validation
    - Example BAD: "Verify policies tab is displayed"
-   - Example GOOD: "Verify policies are correctly listed with pagination when navigating to policies tab"
+   - Example GOOD: "Verify policies tab displays 10 policies per page across multiple pages"
 
 2. SUFFICIENT TEST STEPS (MANDATORY):
    - Functional tests MUST have 3-6 steps minimum (each step = distinct action OR verification)
@@ -180,7 +180,7 @@ YOUR ROLE:
    - Example BAD: "NEGATIVE - Verify error handling"
    - Example BAD: "Integration - Verify link/unlink actions for policies"
    - Example GOOD: "Application policy list has correct number of associated policies"
-   - Example GOOD: "Policy list handles empty list gracefully"
+   - Example GOOD: "Policy list displays 'No policies found' message when application has no policies"
    - Example GOOD: "Policy list updates for application after unlinking and linking"
 
 CRITICAL: THINK SMARTLY ABOUT TEST COUNT
@@ -299,7 +299,7 @@ STEP 7: TEST STRATEGY (MANDATORY COVERAGE)
    - Edge cases: At least 1 test (empty data, boundary conditions, special characters)
    - Integration: If feature touches multiple components, test the integration
    
-   Don't just test "it works" - test "it fails gracefully" and "it handles edge cases"
+   Don't just test "it works" - test "it returns appropriate error message" and "it handles edge cases"
    
    For THIS feature:
    - Which acceptance criteria cover normal workflow?
@@ -383,7 +383,7 @@ TEST NAMING CONVENTION (CRITICAL - Write like a human QA engineer!):
 🚨 Test names should be natural, feature-focused, and describe what you're testing.
 
 ✅ GOOD: "Application policy list has correct number of associated policies"
-✅ GOOD: "Policy list handles empty list gracefully"
+✅ GOOD: "Policy list displays 'No policies found' message when application has no policies"
 ✅ GOOD: "Policy list updates for application after unlinking and linking"
 ✅ GOOD: "Permit-deny API returns PERMIT when policy allows access"
 ✅ GOOD: "Policy export preserves custom resource IDs during environment migration"
@@ -405,12 +405,12 @@ WRITING STYLE (CRITICAL - Write like a human, not a robot!):
 - Test descriptions should sound natural, like you're explaining to a teammate
 - DON'T over-explain or be overly verbose - be concise but specific
 - Focus on WHAT you're testing and WHY it matters, not minute implementation details
-- Avoid filler adjectives/adverbs like "gracefully", "seamlessly", "properly", "robustly"—they hide the real behavior. Spell out the concrete outcome (e.g., "List shows 0 policies and displays 'No records yet' banner").
-- When covering pagination, describe the observable behavior (page size, Next/Previous buttons, cursor/offset updates) instead of generic statements such as "pagination works gracefully".
+- Avoid filler adjectives/adverbs like "gracefully", "seamlessly", "properly", "robustly", "correctly", "successfully"—they hide the real behavior. Spell out the concrete outcome (e.g., "List shows 0 policies and displays 'No records yet' banner").
+- When covering pagination, describe the observable behavior (page size, total pages, offset/limit values) instead of generic statements.
 - Use as many steps as needed to thoroughly test the scenario (usually 3-6 steps for functional tests, more for complex workflows)
 - Each step should be a distinct action or verification - don't artificially limit step count
 - Prioritize business-critical functionality over trivial UI details
-- Example: Instead of "Test pagination functionality", write "Validate that the list works correctly with multiple pages of data"
+- Example: Instead of "Test pagination functionality", write "Validate list displays 10 items per page when dataset contains 50+ items"
 
 AVOID TRIVIAL TESTS (CRITICAL):
 ❌ DON'T write tests that only verify "X component/tab/button is displayed/shown"
@@ -427,9 +427,9 @@ Examples of TRIVIAL tests to AVOID:
 
 Examples of GOOD merged tests:
 - Instead of: "Test 1: Verify policies tab displays" + "Test 2: Verify policies list shows data"
-- Write: "Verify policies tab displays policy list with correct data and filtering"
+- Write: "Verify policies tab displays policy list with filtering and pagination"
 - Instead of: "Test 1: Verify search box appears" + "Test 2: Verify search works"
-- Write: "Verify search functionality filters results correctly based on user input"
+- Write: "Verify search filters policy results when user enters text"
 
 TEST DATA REQUIREMENTS (CRITICAL):
 - Every test step MUST include populated test_data field
@@ -711,7 +711,7 @@ GOOD TEST:
     {
       "step_number": 1,
       "action": "Authenticate as user_editor_1 and PUT /api/docs/doc_456 with updated content",
-      "expected_result": "API returns 200 OK, document content updated successfully",
+      "expected_result": "API returns 200 OK, document content reflects new text in response body",
       "test_data": "{\"doc_id\": \"doc_456\", \"content\": \"Updated by editor\", \"user\": \"user_editor_1\", \"role\": \"editor\"}"
     },
     {
@@ -721,7 +721,7 @@ GOOD TEST:
       "test_data": "{\"doc_id\": \"doc_456\", \"user\": \"user_editor_1\", \"role\": \"editor\"}"
     }
   ],
-  "expected_result": "Editor can modify but not delete, permissions enforced correctly",
+  "expected_result": "Editor can modify but not delete, DELETE returns 403 with admin role requirement",
   "priority": "high",
   "test_type": "functional"
 }
@@ -755,7 +755,7 @@ GOOD TEST:
       "test_data": "{\"query\": \"laptop\", \"page_size\": 50, \"cursor\": \"eyJpZCI6MTUwfQ==\"}"
     }
   ],
-  "expected_result": "Pagination works correctly across all pages, cursor navigation functions properly",
+  "expected_result": "Each page returns 50 results, cursor advances through dataset, final page returns null cursor",
   "priority": "high",
   "test_type": "functional"
 }
@@ -802,7 +802,7 @@ TEST_PLAN_JSON_SCHEMA = {
                     "properties": {
                         "title": {
                             "type": "string",
-                            "description": "Natural, feature-focused test name describing the feature and what behavior is being tested. NEVER use prefixes like 'UI -', 'API -', 'NEGATIVE -', 'Integration -'. Examples: 'Application policy list has correct number of associated policies', 'Policy list handles empty list gracefully', 'Policy list updates for application after unlinking and linking'"
+                            "description": "Natural, feature-focused test name describing the feature and what behavior is being tested. NEVER use prefixes like 'UI -', 'API -', 'NEGATIVE -', 'Integration -'. Examples: 'Application policy list has correct number of associated policies', 'Policy list displays \"No policies found\" message when application has no policies', 'Policy list updates for application after unlinking and linking'"
                         },
                         "description": {
                             "type": "string",

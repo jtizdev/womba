@@ -15,7 +15,7 @@ from pathlib import Path
 from src.config.settings import settings
 from src.api.middleware.jwt_auth import JWTAuthMiddleware
 
-from .routes import stories, test_plans, ui, rag, connect, zephyr
+from .routes import stories, test_plans, ui, rag, connect, zephyr, prompts
 
 
 @asynccontextmanager
@@ -53,6 +53,7 @@ app.include_router(test_plans.router, prefix="/api/v1/test-plans", tags=["test-p
 app.include_router(ui.router, prefix="/api/v1", tags=["ui"])
 app.include_router(rag.router, tags=["rag"])
 app.include_router(zephyr.router, tags=["zephyr"])
+app.include_router(prompts.router, tags=["prompts"])
 
 # Mount static files for web UI
 static_path = Path(__file__).parent.parent / "web" / "static"

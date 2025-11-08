@@ -7,8 +7,11 @@ Refactored to support:
 - Chain-of-thought reasoning
 - Optimized section ordering
 - Token-efficient construction
+- Dynamic prompt overrides from configuration
 """
 
+import json
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
@@ -23,6 +26,26 @@ from src.ai.prompts_qa_focused import (
     FEW_SHOT_EXAMPLES,
     TEST_PLAN_JSON_SCHEMA,
 )
+
+# Path for prompt overrides
+PROMPT_OVERRIDES_FILE = Path("data/prompt_overrides.json")
+
+
+def _load_prompt_overrides() -> Dict[str, str]:
+    """Load prompt overrides from disk."""
+    try:
+        if PROMPT_OVERRIDES_FILE.exists():
+            with open(PROMPT_OVERRIDES_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        logger.warning(f"Failed to load prompt overrides: {e}")
+    return {}
+
+
+def _get_prompt_section(section_name: str, default_content: str) -> str:
+    """Get prompt section content, with override if available."""
+    overrides = _load_prompt_overrides()
+    return overrides.get(section_name, default_content)
 
 
 class PromptBuilder:
@@ -241,10 +264,10 @@ class PromptBuilder:
         sections.append("=" * 80 + "\n")
         
         # 2. REASONING FRAMEWORK - think before generating (MOVED UP - instructions BEFORE examples!)
-        sections.append(REASONING_FRAMEWORK)
+        sections.append(_get_prompt_section('reasoning_framework', REASONING_FRAMEWORK))
         
         # 3. GENERATION GUIDELINES - rules for creating tests (MOVED UP - instructions BEFORE examples!)
-        sections.append(GENERATION_GUIDELINES)
+        sections.append(_get_prompt_section('generation_guidelines', GENERATION_GUIDELINES))
         
         # 4. RAG grounding (if available) - examples to learn patterns from (MOVED DOWN - after instructions!)
         if rag_context:
