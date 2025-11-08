@@ -134,9 +134,9 @@ async def index_all_stories(project_key: str):
         # Import JiraClient
         from src.aggregator.jira_client import JiraClient
         
-        # Fetch ALL stories using the pagination method
+        # Fetch ALL stories using the pagination method (filter by Story issue type only)
         jira_client = JiraClient()
-        jql = f"project = {project_key} ORDER BY created DESC"
+        jql = f"project = {project_key} AND issuetype = Story ORDER BY created DESC"
         stories = jira_client.search_all_issues(jql)
         
         logger.info(f"Found {len(stories)} stories to index for {project_key}")
