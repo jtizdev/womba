@@ -187,10 +187,8 @@ async def search_rag(request: SearchRequest):
         if request.project_key:
             metadata_filter["project_key"] = request.project_key
         
-        # For jira_stories collection, only return Story issue types
-        if request.collection == "jira_stories":
-            metadata_filter["issue_type"] = "Story"
-            logger.info("Filtering jira_stories search to only return Story issue types")
+        # Note: We index all issue types for context, but don't filter by type in search
+        # to allow broader results. The user can see the issue_type in the metadata.
         
         # Search
         results = await store.retrieve_similar(

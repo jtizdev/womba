@@ -123,7 +123,7 @@ class Settings(BaseSettings):
         description="Similar Swagger/OpenAPI docs to retrieve (API specs are essential)"
     )
     rag_auto_index: bool = Field(default=True, description="Automatically index after test generation")
-    rag_min_similarity: float = Field(default=0.4, description="Minimum similarity threshold (0.0-1.0) - balanced for quality (kept lower than 0.45 to get more results)")
+    rag_min_similarity: float = Field(default=0.25, description="Minimum similarity threshold (0.0-1.0) - lowered for broader UI search results")
     rag_refresh_hours: Optional[float] = Field(default=None, description="Minimum hours between automatic full RAG refresh runs")
 
     # PlainID External Documentation Indexing
