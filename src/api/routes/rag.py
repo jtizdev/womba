@@ -28,6 +28,7 @@ class SearchRequest(BaseModel):
     collection: str = "test_plans"
     top_k: int = 10
     project_key: Optional[str] = None
+    min_similarity: Optional[float] = None  # Minimum similarity threshold for filtering results
 
 
 @router.get("/stats")
@@ -198,6 +199,12 @@ async def search_rag(request: SearchRequest):
             top_k=request.top_k,
             metadata_filter=metadata_filter if metadata_filter else None
         )
+        
+        # Apply similarity threshold if specified (for UI search)
+        if request.min_similarity is not None:
+            filtered_results = [r for r in results if r.get("distance", 0) <= (1.0 - request.min_similarity)]
+            logger.info(f"Filtered {len(results)} results to {len(filtered_results)} using min_similarity={request.min_similarity}")
+            results = filtered_results
         
         return {
             "status": "success",
