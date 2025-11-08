@@ -134,9 +134,9 @@ async def index_all_stories(project_key: str):
         # Import JiraClient
         from src.aggregator.jira_client import JiraClient
         
-        # Fetch ALL stories using the pagination method (filter by Story issue type only)
+        # Fetch ALL issues using the pagination method (all types for context)
         jira_client = JiraClient()
-        jql = f"project = {project_key} AND issuetype = Story ORDER BY created DESC"
+        jql = f"project = {project_key} ORDER BY created DESC"
         stories = jira_client.search_all_issues(jql)
         
         logger.info(f"Found {len(stories)} stories to index for {project_key}")
@@ -182,16 +182,21 @@ async def search_rag(request: SearchRequest):
         store = RAGVectorStore()
         
         # Build metadata filter
-        metadata_filter = None
+        metadata_filter = {}
         if request.project_key:
-            metadata_filter = {"project_key": request.project_key}
+            metadata_filter["project_key"] = request.project_key
+        
+        # For jira_stories collection, only return Story issue types
+        if request.collection == "jira_stories":
+            metadata_filter["issue_type"] = "Story"
+            logger.info("Filtering jira_stories search to only return Story issue types")
         
         # Search
         results = await store.retrieve_similar(
             collection_name=request.collection,
             query_text=request.query,
             top_k=request.top_k,
-            metadata_filter=metadata_filter
+            metadata_filter=metadata_filter if metadata_filter else None
         )
         
         return {
