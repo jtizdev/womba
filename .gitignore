@@ -66,4 +66,13 @@ temp/
 # Git clones (customer repos)
 cloned_repos/
 
+# Generated test plans (may contain sensitive project data)
+test_plans/
+
+# Debug prompts (may contain sensitive debug information)
+debug_prompts/
+
+# Enrichment cache (may contain cached sensitive data)
+data/enrichment_cache/
+
 .env.bak
