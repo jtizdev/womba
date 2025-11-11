@@ -19,6 +19,7 @@ class UploadTestCasesRequest(BaseModel):
     """Request model for uploading test cases to Zephyr."""
     issue_key: str
     project_key: str
+    test_cases: Optional[List[dict]] = None  # If provided, upload only these selected tests
     folder_id: Optional[str] = None
     folder_path: Optional[str] = None  # Support folder paths like "Regression/UI"
 
@@ -61,6 +62,14 @@ async def upload_test_cases(request: UploadTestCasesRequest):
         
         logger.info(f"Loading saved test plan from {plan_path}")
         test_plan = TestPlan.model_validate_json(plan_path.read_text())
+        
+        # If specific test cases are provided, filter to only those
+        if request.test_cases:
+            logger.info(f"Selective upload: uploading {len(request.test_cases)} selected test cases")
+            # Convert request test cases to match the TestPlan test case format
+            selected_ids = {tc.get('id', tc.get('title')) for tc in request.test_cases}
+            test_plan.test_cases = [tc for tc in test_plan.test_cases if tc.id in selected_ids or tc.title in selected_ids]
+            logger.info(f"Filtered to {len(test_plan.test_cases)} matching test cases from saved plan")
         
         # Use the robust Womba CLI upload logic
         zephyr = ZephyrIntegration()
