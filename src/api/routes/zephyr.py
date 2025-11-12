@@ -5,6 +5,7 @@ Uses the existing robust ZephyrIntegration from Womba CLI.
 
 from typing import List, Optional
 from pathlib import Path
+import re
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from loguru import logger
@@ -66,9 +67,47 @@ async def upload_test_cases(request: UploadTestCasesRequest):
         # If specific test cases are provided, filter to only those
         if request.test_cases:
             logger.info(f"Selective upload: uploading {len(request.test_cases)} selected test cases")
-            # Convert request test cases to match the TestPlan test case format
-            selected_ids = {tc.get('id', tc.get('title')) for tc in request.test_cases}
-            test_plan.test_cases = [tc for tc in test_plan.test_cases if tc.id in selected_ids or tc.title in selected_ids]
+            logger.info(f"Selected test cases from request: {[tc.get('id', tc.get('title', 'NO_ID_OR_TITLE')) for tc in request.test_cases]}")
+            logger.info(f"Test plan has {len(test_plan.test_cases)} test cases")
+            logger.info(f"Test plan test case IDs: {[tc.id for tc in test_plan.test_cases]}")
+            logger.info(f"Test plan test case titles: {[tc.title for tc in test_plan.test_cases]}")
+            
+            # Extract selected identifiers from request
+            selected_identifiers = set()
+            selected_indices = set()
+            
+            for tc in request.test_cases:
+                tc_id = tc.get('id')
+                tc_title = tc.get('title')
+                
+                if tc_id:
+                    selected_identifiers.add(tc_id)
+                    # Try to extract index from ID format like "TC-PLAT-13541-1" -> index 0
+                    # Pattern: TC-{PROJECT}-{ISSUE}-{INDEX}
+                    match = re.search(r'-(\d+)$', tc_id)
+                    if match:
+                        # Convert 1-based index to 0-based
+                        index = int(match.group(1)) - 1
+                        if 0 <= index < len(test_plan.test_cases):
+                            selected_indices.add(index)
+                            logger.info(f"Extracted index {index} from ID {tc_id}")
+                
+                if tc_title:
+                    selected_identifiers.add(tc_title)
+            
+            logger.info(f"Looking for IDs/titles: {selected_identifiers}")
+            logger.info(f"Looking for indices: {selected_indices}")
+            
+            # Match by: 1) ID, 2) title, 3) extracted index
+            filtered_cases = []
+            for idx, tc in enumerate(test_plan.test_cases):
+                if (tc.id and tc.id in selected_identifiers) or \
+                   (tc.title in selected_identifiers) or \
+                   (idx in selected_indices):
+                    filtered_cases.append(tc)
+                    logger.info(f"Matched test case {idx}: {tc.title} (id={tc.id})")
+            
+            test_plan.test_cases = filtered_cases
             logger.info(f"Filtered to {len(test_plan.test_cases)} matching test cases from saved plan")
         
         # Use the robust Womba CLI upload logic

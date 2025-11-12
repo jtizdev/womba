@@ -168,12 +168,18 @@ class ResponseParser:
             suggested_folder = self.extract_folder_from_story(main_story, folder_structure)
             logger.warning(f"AI didn't suggest folder, using dynamic fallback: {suggested_folder}")
         
+        # Extract summary (handle if it's a dict)
+        summary = test_plan_data.get("summary", "")
+        if isinstance(summary, dict):
+            summary = summary.get("summary") or summary.get("text") or str(summary)
+        summary = str(summary) if summary else ""
+        
         # Build test plan
         test_plan = TestPlan(
             story=main_story,
             test_cases=test_cases,
             metadata=metadata,
-            summary=test_plan_data.get("summary", ""),
+            summary=summary,
             coverage_analysis=test_plan_data.get("coverage_analysis"),
             risk_assessment=test_plan_data.get("risk_assessment"),
             dependencies=test_plan_data.get("dependencies", []),

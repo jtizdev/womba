@@ -64,7 +64,7 @@ class GitLabSwaggerFetcher:
     
     def fetch_all(self) -> List[SwaggerDocument]:
         """
-        Fetch all Swagger/OpenAPI documents from services in the group.
+        Fetch all Swagger/OpenAPI documents from plainid/srv/shared/doc/openapi project.
         
         Returns:
             List of SwaggerDocument objects
@@ -72,24 +72,82 @@ class GitLabSwaggerFetcher:
         if not self.is_available():
             return []
         
-        logger.info(f"🚀 Starting Swagger fetch from GitLab group: {self.group_path}")
+        logger.info("🚀 Starting Swagger fetch from plainid/srv/shared/doc/openapi")
         
-        # Get all projects in the group
-        projects = self.client.list_group_projects(self.group_path)
+        # Get all projects in the plainid/srv/shared/doc subgroup
+        projects = self.client.list_group_projects("plainid/srv/shared/doc")
         
         if not projects:
-            logger.warning(f"No projects found in group: {self.group_path}")
+            logger.warning("No projects found in plainid/srv/shared/doc")
             return []
         
-        logger.info(f"Found {len(projects)} projects in group")
+        logger.info(f"Found {len(projects)} projects in plainid/srv/shared/doc")
         
-        # Fetch swagger docs from each project
+        # Find the "openapi" project
         swagger_docs = []
         for project in projects:
-            docs = self._fetch_project_swagger(project)
-            swagger_docs.extend(docs)
+            if project['path'].lower() == 'openapi':
+                logger.info(f"Found openapi project: {project['name']} (ID: {project['id']})")
+                docs = self._fetch_from_openapi_project(project)
+                swagger_docs.extend(docs)
+                break
         
-        logger.info(f"✅ Fetched {len(swagger_docs)} Swagger documents from {len(projects)} projects")
+        if not swagger_docs:
+            logger.warning("No Swagger documents found in openapi project")
+        
+        logger.info(f"✅ Fetched {len(swagger_docs)} Swagger documents")
+        return swagger_docs
+    
+    def _fetch_from_openapi_project(self, project: dict) -> List[SwaggerDocument]:
+        """
+        Fetch Swagger/OpenAPI files from master/specfiles directory in the openapi project.
+        
+        Args:
+            project: Project dictionary
+            
+        Returns:
+            List of SwaggerDocument objects
+        """
+        swagger_docs = []
+        project_id = project['id']
+        project_url = project['web_url']
+        branch = 'master'  # The URL shows master branch
+        
+        try:
+            # List files in master/specfiles directory
+            specfiles_dir = self.client.list_directory(project_id, 'master/specfiles', ref=branch)
+            
+            if not specfiles_dir:
+                logger.warning("No master/specfiles/ directory found")
+                return []
+            
+            logger.info(f"Found {len(specfiles_dir)} items in master/specfiles/")
+            
+            # Fetch all YAML/JSON files
+            for item in specfiles_dir:
+                if item['type'] == 'blob' and (item['name'].endswith('.yaml') or item['name'].endswith('.yml') or item['name'].endswith('.json')):
+                    file_path = f"master/specfiles/{item['name']}"
+                    try:
+                        content = self.client.get_file_content(project_id, file_path, ref=branch)
+                        
+                        if content:
+                            logger.info(f"✅ Fetched {file_path}")
+                            swagger_docs.append(SwaggerDocument(
+                                service_name=item['name'].replace('.yaml', '').replace('.yml', '').replace('.json', ''),
+                                file_path=file_path,
+                                content=content,
+                                project_url=project_url,
+                                branch=branch,
+                                project_id=project_id
+                            ))
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch {file_path}: {e}")
+                        continue
+        
+        except Exception as e:
+            logger.error(f"Failed to fetch from openapi project: {e}")
+            return []
+        
         return swagger_docs
     
     def _fetch_project_swagger(self, project: dict) -> List[SwaggerDocument]:

@@ -153,7 +153,7 @@ class DocumentIndexer:
                 batch_ids = ids[i:i + batch_size]
                 
                 await self.store.add_documents(
-                    collection_name=self.store.JIRA_STORIES_COLLECTION,
+                    collection_name=self.store.JIRA_ISSUES_COLLECTION,
                     documents=batch_docs,
                     metadatas=batch_meta,
                     ids=batch_ids
@@ -371,13 +371,15 @@ class DocumentIndexer:
         
         doc_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()[:16]
         
+        now = datetime.now()
         return {
             "source": "plainid_docs",
             "source_url": url,
             "title": title,
             "project_key": settings.plainid_doc_project_key,
             "doc_hash": doc_hash,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": now.isoformat(),
+            "last_updated": now.strftime("%b %d, %Y"),  # Human-readable date for display
             "api_version": "v1-api",
             "endpoint_type": endpoint_type,
             "has_request_examples": str(has_request_examples),

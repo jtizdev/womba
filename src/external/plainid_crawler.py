@@ -73,7 +73,7 @@ class PlainIDDocCrawler:
         to_visit: deque = deque([(self.base_url, 0)])  # (url, depth)
         discovered_urls: List[str] = []
         
-        while to_visit and len(discovered_urls) < self.max_pages:
+        while to_visit:
             current_url, depth = to_visit.popleft()
             
             if depth > self.max_depth:
@@ -81,6 +81,10 @@ class PlainIDDocCrawler:
                 
             if current_url in visited:
                 continue
+            
+            if len(discovered_urls) >= self.max_pages:
+                logger.info(f"⚠️  Reached max_pages limit ({self.max_pages}), stopping discovery")
+                break
                 
             visited.add(current_url)
             discovered_urls.append(current_url)

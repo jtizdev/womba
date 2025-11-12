@@ -59,14 +59,14 @@ class TestPlanGenerator:
         self.max_tokens = settings.max_tokens
         
         # Services (dependency injection)
-        self.prompt_builder = prompt_builder or PromptBuilder(model=self.model)
+        self.prompt_builder = prompt_builder or PromptBuilder(model=self.model, use_optimized=True)
         self.response_parser = response_parser or ResponseParser()
         
         # Story enrichment services
         self.enrichment_cache = EnrichmentCache()
         self.story_enricher = StoryEnricher()
         
-        logger.info(f"TestPlanGenerator initialized with model: {self.model}")
+        logger.info(f"TestPlanGenerator initialized with model: {self.model} (optimized prompts: {self.prompt_builder.use_optimized})")
 
     async def generate_test_plan(
         self,
@@ -228,18 +228,21 @@ class TestPlanGenerator:
         try:
             from src.ai.rag_retriever import RAGRetriever
             
-            logger.info("Retrieving RAG context with enhanced query...")
+            logger.info("Retrieving OPTIMIZED RAG context...")
             rag_retriever = RAGRetriever()
             project_key = main_story.key.split('-')[0]
-            retrieved_context = await rag_retriever.retrieve_for_story(
+            
+            # Use optimized retrieval with filtering, re-ranking, deduplication
+            retrieved_context = await rag_retriever.retrieve_optimized(
                 story=main_story,
                 project_key=project_key,
-                story_context=story_context  # Pass full context for richer query
+                story_context=story_context,
+                max_docs_per_type=3  # Top 3 per collection
             )
             
             if retrieved_context.has_context():
                 rag_context = self.prompt_builder.build_rag_context(retrieved_context)
-                logger.info(f"RAG context retrieved: {retrieved_context.get_summary()}")
+                logger.info(f"✅ Optimized RAG context: {retrieved_context.get_summary()}")
                 return rag_context
             else:
                 logger.info("No RAG context found (database may be empty)")

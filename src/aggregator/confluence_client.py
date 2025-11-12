@@ -146,26 +146,62 @@ class ConfluenceClient(AtlassianClient):
 
     async def search_all_pages(
         self,
-        cql: str,
         limit: int = 250,
-        expand: str = "body.storage,space,version"
+        cql: str = "type = page",
+        expand: str = "body.storage,version,space"
     ) -> List[Dict]:
-        """Fetch ALL pages across spaces using Confluence API v2 (cursor pagination)."""
-        logger.info(f"Fetching ALL Confluence pages for CQL: '{cql}' via API v2")
+        """
+        Fetch ALL pages from ALL Confluence spaces.
+        Uses v2 API for discovery (proper pagination with cursor), then fetches body content.
+        """
+        logger.info(f"Fetching ALL Confluence pages via API v2")
 
         all_pages: List[Dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        
+        # Use v2 API which has proper cursor-based pagination
+        # It iterates through ALL spaces and ALL pages in each space
+        # Timeout increased to 300s for large Confluence instances with 1000s of pages
+        async with httpx.AsyncClient(timeout=300.0) as client:
             async for space in self._iter_spaces_v2(client, limit=limit):
                 space_id = space.get("id")
                 space_key = space.get("key") or space.get("name", "")
-                logger.info(f"Processing space {space_key} ({space_id})")
+                logger.info(f"Fetching pages from space: {space_key} (ID: {space_id})")
 
-                async for page in self._iter_pages_v2(client, space_id, limit=limit, expand=expand):
+                # Iterate through ALL pages in this space with cursor pagination
+                async for page in self._iter_pages_v2(client, space_id, limit=limit, expand=""):
                     page_copy = dict(page)
                     page_copy.setdefault("space", {"id": space_id, "key": space_key})
                     all_pages.append(page_copy)
 
-        logger.info(f"✅ Fetched {len(all_pages)} Confluence pages via API v2")
+        logger.info(f"✅ Discovered {len(all_pages)} total pages via v2 cursor pagination")
+        
+        # Now fetch body content for each page using v1 API (efficient single-page fetch)
+        logger.info(f"Fetching body content for {len(all_pages)} pages...")
+        # Timeout increased to 300s for large Confluence instances
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            failed_body_count = 0
+            for idx, page in enumerate(all_pages, 1):
+                page_id = page.get("id")
+                try:
+                    url = f"{self.base_url}/wiki/rest/api/content/{page_id}"
+                    params = {"expand": "body.storage,version"}
+                    # Increased retries for robustness with large volumes
+                    result = await self._fetch_json(client, url, params=params, max_retries=3)
+                    
+                    # Merge body from v1 API response
+                    if "body" in result:
+                        page["body"] = result.get("body", {})
+                    
+                    if idx % 100 == 0:
+                        logger.info(f"  Progress: {idx}/{len(all_pages)} pages fetched ({failed_body_count} failed)")
+                except Exception as e:
+                    failed_body_count += 1
+                    logger.debug(f"Could not fetch body for page {page_id}: {e}")
+                    # Continue anyway - we'll skip pages without content later
+                    if idx % 100 == 0:
+                        logger.info(f"  Progress: {idx}/{len(all_pages)} pages attempted ({failed_body_count} failed)")
+
+        logger.info(f"✅ Fetched {len(all_pages)} Confluence pages with body content")
         return all_pages
 
     async def find_related_pages(self, story_key: str, labels: List[str] = None) -> List[Dict]:
@@ -223,6 +259,7 @@ class ConfluenceClient(AtlassianClient):
     def extract_page_content(self, page_data: Dict) -> str:
         """
         Extract plain text content from Confluence page.
+        Expects API v1 response with body.storage.
 
         Args:
             page_data: Raw page data from API
@@ -231,11 +268,13 @@ class ConfluenceClient(AtlassianClient):
             Plain text content
         """
         try:
+            import re
+            
             storage = page_data.get("body", {}).get("storage", {})
             html_content = storage.get("value", "")
-
-            # Basic HTML stripping (you might want to use BeautifulSoup for better parsing)
-            import re
+            
+            if not html_content:
+                return ""
 
             # Remove HTML tags
             text = re.sub(r"<[^>]+>", " ", html_content)

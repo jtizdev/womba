@@ -59,7 +59,7 @@ async def fetch_and_index_jira_stories(
     
     try:
         jira_client = JiraClient()
-        jql = f"project = {project_key} AND type in (Story, Task, Bug) ORDER BY created DESC"
+        jql = f"project = {project_key} ORDER BY created DESC"
         
         # Use the new search_all_issues method - handles pagination internally
         all_stories = jira_client.search_all_issues(jql)
@@ -102,62 +102,44 @@ async def fetch_and_index_confluence_docs(
     indexer: ContextIndexer
 ) -> int:
     """
-    Fetch ALL Confluence pages using the client's built-in search_all_pages.
+    Fetch ALL Confluence pages from ALL spaces dynamically.
     
     Returns:
         Number of docs indexed
     """
-    print("\n📥 [3/3] Fetching ALL Confluence pages...")
+    print("\n📥 [3/3] Fetching ALL Confluence pages from ALL spaces...")
     
     try:
         confluence = ConfluenceClient()
         
-        # Targeted approach: Use CQL search for project-relevant pages
-        # Search for pages with project-related terms
-        search_terms = [
-            f'{project_key}',
-            'Policy',
-            'authorization',
-            'API',
-            'requirement',
-            'PRD'
-        ]
+        # Fetch from ALL spaces dynamically using API v1 with proper pagination
+        print(f"\n  ⏳ Fetching all Confluence pages with body content via API v1...")
+        pages = await confluence.search_all_pages(limit=250)
         
-        all_pages = []
-        seen_ids = set()
+        print(f"\n📊 Total unique pages found: {len(pages):,d}")
         
-        for term in search_terms:
-            try:
-                cql = f'text ~ "{term}" AND type=page ORDER BY lastModified DESC'
-                results = await confluence.search_pages(cql, limit=150)
-                for page in results:
-                    page_id = page.get('id')
-                    if page_id and page_id not in seen_ids:
-                        all_pages.append(page)
-                        seen_ids.add(page_id)
-                print(f"  ✓ Term '{term}': {len(results)} pages (unique so far: {len(all_pages)})")
-            except Exception as e:
-                logger.warning(f"Search for '{term}' failed: {e}")
-        
-        pages = all_pages[:500]  # Limit to 500 most relevant
-        print(f"\n📊 Total unique pages to index: {len(pages)}")
-        
-        # Convert to doc format and fetch full content for each page
+        # Convert to doc format (pages already have content via API v2 expand parameter)
         all_docs = []
-        print(f"📄 Fetching full content for {len(pages)} pages...")
+        failed_count = 0
+        empty_count = 0
+        print(f"📄 Converting {len(pages):,d} pages to doc format...")
         for idx, page in enumerate(pages, 1):
             try:
                 page_id = page.get('id', '')
-                space_key = page.get('space', {}).get('key', '') if isinstance(page.get('space'), dict) else str(page.get('space', ''))
+                space_info = page.get('space', {})
+                space_key = space_info.get('key', '') if isinstance(space_info, dict) else str(space_info or '')
                 version_info = page.get('version', {})
                 last_modified = version_info.get('when') if version_info else None
                 
-                # CRITICAL: Fetch full page with body content (search results don't include body)
-                full_page = await confluence.get_page(page_id)
-                if full_page:
-                    content = confluence.extract_page_content(full_page)
-                else:
-                    content = ""
+                # Extract content (already included via expand parameter in search_all_pages)
+                content = confluence.extract_page_content(page)
+                
+                if not content or not content.strip():
+                    # Skip pages with no content
+                    empty_count += 1
+                    if idx % 100 == 0:
+                        logger.debug(f"Progress: {idx:,d}/{len(pages):,d} - skipped {empty_count} empty pages")
+                    continue
                 
                 doc = {
                     'id': page_id,
@@ -169,24 +151,19 @@ async def fetch_and_index_confluence_docs(
                 }
                 all_docs.append(doc)
                 
-                if idx % 500 == 0:
-                    print(f"  Progress: {idx}/{len(pages)} pages processed...")
+                if idx % 100 == 0:
+                    print(f"    Progress: {idx:,d}/{len(pages):,d} pages processed ({len(all_docs):,d} indexed, {empty_count:,d} skipped empty, {failed_count:,d} failed)")
             except Exception as e:
-                logger.warning(f"Failed to fetch content for page {page.get('id')}: {e}")
-                # Add with empty content rather than failing completely
-            doc = {
-                'id': page.get('id', ''),
-                'title': page.get('title', ''),
-                    'content': '',
-                'space': space_key,
-                'url': page.get('_links', {}).get('webui', ''),
-                'last_modified': last_modified
-            }
-            all_docs.append(doc)
+                logger.warning(f"Failed to process page {page.get('id')}: {e}")
+                failed_count += 1
+                # Skip this page instead of adding empty content
+                continue
         
         # Report
         spaces_found = set(doc.get('space', '') for doc in all_docs if doc.get('space'))
         print(f"\n📊 FINAL COUNT: {len(all_docs)} Confluence pages")
+        print(f"   Empty/skipped: {empty_count:,d} pages")
+        print(f"   Failed to process: {failed_count:,d} pages")
         if spaces_found:
             print(f"   Spaces: {', '.join(sorted(spaces_found))}")
         
@@ -456,7 +433,7 @@ def show_rag_stats() -> None:
     print(f"\n📁 Storage Path: {stats['storage_path']}")
     print(f"📈 Total Documents: {stats['total_documents']}")
     print("\nCollections:")
-    for collection_name in ['test_plans', 'confluence_docs', 'jira_stories', 'existing_tests', 'external_docs', 'swagger_docs']:
+    for collection_name in ['test_plans', 'confluence_docs', 'jira_issues', 'existing_tests', 'external_docs', 'swagger_docs']:
         collection_stats = stats.get(collection_name, {})
         count = collection_stats.get('count', 0)
         status = "✓" if collection_stats.get('exists') else "✗"

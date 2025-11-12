@@ -36,7 +36,7 @@ beautifulsoup4==4.12.3
 lxml==5.1.0
 
 # RAG / Vector Database
-chromadb>=0.4.22
+chromadb==0.5.0
 sentence-transformers>=2.3.0
 numpy>=1.22.0,<2.0  # ChromaDB requires numpy<2.0 for compatibility
 

@@ -26,6 +26,13 @@ from src.ai.prompts_qa_focused import (
     FEW_SHOT_EXAMPLES,
     TEST_PLAN_JSON_SCHEMA,
 )
+from src.ai.prompts_optimized import (
+    CORE_INSTRUCTIONS as OPTIMIZED_CORE_INSTRUCTIONS,
+    FEW_SHOT_EXAMPLES as OPTIMIZED_EXAMPLES,
+    TEST_PLAN_JSON_SCHEMA as OPTIMIZED_SCHEMA,
+    MINIMAL_ARCHITECTURE_GUIDE,
+    VALIDATION_RULES,
+)
 
 # Path for prompt overrides
 PROMPT_OVERRIDES_FILE = Path("data/prompt_overrides.json")
@@ -58,14 +65,16 @@ class PromptBuilder:
     - Folder structure context
     """
 
-    def __init__(self, model: str = "gpt-4o"):
+    def __init__(self, model: str = "gpt-4o", use_optimized: bool = True):
         """
         Initialize prompt builder.
         
         Args:
             model: Model name for token budget calculation
+            use_optimized: Use optimized prompt structure (default True)
         """
         self.model = model.lower() if model else "gpt-4o"
+        self.use_optimized = use_optimized
     
     def get_json_schema(self) -> Dict[str, Any]:
         """
@@ -74,7 +83,7 @@ class PromptBuilder:
         Returns:
             JSON schema dict for test plan generation
         """
-        return TEST_PLAN_JSON_SCHEMA
+        return OPTIMIZED_SCHEMA if self.use_optimized else TEST_PLAN_JSON_SCHEMA
 
     def build_generation_prompt(
         self,
@@ -110,6 +119,17 @@ class PromptBuilder:
         Returns:
             Complete prompt string
         """
+        # Route to optimized prompt if enabled
+        logger.info(f"Prompt builder state: use_optimized={self.use_optimized}, has_enriched_story={enriched_story is not None}")
+        if self.use_optimized and enriched_story:
+            logger.info("🚀 Using OPTIMIZED prompt structure (new strategy)")
+            return self.build_optimized_prompt(
+                enriched_story=enriched_story,
+                rag_context_formatted=rag_context or "",
+                existing_tests=existing_tests,
+                folder_structure=folder_structure
+            )
+        
         main_story = context.main_story
         
         # Build auxiliary sections
@@ -436,80 +456,64 @@ Ensure all required fields are populated with realistic values.
         return folder_context
 
     def _add_test_plans_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add similar test plans section."""
+        """Add similar test plans section - FULL CONTENT, NO TRUNCATION."""
         if not retrieved_context.similar_test_plans:
             return tokens_remaining
         
         sections.append("\n--- SIMILAR PAST TEST PLANS (Learn patterns from these) ---\n")
-        # Show more test plan examples (increased from 3 to 6)
-        for i, doc in enumerate(retrieved_context.similar_test_plans[:6], 1):
+        for i, doc in enumerate(retrieved_context.similar_test_plans[:3], 1):
             sections.append(f"\n{i}. Test Plan Example:")
             sections.append(f"   Similarity: {1 - doc.get('distance', 0):.2f}")
-            # Increased from 800 to 1500 chars per test plan
-            sections.append(f"   {doc.get('document', '')[:1500]}")
+            sections.append(f"   {doc.get('document', '')}")  # FULL CONTENT
             sections.append("   " + "-" * 70)
         
         return tokens_remaining
 
     def _add_confluence_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add Confluence docs section with dynamic budgeting."""
-        if not retrieved_context.similar_confluence_docs or tokens_remaining < 1000:
+        """Add Confluence docs section - FULL CONTENT, NO TRUNCATION."""
+        if not retrieved_context.similar_confluence_docs:
             return tokens_remaining
         
         sections.append("\n--- COMPANY DOCUMENTATION (Use this terminology) ---\n")
-        # Increased per-doc budget from 2500 to 4000 tokens for fuller content
-        tokens_per_doc = min(tokens_remaining // len(retrieved_context.similar_confluence_docs[:10]), 4000)
         
-        # Show more Confluence docs (increased from 5 to 10)
-        for i, doc in enumerate(retrieved_context.similar_confluence_docs[:10], 1):
-            if tokens_remaining < 500:
-                break
-            
+        for i, doc in enumerate(retrieved_context.similar_confluence_docs[:3], 1):
+            metadata = doc.get('metadata', {})
             doc_text = doc.get('document', '')
-            max_chars = tokens_per_doc * 4
-            if len(doc_text) > max_chars:
-                doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
             
-            doc_section = f"\n{i}. Document: {doc.get('metadata', {}).get('title', 'Unknown')}\n   Similarity: {1 - doc.get('distance', 0):.2f}\n   {doc_text}\n   " + "-" * 70
-            section_tokens = self._estimate_tokens(doc_section)
+            sections.append(f"\n{i}. {metadata.get('title', 'Unknown')}")
+            if metadata.get('url'):
+                sections.append(f"   Source: {metadata.get('url')}")
+            sections.append(f"   Relevance: {1 - doc.get('distance', 0):.2f}")
             
-            if section_tokens <= tokens_remaining:
-                sections.append(doc_section)
-                tokens_remaining -= section_tokens
+            sections.append(f"\n   Content:")
+            sections.append(f"   {'-' * 68}")
+            # Add content with proper indentation
+            for line in doc_text.split('\n'):
+                sections.append(f"   {line}")
+            sections.append(f"   {'-' * 68}")
         
         return tokens_remaining
 
     def _add_stories_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add similar stories section with dynamic budgeting."""
-        if not retrieved_context.similar_jira_stories or tokens_remaining < 1000:
+        """Add similar stories section - FULL CONTENT, NO TRUNCATION."""
+        if not retrieved_context.similar_jira_stories:
             return tokens_remaining
         
         sections.append("\n--- SIMILAR PAST STORIES (Apply same approach) ---\n")
-        # Increased per-story budget from 2000 to 3000 tokens
-        tokens_per_story = min(tokens_remaining // len(retrieved_context.similar_jira_stories[:10]), 3000)
         
-        # Show more stories (increased from 5 to 10)
-        for i, doc in enumerate(retrieved_context.similar_jira_stories[:10], 1):
-            if tokens_remaining < 500:
-                break
-            
+        for i, doc in enumerate(retrieved_context.similar_jira_stories[:3], 1):
+            metadata = doc.get('metadata', {})
             doc_text = doc.get('document', '')
-            max_chars = tokens_per_story * 4
-            if len(doc_text) > max_chars:
-                doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
             
-            doc_section = f"\n{i}. Story: {doc.get('metadata', {}).get('story_key', 'Unknown')}\n   {doc_text}\n   " + "-" * 70
-            section_tokens = self._estimate_tokens(doc_section)
-            
-            if section_tokens <= tokens_remaining:
-                sections.append(doc_section)
-                tokens_remaining -= section_tokens
+            sections.append(f"\n{i}. Story: {metadata.get('story_key', 'Unknown')}")
+            sections.append(f"   {doc_text}")  # FULL CONTENT, NO TRUNCATION
+            sections.append("   " + "-" * 70)
         
         return tokens_remaining
 
     def _add_existing_tests_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add existing tests section with dynamic budgeting."""
-        if not retrieved_context.similar_existing_tests or tokens_remaining < 1000:
+        """Add existing tests section - FULL CONTENT, NO TRUNCATION."""
+        if not retrieved_context.similar_existing_tests:
             return tokens_remaining
         
         sections.append("\n--- EXISTING TESTS (CRITICAL: Check for duplicates before generating!) ---\n")
@@ -519,31 +523,20 @@ Ensure all required fields are populated with realistic values.
         sections.append("• Document in your reasoning: 'Checked existing tests: [found/not found duplicates]'\n")
         sections.append("• If similar test exists: Reference it and explain how yours differs, or skip it\n")
         sections.append("• Better to skip a test than create redundant coverage\n\n")
-        # Increased per-test budget from 1500 to 2500 tokens for complete test examples
-        tokens_per_test = min(tokens_remaining // len(retrieved_context.similar_existing_tests[:20]), 2500)
         
-        # Show more existing tests (increased from 10 to 20)
-        for i, doc in enumerate(retrieved_context.similar_existing_tests[:20], 1):
-            if tokens_remaining < 300:
-                break
-            
+        for i, doc in enumerate(retrieved_context.similar_existing_tests[:3], 1):
+            metadata = doc.get('metadata', {})
             doc_text = doc.get('document', '')
-            max_chars = tokens_per_test * 4
-            if len(doc_text) > max_chars:
-                doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
             
-            doc_section = f"\n{i}. Test: {doc.get('metadata', {}).get('test_name', 'Unknown')}\n   {doc_text}\n   " + "-" * 70
-            section_tokens = self._estimate_tokens(doc_section)
-            
-            if section_tokens <= tokens_remaining:
-                sections.append(doc_section)
-                tokens_remaining -= section_tokens
+            sections.append(f"\n{i}. Test: {metadata.get('test_name', 'Unknown')}")
+            sections.append(f"   {doc_text}")  # FULL CONTENT, NO TRUNCATION
+            sections.append("   " + "-" * 70)
         
         return tokens_remaining
 
     def _add_external_docs_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add external API documentation section with priority budgeting."""
-        if not retrieved_context.similar_external_docs or tokens_remaining < 2000:
+        """Add external API documentation section - FULL CONTENT, NO TRUNCATION."""
+        if not retrieved_context.similar_external_docs:
             return tokens_remaining
         
         sections.append("\n--- EXTERNAL API DOCUMENTATION (Use exact endpoints/payloads) ---\n")
@@ -555,32 +548,30 @@ Ensure all required fields are populated with realistic values.
         sections.append("• NO generic placeholders like '<token>' or 'Bearer <value>'")
         sections.append("• If exact payload unavailable: state 'Reference [doc name] for payload'\n")
         
-        # Increased per-doc budget from 4000 to 6000 tokens for complete API docs
-        tokens_per_api_doc = min(tokens_remaining // len(retrieved_context.similar_external_docs[:10]), 6000)
-        
-        # Show more external docs (increased from 5 to 10)
-        for i, doc in enumerate(retrieved_context.similar_external_docs[:10], 1):
-            if tokens_remaining < 1000:
-                break
-            
+        for i, doc in enumerate(retrieved_context.similar_external_docs[:3], 1):
             metadata = doc.get('metadata', {})
             doc_text = doc.get('document', '')
-            max_chars = tokens_per_api_doc * 4
-            if len(doc_text) > max_chars:
-                doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
             
-            doc_section = f"\n{i}. API Doc: {metadata.get('title', 'Unknown')}\n   Source: {metadata.get('source_url', 'N/A')}\n   Similarity: {1 - doc.get('distance', 0):.2f}\n   {doc_text}\n   " + "-" * 70
-            section_tokens = self._estimate_tokens(doc_section)
+            # Build header with metadata
+            sections.append(f"\n{i}. {metadata.get('title', 'Unknown')}")
+            sections.append(f"   Source: {metadata.get('source_url', 'N/A')}")
+            if metadata.get('last_updated'):
+                sections.append(f"   Last Updated: {metadata.get('last_updated')}")
+            sections.append(f"   Relevance: {1 - doc.get('distance', 0):.2f}")
             
-            if section_tokens <= tokens_remaining:
-                sections.append(doc_section)
-                tokens_remaining -= section_tokens
+            # Add full content with clear separation
+            sections.append(f"\n   Content:")
+            sections.append(f"   {'-' * 68}")
+            # Add content with proper indentation
+            for line in doc_text.split('\n'):
+                sections.append(f"   {line}")
+            sections.append(f"   {'-' * 68}")
         
         return tokens_remaining
 
     def _add_swagger_docs_section(self, sections: list, retrieved_context, tokens_remaining: int) -> int:
-        """Add Swagger/OpenAPI documentation section with priority budgeting."""
-        if not retrieved_context.similar_swagger_docs or tokens_remaining < 2000:
+        """Add Swagger/OpenAPI documentation section - FULL CONTENT, NO TRUNCATION."""
+        if not retrieved_context.similar_swagger_docs:
             return tokens_remaining
         
         sections.append("\n--- SWAGGER/OPENAPI DOCUMENTATION (Use exact API specs) ---\n")
@@ -593,30 +584,156 @@ Ensure all required fields are populated with realistic values.
         sections.append("• If request body schema shown, use exact field names in test data")
         sections.append("• NO invented endpoints - only use what's documented\n")
         
-        # Increased per-doc budget from 4000 to 6000 tokens for complete swagger specs
-        tokens_per_swagger_doc = min(tokens_remaining // len(retrieved_context.similar_swagger_docs[:8]), 6000)
-        
-        # Show more swagger docs (increased from 5 to 8)
-        for i, doc in enumerate(retrieved_context.similar_swagger_docs[:8], 1):
-            if tokens_remaining < 1000:
-                break
-            
+        for i, doc in enumerate(retrieved_context.similar_swagger_docs[:3], 1):
             metadata = doc.get('metadata', {})
             doc_text = doc.get('document', '')
-            max_chars = tokens_per_swagger_doc * 4
-            if len(doc_text) > max_chars:
-                doc_text = doc_text[:max_chars] + f"\n... [truncated for budget]"
             
-            doc_section = f"\n{i}. Swagger API: {metadata.get('service_name', 'Unknown')}\n   File: {metadata.get('file_path', 'N/A')}\n   Type: {metadata.get('api_type', 'N/A')}\n   Similarity: {1 - doc.get('distance', 0):.2f}\n   {doc_text}\n   " + "-" * 70
-            section_tokens = self._estimate_tokens(doc_section)
-            
-            if section_tokens <= tokens_remaining:
-                sections.append(doc_section)
-                tokens_remaining -= section_tokens
+            sections.append(f"\n{i}. Swagger API: {metadata.get('service_name', 'Unknown')}")
+            sections.append(f"   File: {metadata.get('file_path', 'N/A')}")
+            sections.append(f"   Type: {metadata.get('api_type', 'N/A')}")
+            sections.append(f"   Similarity: {1 - doc.get('distance', 0):.2f}")
+            sections.append(f"{doc_text}")  # FULL CONTENT, NO TRUNCATION
+            sections.append("   " + "-" * 70)
         
         return tokens_remaining
 
     def _estimate_tokens(self, text: str) -> int:
         """Estimate token count (rough: 1 token ≈ 4 chars for English)."""
         return len(text) // 4
+    
+    def build_optimized_prompt(
+        self,
+        enriched_story: EnrichedStory,
+        rag_context_formatted: str,
+        existing_tests: Optional[list] = None,
+        folder_structure: Optional[list] = None,
+    ) -> str:
+        """
+        Build OPTIMIZED prompt with story-first structure.
+        
+        New structure (70% story, 30% context):
+        1. Core instructions (concise)
+        2. Story requirements (PROMINENT - 40% of tokens)
+        3. Retrieved context (filtered - 30% of tokens)
+        4. Examples (concise - 10% of tokens)
+        5. Architecture reference (minimal - 10% of tokens)
+        6. Output schema (10% of tokens)
+        
+        Args:
+            enriched_story: Preprocessed story with all context
+            rag_context_formatted: Pre-formatted RAG context (already optimized)
+            existing_tests: Optional existing tests
+            folder_structure: Optional folder structure
+            
+        Returns:
+            Optimized prompt string
+        """
+        sections = []
+        
+        # ============================================================================
+        # SECTION 1: CORE INSTRUCTIONS (1500 tokens)
+        # ============================================================================
+        sections.append(OPTIMIZED_CORE_INSTRUCTIONS)
+        sections.append("\n" + "=" * 80 + "\n")
+        
+        # ============================================================================
+        # SECTION 2: STORY REQUIREMENTS - MOST IMPORTANT (40% of budget)
+        # ============================================================================
+        sections.append("📋 STORY REQUIREMENTS (PRIMARY INPUT)\n")
+        sections.append("=" * 80 + "\n")
+        
+        sections.append(f"**Story**: {enriched_story.story_key} - {enriched_story.feature_narrative.split('.')[0]}\n")
+        
+        # Feature narrative
+        sections.append("**What This Feature Does**:\n")
+        sections.append(enriched_story.feature_narrative)
+        sections.append("\n")
+        
+        # Acceptance criteria (CRITICAL - map to tests)
+        if enriched_story.acceptance_criteria:
+            sections.append("**Acceptance Criteria** (MUST map each to tests):\n")
+            for i, ac in enumerate(enriched_story.acceptance_criteria, 1):
+                sections.append(f"{i}. {ac}\n")
+            sections.append("\n")
+        
+        # Functional points
+        if enriched_story.functional_points:
+            sections.append("**Functionality to Test**:\n")
+            for i, fp in enumerate(enriched_story.functional_points, 1):
+                sections.append(f"- {fp}\n")
+            sections.append("\n")
+        
+        # API specifications (if any)
+        if enriched_story.api_specifications:
+            sections.append("**API Specifications** (use exact endpoints):\n")
+            for api in enriched_story.api_specifications:
+                sections.append(f"- {' '.join(api.http_methods)} {api.endpoint_path}\n")
+                if api.parameters:
+                    sections.append(f"  Params: {', '.join(api.parameters)}\n")
+                if api.request_schema:
+                    sections.append(f"  Request Schema:\n{api.request_schema}\n")
+                if api.response_schema:
+                    sections.append(f"  Response Schema:\n{api.response_schema}\n")
+            sections.append("\n")
+        
+        # Risk areas
+        if enriched_story.risk_areas:
+            sections.append("**Risk Areas** (focus testing here):\n")
+            for risk in enriched_story.risk_areas:
+                sections.append(f"- {risk}\n")
+            sections.append("\n")
+        
+        sections.append("=" * 80 + "\n\n")
+        
+        # ============================================================================
+        # SECTION 3: RETRIEVED CONTEXT (30% of budget - already optimized)
+        # ============================================================================
+        if rag_context_formatted:
+            sections.append("📚 RETRIEVED CONTEXT (for terminology, APIs, style)\n")
+            sections.append("=" * 80 + "\n")
+            sections.append(rag_context_formatted)
+            sections.append("\n" + "=" * 80 + "\n\n")
+        
+        # ============================================================================
+        # SECTION 4: EXAMPLES (10% of budget - concise, cross-domain)
+        # ============================================================================
+        sections.append(OPTIMIZED_EXAMPLES)
+        sections.append("\n")
+        
+        # ============================================================================
+        # SECTION 5: ARCHITECTURE REFERENCE (10% of budget - minimal)
+        # ============================================================================
+        if enriched_story.plainid_components:
+            sections.append(MINIMAL_ARCHITECTURE_GUIDE)
+            sections.append("\n")
+        
+        # ============================================================================
+        # SECTION 5b: MANDATORY VALIDATION RULES (Self-check)
+        # ============================================================================
+        sections.append(VALIDATION_RULES)
+        sections.append("\n")
+        
+        # ============================================================================
+        # SECTION 6: OUTPUT FORMAT (10% of budget)
+        # ============================================================================
+        sections.append("📤 OUTPUT FORMAT\n")
+        sections.append("=" * 80 + "\n")
+        sections.append("Return JSON matching this schema exactly:\n")
+        sections.append("- reasoning: Your analysis (2-4 sentences)\n")
+        sections.append("- summary: Story info + test count justification\n")
+        sections.append("- test_cases: Array of test objects\n")
+        sections.append("- suggested_folder: Best folder from structure\n")
+        sections.append("- validation_check: Self-validation flags\n")
+        sections.append("\nEach test must have: title, description, preconditions, steps (with test_data), expected_result, priority, test_type, tags, automation_candidate, risk_level\n")
+        sections.append("=" * 80 + "\n")
+        
+        prompt = "\n".join(sections)
+        
+        # Log token estimate
+        estimated_tokens = self._estimate_tokens(prompt)
+        logger.info(f"✅ Built OPTIMIZED prompt: ~{estimated_tokens} tokens ({len(prompt)} chars)")
+        logger.info(f"   Story section: ~{self._estimate_tokens(enriched_story.feature_narrative)} tokens")
+        logger.info(f"   RAG context: ~{self._estimate_tokens(rag_context_formatted) if rag_context_formatted else 0} tokens")
+        
+        return prompt
 

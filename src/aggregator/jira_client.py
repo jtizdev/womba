@@ -49,29 +49,62 @@ class JiraClient(AtlassianClient):
         if adf_content is None:
             return ""
         
-        # Try to unwrap PropertyHolder
+        # Try to unwrap PropertyHolder (Jira SDK object that wraps dict data)
         try:
-            # PropertyHolder has dict-like access but str() returns object repr
-            # Try to access as dict first
-            if hasattr(adf_content, '__getitem__') and not isinstance(adf_content, (str, list)):
-                # It's dict-like (PropertyHolder behaves like a dict)
-                # Convert to actual dict to get the ADF JSON
+            # Check if it's a PropertyHolder or other Jira SDK object
+            class_name = adf_content.__class__.__name__
+            if class_name == 'PropertyHolder' or (hasattr(adf_content, '__getitem__') and not isinstance(adf_content, (str, list, dict))):
+                # Try multiple unwrapping strategies for PropertyHolder
+                unwrapped = None
+                
+                # Strategy 1: Try .raw attribute
                 if hasattr(adf_content, 'raw'):
-                    adf_content = adf_content.raw
-                else:
-                    # Try to convert PropertyHolder to dict
+                    unwrapped = adf_content.raw
+                    if unwrapped:
+                        logger.debug(f"Unwrapped PropertyHolder via .raw")
+                        adf_content = unwrapped
+                
+                # Strategy 2: Try direct dict conversion
+                if not unwrapped:
                     try:
-                        adf_content = dict(adf_content)
+                        unwrapped = dict(adf_content)
+                        if unwrapped:
+                            logger.debug(f"Unwrapped PropertyHolder via dict()")
+                            adf_content = unwrapped
                     except:
-                        # Fallback: try to get 'value' or 'content' attributes
-                        for attr in ['value', 'content', '_value', '_raw']:
-                            if hasattr(adf_content, attr):
-                                val = getattr(adf_content, attr)
-                                if val is not None:
-                                    adf_content = val
-                                    break
+                        pass
+                
+                # Strategy 3: Try common attributes
+                if not unwrapped:
+                    for attr in ['value', 'content', '_value', '_raw', 'data', '_data']:
+                        if hasattr(adf_content, attr):
+                            val = getattr(adf_content, attr)
+                            if val is not None and val != adf_content:
+                                unwrapped = val
+                                logger.debug(f"Unwrapped PropertyHolder via .{attr}")
+                                adf_content = unwrapped
+                                break
+                
+                # Strategy 4: Try iterating over items
+                if not unwrapped:
+                    try:
+                        items_list = list(adf_content.items()) if hasattr(adf_content, 'items') else list(adf_content)
+                        if items_list and isinstance(items_list[0], tuple):
+                            # It's dict-like
+                            unwrapped = dict(items_list)
+                            logger.debug(f"Unwrapped PropertyHolder via .items()")
+                        elif items_list:
+                            # It's list-like
+                            unwrapped = items_list
+                            logger.debug(f"Unwrapped PropertyHolder via iteration (got list)")
+                        adf_content = unwrapped
+                    except:
+                        pass
+                
+                if not unwrapped:
+                    logger.debug(f"Could not unwrap PropertyHolder {class_name}")
         except Exception as e:
-            logger.debug(f"PropertyHolder unwrap failed: {e}, using str repr")
+            logger.debug(f"PropertyHolder unwrap attempt failed: {e}")
 
         if isinstance(adf_content, str):
             return adf_content
@@ -186,29 +219,21 @@ class JiraClient(AtlassianClient):
         key = issue.key
         summary = issue.fields.summary or ""
         
-        # Extract description (handle ADF format)
-        # Try renderedFields first (plain HTML) which is easier to parse, fallback to fields.description (ADF)
-        description_raw = None
+        # Extract description - try renderedFields first (HTML), fallback to ADF
+        description = ""
         if hasattr(issue, 'renderedFields') and hasattr(issue.renderedFields, 'description'):
-            description_raw = issue.renderedFields.description
-            # renderedFields.description is HTML string, strip HTML tags
-            if description_raw and isinstance(description_raw, str):
+            # renderedFields.description is HTML string (when expand='renderedFields' is used)
+            description_html = issue.renderedFields.description
+            if description_html and isinstance(description_html, str):
                 import re
-                # Simple HTML strip
-                description = re.sub(r'<[^>]+>', '', description_raw)
+                # Strip HTML tags to get plain text
+                description = re.sub(r'<[^>]+>', '', description_html)
                 description = description.replace('&nbsp;', ' ').replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-                logger.debug(f"Using renderedFields description for {key}: {len(description)} chars")
-            else:
-                description_raw = issue.fields.description
-                description = self._extract_text_from_adf(description_raw) if description_raw else ""
-        else:
+        
+        # Fallback to ADF if renderedFields didn't work
+        if not description:
             description_raw = issue.fields.description
             description = self._extract_text_from_adf(description_raw) if description_raw else ""
-        
-        try:
-            logger.debug(f"Final parsed description for {key}: len={len(description)} chars, preview: {description[:100]}")
-        except Exception:
-            pass
         
         # Extract issue type, status, priority
         issue_type = issue.fields.issuetype.name if issue.fields.issuetype else "Unknown"
@@ -481,7 +506,7 @@ class JiraClient(AtlassianClient):
         """
         Search for ALL issues using JQL with automatic pagination.
         
-        Uses SDK's native search_issues() method - let the SDK handle the endpoint correctly.
+        Uses SDK's enhanced_search_issues() with auto-pagination.
         NO artificial limits - fetches the actual count whatever it is.
         
         Args:
@@ -499,15 +524,18 @@ class JiraClient(AtlassianClient):
             
             all_stories = []
             
-            logger.info("  Using enhanced_search_issues (maxResults=False) for full pagination")
+            # Use enhanced_search_issues with maxResults=False for full auto-pagination
+            # It will fetch all matching issues automatically
+            logger.info("  Using enhanced_search_issues with maxResults=False for full pagination")
             issues = jira.enhanced_search_issues(
                 jql_str=jql,
                 maxResults=False,
-                fields='*all'
+                fields='*all',
+                expand='renderedFields'
             )
             
             if not issues:
-                logger.warning("  No issues returned by enhanced_search_issues")
+                logger.warning("  No issues returned")
                 return []
             
             for idx, issue in enumerate(issues, start=1):

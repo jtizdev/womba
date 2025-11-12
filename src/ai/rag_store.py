@@ -25,7 +25,7 @@ class RAGVectorStore:
     # Collection names
     TEST_PLANS_COLLECTION = "test_plans"
     CONFLUENCE_DOCS_COLLECTION = "confluence_docs"
-    JIRA_STORIES_COLLECTION = "jira_stories"
+    JIRA_ISSUES_COLLECTION = "jira_issues"
     EXISTING_TESTS_COLLECTION = "existing_tests"
     EXTERNAL_DOCS_COLLECTION = "external_docs"
     SWAGGER_DOCS_COLLECTION = "swagger_docs"
@@ -117,6 +117,14 @@ class RAGVectorStore:
                             'metadata': existing['metadatas'][idx] if existing.get('metadatas') else {},
                             'document': existing['documents'][idx] if existing.get('documents') else None
                         }
+            except TypeError as type_error:
+                # ChromaDB bug: "object of type 'int' has no len()"
+                # Skip the upsert check and just add all documents as new
+                if "object of type" in str(type_error) and "has no len()" in str(type_error):
+                    logger.warning(f"ChromaDB bug detected in add_documents for {collection_name}: {type_error}. Skipping upsert check.")
+                    existing_docs = {}  # Treat all as new
+                else:
+                    raise
             except Exception:
                 pass  # Collection might not exist yet
             
@@ -191,12 +199,47 @@ class RAGVectorStore:
             
             # Add new and updated documents
             if all_docs:
-                collection.add(
-                    embeddings=all_embeddings,
-                    documents=all_docs,
-                    metadatas=all_metadatas,
-                    ids=all_ids
-                )
+                try:
+                    collection.add(
+                        embeddings=all_embeddings,
+                        documents=all_docs,
+                        metadatas=all_metadatas,
+                        ids=all_ids
+                    )
+                except TypeError as te:
+                    # ChromaDB bug with embeddings - try adding without embeddings first
+                    if "object of type" in str(te) and "has no len()" in str(te):
+                        logger.warning(f"ChromaDB bug during collection.add() for {collection_name}: {te}. Retrying with upsert fallback...")
+                        try:
+                            # Try upsert as fallback (may avoid the embedding validation bug)
+                            collection.upsert(
+                                embeddings=all_embeddings,
+                                documents=all_docs,
+                                metadatas=all_metadatas,
+                                ids=all_ids
+                            )
+                            logger.info(f"✅ Upsert fallback succeeded for {collection_name}")
+                        except Exception as upsert_error:
+                            logger.warning(f"Upsert fallback also failed: {upsert_error}. Attempting batch insert...")
+                            # Try adding one at a time as last resort
+                            failed_count = 0
+                            for i, doc_id in enumerate(all_ids):
+                                try:
+                                    collection.add(
+                                        embeddings=[all_embeddings[i]],
+                                        documents=[all_docs[i]],
+                                        metadatas=[all_metadatas[i]],
+                                        ids=[doc_id]
+                                    )
+                                except Exception as individual_error:
+                                    logger.error(f"Failed to add individual document {doc_id}: {individual_error}")
+                                    failed_count += 1
+                            
+                            if failed_count > 0:
+                                logger.error(f"Failed to add {failed_count}/{len(all_ids)} documents in batch mode")
+                                raise ValueError(f"ChromaDB failed to add {failed_count} documents after all retry attempts")
+                    else:
+                        raise
                 
                 # Clear, detailed logging
                 total = len(ids)
@@ -231,7 +274,8 @@ class RAGVectorStore:
         collection_name: str,
         query_text: str,
         top_k: int = 10,
-        metadata_filter: Optional[Dict[str, Any]] = None
+        metadata_filter: Optional[Dict[str, Any]] = None,
+        min_similarity_override: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
         Retrieve similar documents using semantic search.
@@ -268,7 +312,7 @@ class RAGVectorStore:
             # Format results with similarity filtering and logging
             documents = []
             filtered_count = 0
-            min_similarity = settings.rag_min_similarity
+            min_similarity = min_similarity_override if min_similarity_override is not None else settings.rag_min_similarity
             similarity_scores = []
             
             if results['documents'] and len(results['documents']) > 0:
@@ -326,6 +370,7 @@ class RAGVectorStore:
     def get_collection_stats(self, collection_name: str) -> Dict[str, Any]:
         """
         Get statistics for a collection.
+        Handles ChromaDB 0.5.0 bug with count() and peek() on certain collections.
         
         Args:
             collection_name: Name of the collection
@@ -335,11 +380,54 @@ class RAGVectorStore:
         """
         try:
             collection = self.get_or_create_collection(collection_name)
-            count = collection.count()
+            count_value = 0
+            
+            # Try count() method first
+            try:
+                count_result = collection.count()
+                if isinstance(count_result, int):
+                    count_value = count_result
+                else:
+                    # count() returned something unexpected, try alternative
+                    raise TypeError("count() returned non-integer")
+            except TypeError as type_error:
+                # ChromaDB bug: "object of type 'int' has no len()" 
+                # This happens with certain collections. Try query fallback.
+                if "object of type" in str(type_error) and "has no len()" in str(type_error):
+                    logger.warning(f"ChromaDB bug detected on {collection_name}: {type_error}. Trying query fallback.")
+                    try:
+                        # Try to query with limit=1 to see if collection has data
+                        result = collection.get(limit=1)
+                        if result and isinstance(result, dict) and 'ids' in result and result['ids']:
+                            # Collection has data, but we can't reliably count it
+                            count_value = 0  # Fallback to 0 for display
+                    except Exception as query_error:
+                        logger.debug(f"Query fallback also failed for {collection_name}: {query_error}")
+                        count_value = 0
+                else:
+                    raise
+            except (AttributeError, Exception) as count_error:
+                # count() failed for other reasons, try peek()
+                try:
+                    peek_results = collection.peek(limit=1000)
+                    if peek_results and isinstance(peek_results, dict):
+                        ids = peek_results.get('ids', [])
+                        if ids:
+                            count_value = len(ids)
+                            if len(ids) == 1000:
+                                count_value = 1000
+                except Exception as peek_error:
+                    # ChromaDB bug also hit peek()
+                    if "object of type" in str(peek_error) and "has no len()" in str(peek_error):
+                        logger.warning(f"ChromaDB bug on peek() for {collection_name}: {peek_error}")
+                        count_value = 0
+                    else:
+                        logger.debug(f"Could not count {collection_name}: count_error={count_error}, peek_error={peek_error}")
+                        count_value = 0
             
             return {
                 "name": collection_name,
-                "count": count,
+                "count": count_value,
                 "exists": True
             }
         except Exception as e:
@@ -361,7 +449,7 @@ class RAGVectorStore:
         collections = [
             self.TEST_PLANS_COLLECTION,
             self.CONFLUENCE_DOCS_COLLECTION,
-            self.JIRA_STORIES_COLLECTION,
+            self.JIRA_ISSUES_COLLECTION,
             self.EXISTING_TESTS_COLLECTION,
             self.EXTERNAL_DOCS_COLLECTION,
             self.SWAGGER_DOCS_COLLECTION
@@ -403,7 +491,7 @@ class RAGVectorStore:
         collections = [
             self.TEST_PLANS_COLLECTION,
             self.CONFLUENCE_DOCS_COLLECTION,
-            self.JIRA_STORIES_COLLECTION,
+            self.JIRA_ISSUES_COLLECTION,
             self.EXISTING_TESTS_COLLECTION,
             self.EXTERNAL_DOCS_COLLECTION,
             self.SWAGGER_DOCS_COLLECTION

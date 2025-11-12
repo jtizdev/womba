@@ -166,6 +166,7 @@ class DocumentProcessor:
     def build_external_doc_document(self, url: str, title: str, html: str) -> Optional[str]:
         """
         Build document text from external documentation.
+        FULL CONTENT - metadata (URL, title) will be added by prompt builder.
         
         Args:
             url: Source URL
@@ -180,7 +181,9 @@ class DocumentProcessor:
             logger.warning(f"No textual content extracted from {url}")
             return None
         
-        return f"Source: {url}\nTitle: {title}\n\nContent:\n{text}"
+        # Return ONLY the content - prompt builder will add metadata
+        # This avoids duplication and makes the content cleaner
+        return text
 
     def build_swagger_document(self, swagger_doc) -> str:
         """

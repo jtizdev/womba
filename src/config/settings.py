@@ -137,7 +137,7 @@ class Settings(BaseSettings):
         ],
         description="List of PlainID API documentation entry points to crawl from"
     )
-    plainid_doc_max_pages: int = Field(default=200, description="Maximum pages to crawl from PlainID docs")
+    plainid_doc_max_pages: int = Field(default=10000, description="Maximum pages to crawl from PlainID docs (set high for no limit)")
     plainid_doc_max_depth: int = Field(default=5, description="Maximum crawl depth for PlainID docs")
     plainid_doc_request_delay: float = Field(default=0.3, description="Delay between requests (seconds)")
     plainid_doc_project_key: str = Field(default="PLAT", description="Project key for PlainID docs")

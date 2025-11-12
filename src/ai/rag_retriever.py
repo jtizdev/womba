@@ -57,6 +57,13 @@ class RAGRetriever:
     """
     Intelligent retriever for RAG-based test generation.
     Uses semantic search to find relevant company-specific context.
+    
+    Optimizations:
+    - Relevance threshold filtering (min similarity 0.65)
+    - Keyword-based re-ranking
+    - Document type prioritization
+    - Deduplication of similar docs
+    - Smart summarization of long docs
     """
     
     def __init__(self):
@@ -67,7 +74,13 @@ class RAGRetriever:
         self.top_k_stories = settings.rag_top_k_stories
         self.top_k_existing = settings.rag_top_k_existing
         self.top_k_swagger = settings.rag_top_k_swagger
-        logger.info("Initialized RAG retriever")
+        
+        # Optimization settings
+        self.min_similarity = 0.65  # Only include high-quality matches
+        # NO TOKEN LIMIT - include full documents without truncation
+        self.dedup_threshold = 0.85  # Remove near-duplicates
+        
+        logger.info("Initialized RAG retriever with optimization filters")
     
     async def retrieve_for_story(
         self,
@@ -174,7 +187,7 @@ class RAGRetriever:
         # 2. Acceptance Criteria - CRITICAL for matching relevant docs and APIs
         if story.acceptance_criteria:
             # This often contains specific requirements that match swagger endpoints
-            query_parts.append(f"Acceptance Criteria: {story.acceptance_criteria[:800]}")
+            query_parts.append(f"Acceptance Criteria: {story.acceptance_criteria}")
         
         # 3. Components and Labels - categorization for filtering
         if story.components:
@@ -271,13 +284,13 @@ class RAGRetriever:
         """Retrieve similar Jira stories."""
         try:
             # Check if collection has documents
-            stats = self.store.get_collection_stats(self.store.JIRA_STORIES_COLLECTION)
+            stats = self.store.get_collection_stats(self.store.JIRA_ISSUES_COLLECTION)
             if stats.get('count', 0) == 0:
                 logger.info("Jira stories collection is empty, skipping retrieval")
                 return []
             
             results = await self.store.retrieve_similar(
-                collection_name=self.store.JIRA_STORIES_COLLECTION,
+                collection_name=self.store.JIRA_ISSUES_COLLECTION,
                 query_text=query,
                 top_k=self.top_k_stories,
                 metadata_filter=metadata_filter
@@ -364,4 +377,277 @@ class RAGRetriever:
         except Exception as e:
             logger.warning(f"No similar swagger docs found: {e}")
             return []
+    
+    def filter_by_similarity(self, docs: List[Dict[str, Any]], min_similarity: float = None) -> List[Dict[str, Any]]:
+        """Filter documents by similarity threshold."""
+        if min_similarity is None:
+            min_similarity = self.min_similarity
+        
+        filtered = [doc for doc in docs if doc.get('similarity', 0) >= min_similarity]
+        
+        if len(filtered) < len(docs):
+            logger.info(f"Filtered {len(docs)} → {len(filtered)} docs (similarity >= {min_similarity:.2f})")
+        
+        return filtered
+    
+    def rerank_by_keywords(self, docs: List[Dict[str, Any]], story_keywords: List[str]) -> List[Dict[str, Any]]:
+        """Re-rank documents by keyword overlap with story."""
+        if not story_keywords:
+            return docs
+        
+        def keyword_score(doc: Dict[str, Any]) -> float:
+            doc_text = doc.get('document', '').lower()
+            # Count how many story keywords appear in doc
+            matches = sum(1 for kw in story_keywords if kw.lower() in doc_text)
+            # Boost score by keyword density
+            base_similarity = doc.get('similarity', 0)
+            keyword_boost = matches * 0.03  # +3% per keyword match
+            return base_similarity + keyword_boost
+        
+        ranked = sorted(docs, key=keyword_score, reverse=True)
+        logger.debug(f"Re-ranked {len(docs)} docs by keywords: {story_keywords[:5]}")
+        return ranked
+    
+    def prioritize_by_type(self, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Prioritize documents by source type relevance."""
+        # Define priority multipliers
+        type_priority = {
+            'jira_issues': 1.15,      # Related stories = most relevant
+            'swagger_docs': 1.12,      # API specs = very relevant
+            'existing_tests': 1.10,    # Similar tests = helpful for style
+            'confluence_docs': 1.05,   # Internal docs = somewhat relevant
+            'external_docs': 1.02,     # PlainID docs = background only
+        }
+        
+        def priority_score(doc: Dict[str, Any]) -> float:
+            source_type = doc.get('metadata', {}).get('source_type', 'unknown')
+            multiplier = type_priority.get(source_type, 1.0)
+            base_similarity = doc.get('similarity', 0)
+            return base_similarity * multiplier
+        
+        prioritized = sorted(docs, key=priority_score, reverse=True)
+        logger.debug(f"Prioritized {len(docs)} docs by type")
+        return prioritized
+    
+    def deduplicate_docs(self, docs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove near-duplicate documents."""
+        if len(docs) <= 1:
+            return docs
+        
+        unique_docs = []
+        seen_content = []
+        
+        for doc in docs:
+            doc_text = doc.get('document', '')
+            # Check if similar to any already-included doc
+            is_duplicate = False
+            for seen in seen_content:
+                overlap = self._text_similarity(doc_text, seen)
+                if overlap > self.dedup_threshold:
+                    is_duplicate = True
+                    logger.debug(f"Skipping duplicate doc (overlap: {overlap:.2f})")
+                    break
+            
+            if not is_duplicate:
+                unique_docs.append(doc)
+                seen_content.append(doc_text)
+        
+        if len(unique_docs) < len(docs):
+            logger.info(f"Deduplicated {len(docs)} → {len(unique_docs)} docs")
+        
+        return unique_docs
+    
+    def _text_similarity(self, text1: str, text2: str) -> float:
+        """Quick text similarity using set overlap (Jaccard similarity)."""
+        if not text1 or not text2:
+            return 0.0
+        
+        words1 = set(text1.lower().split())
+        words2 = set(text2.lower().split())
+        
+        if not words1 or not words2:
+            return 0.0
+        
+        intersection = len(words1 & words2)
+        union = len(words1 | words2)
+        
+        return intersection / union if union > 0 else 0.0
+    
+    def truncate_long_docs(self, docs: List[Dict[str, Any]], max_tokens: int = None) -> List[Dict[str, Any]]:
+        """Truncate documents that exceed token budget."""
+        if max_tokens is None:
+            max_tokens = self.max_tokens_per_doc
+        
+        truncated = []
+        for doc in docs:
+            doc_text = doc.get('document', '')
+            doc_tokens = len(doc_text) // 4  # Rough estimate
+            
+            if doc_tokens > max_tokens:
+                # Truncate to max_tokens
+                max_chars = max_tokens * 4
+                truncated_text = doc_text[:max_chars] + f"\n... [truncated from {doc_tokens} to {max_tokens} tokens]"
+                doc = doc.copy()
+                doc['document'] = truncated_text
+                doc['truncated'] = True
+                logger.debug(f"Truncated doc from {doc_tokens} → {max_tokens} tokens")
+            
+            truncated.append(doc)
+        
+        return truncated
+    
+    def extract_keywords(self, story: JiraStory, story_context: Optional[Any] = None) -> List[str]:
+        """Extract key terms from story for re-ranking."""
+        keywords = []
+        
+        # Extract from summary (most important)
+        if story.summary:
+            # Remove common words and extract meaningful terms
+            summary_words = story.summary.lower().split()
+            keywords.extend([w for w in summary_words if len(w) > 3])
+        
+        # Extract from components
+        if story.components:
+            keywords.extend([c.lower() for c in story.components])
+        
+        # Extract from labels
+        if story.labels:
+            keywords.extend([l.lower() for l in story.labels[:5]])
+        
+        # Extract from issue type
+        if story.issue_type:
+            keywords.append(story.issue_type.lower())
+        
+        # Deduplicate and limit
+        keywords = list(dict.fromkeys(keywords))  # Preserve order, remove dupes
+        keywords = keywords[:15]  # Top 15 keywords
+        
+        logger.debug(f"Extracted keywords: {keywords}")
+        return keywords
+    
+    async def retrieve_optimized(
+        self,
+        story: JiraStory,
+        project_key: Optional[str] = None,
+        story_context: Optional[Any] = None,
+        max_docs_per_type: int = 3
+    ) -> RetrievedContext:
+        """
+        Retrieve and optimize RAG context with all filters applied.
+        
+        This is the MAIN method to use for prompt building.
+        It applies all optimizations:
+        - Retrieves more candidates than needed
+        - Filters by similarity threshold
+        - Re-ranks by keywords
+        - Prioritizes by document type
+        - Deduplicates similar docs
+        - Truncates long docs
+        - Returns top N per type
+        
+        Args:
+            story: Jira story
+            project_key: Optional project key
+            story_context: Optional story context with subtasks
+            max_docs_per_type: Max documents to return per collection
+            
+        Returns:
+            Optimized RetrievedContext
+        """
+        logger.info(f"Retrieving OPTIMIZED RAG context for {story.key}")
+        
+        # Step 1: Retrieve raw context (casts wide net)
+        raw_context = await self.retrieve_for_story(story, project_key, story_context)
+        
+        # Step 2: Extract keywords for re-ranking
+        keywords = self.extract_keywords(story, story_context)
+        
+        # Step 3: Optimize each collection
+        optimized_test_plans = self._optimize_docs(
+            raw_context.similar_test_plans,
+            keywords,
+            max_docs_per_type,
+            "test_plans"
+        )
+        
+        optimized_confluence = self._optimize_docs(
+            raw_context.similar_confluence_docs,
+            keywords,
+            max_docs_per_type,
+            "confluence"
+        )
+        
+        optimized_stories = self._optimize_docs(
+            raw_context.similar_jira_stories,
+            keywords,
+            max_docs_per_type,
+            "jira_stories"
+        )
+        
+        optimized_tests = self._optimize_docs(
+            raw_context.similar_existing_tests,
+            keywords,
+            max_docs_per_type,
+            "existing_tests"
+        )
+        
+        optimized_external = self._optimize_docs(
+            raw_context.similar_external_docs,
+            keywords,
+            max_docs_per_type,
+            "external_docs"
+        )
+        
+        optimized_swagger = self._optimize_docs(
+            raw_context.similar_swagger_docs,
+            keywords,
+            max_docs_per_type + 2,  # Allow more swagger docs (important for APIs)
+            "swagger"
+        )
+        
+        optimized_context = RetrievedContext(
+            similar_test_plans=optimized_test_plans,
+            similar_confluence_docs=optimized_confluence,
+            similar_jira_stories=optimized_stories,
+            similar_existing_tests=optimized_tests,
+            similar_external_docs=optimized_external,
+            similar_swagger_docs=optimized_swagger
+        )
+        
+        logger.info(f"✅ Optimized RAG context: {optimized_context.get_summary()}")
+        return optimized_context
+    
+    def _optimize_docs(
+        self,
+        docs: List[Dict[str, Any]],
+        keywords: List[str],
+        max_docs: int,
+        collection_name: str
+    ) -> List[Dict[str, Any]]:
+        """Apply all optimization steps to a document collection."""
+        if not docs:
+            return []
+        
+        logger.debug(f"Optimizing {collection_name}: {len(docs)} docs")
+        
+        # Step 1: Filter by similarity
+        filtered = self.filter_by_similarity(docs)
+        if not filtered:
+            logger.debug(f"  No docs passed similarity threshold for {collection_name}")
+            return []
+        
+        # Step 2: Re-rank by keywords
+        reranked = self.rerank_by_keywords(filtered, keywords)
+        
+        # Step 3: Prioritize by type
+        prioritized = self.prioritize_by_type(reranked)
+        
+        # Step 4: Deduplicate
+        unique = self.deduplicate_docs(prioritized)
+        
+        # Step 5: Take top N (NO TRUNCATION - keep full documents)
+        top_docs = unique[:max_docs]
+        
+        logger.debug(f"  {collection_name}: {len(docs)} → {len(top_docs)} docs (optimized, FULL documents)")
+        return top_docs
 

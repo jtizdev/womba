@@ -428,7 +428,7 @@ class StoryCollector:
         if subtasks:
             sections.append("\n=== ENGINEERING TASKS / SUBTASKS ===")
             sections.append("(These implementation details may suggest regression test scenarios)")
-            for task in subtasks[:10]:
+            for task in subtasks:
                 sections.append(f"\n{task.key}: {task.summary}")
                 sections.append(f"Status: {task.status}")
                 if task.description:
@@ -448,14 +448,14 @@ class StoryCollector:
         # Related bugs section
         if related_bugs:
             sections.append("\n=== RELATED BUGS ===")
-            for bug in related_bugs[:10]:  # Limit to 10 bugs
+            for bug in related_bugs:
                 sections.append(f"\n{bug.key}: {bug.summary}")
                 sections.append(f"Status: {bug.status}, Priority: {bug.priority}")
 
         # Confluence documentation section (NEW!)
         if confluence_docs:
             sections.append("\n=== RELATED DOCUMENTATION (PRD, TECH DESIGN) ===")
-            for doc in confluence_docs[:5]:  # Limit to 5 most relevant pages
+            for doc in confluence_docs:
                 sections.append(f"\n📄 {doc['title']}")
                 sections.append(f"URL: {doc['url']}")
                 if doc['content']:
