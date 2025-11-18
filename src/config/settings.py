@@ -45,6 +45,15 @@ class Settings(BaseSettings):
     gitlab_base_url: str = Field(default="https://gitlab.com", description="GitLab base URL")
     gitlab_group_path: str = Field(default="plainid/srv", description="GitLab group path for service repositories")
     gitlab_swagger_enabled: bool = Field(default=True, description="Enable GitLab Swagger indexing")
+    gitlab_fallback_enabled: bool = Field(default=True, description="Enable GitLab fallback endpoint extraction when no endpoints found (uses MCP)")
+    gitlab_fallback_max_services: int = Field(default=5, description="Maximum number of services to search in GitLab fallback")
+    # MCP Configuration for GitLab fallback
+    # Note: GitLab fallback uses MCP (Model Context Protocol) for codebase search
+    # The GitLab REST API client is only used for OpenAPI file fetching in RAG indexing
+    # MCP server connection can be configured via environment variables or Cursor settings
+    mcp_gitlab_server_command: Optional[str] = Field(default="npx", description="MCP server command (default: 'npx' for mcp-remote)")
+    mcp_gitlab_server_args: Optional[str] = Field(default='["-y", "mcp-remote", "https://gitlab.com/api/v4/mcp"]', description="MCP server arguments as JSON string (default: mcp-remote with GitLab API endpoint)")
+    mcp_gitlab_token: Optional[str] = Field(default=None, description="GitLab token for MCP server authentication (if not using Cursor's MCP connection)")
     bitbucket_token: Optional[str] = Field(default=None, description="Bitbucket token (optional)")
 
     # Figma (Optional)
@@ -90,7 +99,7 @@ class Settings(BaseSettings):
         default="gpt-4o-mini", 
         description="AI model for test generation (gpt-4o-mini: 17x cheaper, 500K TPM limit, supports JSON schema + 16K output tokens)"
     )
-    temperature: float = Field(default=0.8, description="AI temperature for generation (higher = more creative)")
+    temperature: float = Field(default=0.2, description="AI temperature for generation (lower = more deterministic, better instruction following)")
     max_tokens: int = Field(default=16000, description="Max tokens for AI responses (gpt-4o-mini supports up to 16384, increased back from 10K)")
     
     # RAG Configuration

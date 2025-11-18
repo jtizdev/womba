@@ -9,11 +9,14 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+      - "12849:12849"  # OAuth callback port for mcp-remote
     volumes:
       # Persistent ChromaDB storage
       - womba-chroma-data:/app/data
       # Mount .env for configuration (read-only)
       - ./.env:/app/.env:ro
+      # Persistent MCP auth cache (so OAuth tokens persist across restarts)
+      - womba-mcp-auth:/home/womba/.mcp-auth
     environment:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
@@ -35,9 +38,11 @@ services:
     networks:
       - womba-network
 
-# Named volume for ChromaDB persistence
+# Named volumes for persistence
 volumes:
   womba-chroma-data:
+    driver: local
+  womba-mcp-auth:
     driver: local
 
 # Bridge network for container communication

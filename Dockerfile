@@ -5,10 +5,16 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including Node.js and npm for MCP server)
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    ca-certificates \
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -18,8 +24,12 @@ RUN useradd -m -u 1000 womba && \
 # Copy requirements first (for layer caching optimization)
 COPY requirements-minimal.txt .
 
-# Install Python dependencies (includes ChromaDB for RAG)
+# Install Python dependencies (includes ChromaDB for RAG and MCP client)
 RUN pip install --no-cache-dir -r requirements-minimal.txt
+
+# Install mcp-remote for GitLab MCP connection (for fallback endpoint extraction)
+# Note: Using npx -y so it doesn't need global install, but keeping npm available
+RUN npm install -g mcp-remote || true
 
 # Copy application code
 COPY src/ ./src/

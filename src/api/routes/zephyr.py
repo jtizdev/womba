@@ -54,11 +54,17 @@ async def upload_test_cases(request: UploadTestCasesRequest):
         logger.info(f"Uploading test cases to Zephyr for {request.issue_key}")
         
         # Load saved test plan from file (like CLI upload-plan command)
-        plan_path = Path(f"test_plans/test_plan_{request.issue_key}.json")
+        # Use absolute path to avoid working directory issues
+        # In Docker, working dir is /app, so test_plans is at /app/test_plans
+        import os
+        app_root = Path(os.getenv("APP_ROOT", "/app"))  # Default to /app for Docker
+        plan_path = app_root / "test_plans" / f"test_plan_{request.issue_key}.json"
+        
+        logger.debug(f"Looking for test plan at: {plan_path.absolute()}")
         if not plan_path.exists():
             raise HTTPException(
                 status_code=404, 
-                detail=f"Saved test plan not found: {plan_path}. Generate a test plan first."
+                detail=f"Saved test plan not found: {plan_path.absolute()}. Generate a test plan first."
             )
         
         logger.info(f"Loading saved test plan from {plan_path}")
@@ -98,14 +104,53 @@ async def upload_test_cases(request: UploadTestCasesRequest):
             logger.info(f"Looking for IDs/titles: {selected_identifiers}")
             logger.info(f"Looking for indices: {selected_indices}")
             
-            # Match by: 1) ID, 2) title, 3) extracted index
+            # Match by: 1) ID (exact match), 2) title (exact match), 3) extracted index
             filtered_cases = []
             for idx, tc in enumerate(test_plan.test_cases):
-                if (tc.id and tc.id in selected_identifiers) or \
-                   (tc.title in selected_identifiers) or \
-                   (idx in selected_indices):
+                matched = False
+                match_reason = None
+                
+                # Check ID match (exact)
+                if tc.id and tc.id in selected_identifiers:
+                    matched = True
+                    match_reason = f"ID match: {tc.id}"
+                
+                # Check title match (exact)
+                elif tc.title in selected_identifiers:
+                    matched = True
+                    match_reason = f"Title match: {tc.title}"
+                
+                # Check index match
+                elif idx in selected_indices:
+                    matched = True
+                    match_reason = f"Index match: {idx}"
+                
+                if matched:
+                    # Ensure manual test cases have at least one valid step
+                    if tc.id and tc.id.startswith('TC-MANUAL-'):
+                        # Filter out empty steps and ensure at least one step exists
+                        valid_steps = [s for s in tc.steps if s.action and s.action.strip()]
+                        if not valid_steps:
+                            # Add a default step if all steps are empty
+                            from src.models.test_case import TestStep
+                            tc.steps = [TestStep(
+                                step_number=1,
+                                action="Manual test case - steps to be defined",
+                                expected_result="Verify expected behavior"
+                            )]
+                            logger.warning(f"Manual test case {tc.id} had no valid steps, added default step")
+                        else:
+                            tc.steps = valid_steps
+                    
                     filtered_cases.append(tc)
-                    logger.info(f"Matched test case {idx}: {tc.title} (id={tc.id})")
+                    logger.info(f"Matched test case {idx}: {tc.title} (id={tc.id}) - {match_reason}")
+            
+            if len(filtered_cases) != len(request.test_cases):
+                logger.warning(
+                    f"Mismatch: Requested {len(request.test_cases)} test cases, "
+                    f"but only matched {len(filtered_cases)} from saved plan. "
+                    f"Requested IDs: {[tc.get('id', 'NO_ID') for tc in request.test_cases]}"
+                )
             
             test_plan.test_cases = filtered_cases
             logger.info(f"Filtered to {len(test_plan.test_cases)} matching test cases from saved plan")

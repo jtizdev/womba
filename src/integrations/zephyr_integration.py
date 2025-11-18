@@ -177,8 +177,26 @@ class ZephyrIntegration:
         logger.info(f"✅ Test case created: {test_case_key}")
         
         # Step 2: Add steps via separate endpoint (CRITICAL - must be done AFTER creation)
-        if test_case.steps and len(test_case.steps) > 0:
-            await self._add_test_steps(test_case_key, test_case.steps)
+        # Filter out empty steps and ensure at least one step exists
+        valid_steps = []
+        if test_case.steps:
+            for step in test_case.steps:
+                # Only include steps with at least an action
+                if step.action and step.action.strip():
+                    valid_steps.append(step)
+        
+        # If no valid steps, add a default step (especially for manual test cases)
+        if not valid_steps:
+            from src.models.test_case import TestStep
+            valid_steps = [TestStep(
+                step_number=1,
+                action="Test steps to be defined",
+                expected_result="Verify expected behavior"
+            )]
+            logger.info(f"Test case {test_case_key} had no valid steps, adding default step")
+        
+        if valid_steps:
+            await self._add_test_steps(test_case_key, valid_steps)
 
         # Link to story if provided
         if story_key and test_case_key:
