@@ -136,43 +136,62 @@ class GitLabMCPClient:
                 )
             
             # Use MCP stdio client to communicate with mcp-remote
-            async with stdio_client(server_params) as (read, write):
+            async with stdio_client(server_params) as streams:
+                if not streams:
+                    logger.error("Failed to establish stdio connection")
+                    return []
+                
+                read, write = streams
                 async with ClientSession(read, write) as session:
-                    # Initialize the session
-                    await session.initialize()
-                    
-                    # List available tools
-                    tools = await session.list_tools()
-                    logger.debug(f"Available MCP tools: {[t.name for t in tools.tools]}")
-                    
-                    # Call semantic_code_search tool
-                    result = await session.call_tool(
-                        "semantic_code_search",
-                        {
-                            "project_id": project_id,
-                            "semantic_query": semantic_query,
-                            "directory_path": directory_path,
-                            "limit": limit
-                        }
-                    )
-                    
-                    # Parse results
-                    if result.content:
-                        results = []
-                        for item in result.content:
-                            if hasattr(item, 'text'):
-                                try:
-                                    data = json.loads(item.text)
-                                    if isinstance(data, list):
-                                        results.extend(data)
-                                    else:
-                                        results.append(data)
-                                except json.JSONDecodeError:
-                                    results.append({"content": item.text})
-                        logger.info(f"MCP semantic search returned {len(results)} results")
-                        return results
-                    else:
-                        logger.warning("MCP returned no content")
+                    try:
+                        # Initialize the session
+                        await session.initialize()
+                        logger.debug("MCP session initialized")
+                        
+                        # List available tools
+                        try:
+                            tools = await session.list_tools()
+                            logger.debug(f"Available MCP tools: {[t.name for t in tools.tools]}")
+                        except Exception as e:
+                            logger.warning(f"Could not list tools: {e}")
+                        
+                        # Call semantic_code_search tool
+                        logger.info("Calling semantic_code_search tool via MCP...")
+                        result = await session.call_tool(
+                            "semantic_code_search",
+                            {
+                                "project_id": project_id,
+                                "semantic_query": semantic_query,
+                                "directory_path": directory_path,
+                                "limit": limit
+                            }
+                        )
+                        
+                        logger.debug(f"MCP tool call completed, parsing results...")
+                        
+                        # Parse results
+                        if result.content:
+                            results = []
+                            for item in result.content:
+                                if hasattr(item, 'text'):
+                                    try:
+                                        data = json.loads(item.text)
+                                        if isinstance(data, list):
+                                            results.extend(data)
+                                        else:
+                                            results.append(data)
+                                    except json.JSONDecodeError:
+                                        results.append({"content": item.text})
+                                elif hasattr(item, 'content'):
+                                    # Handle different content types
+                                    results.append({"content": str(item.content)})
+                            logger.info(f"MCP semantic search returned {len(results)} results")
+                            return results
+                        else:
+                            logger.warning("MCP returned no content")
+                            return []
+                    except Exception as session_error:
+                        logger.error(f"Error in MCP session: {session_error}", exc_info=True)
                         return []
         
         except Exception as e:
