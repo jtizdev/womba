@@ -28,8 +28,8 @@ COPY requirements-minimal.txt .
 RUN pip install --no-cache-dir -r requirements-minimal.txt
 
 # Install mcp-remote for GitLab MCP connection (for fallback endpoint extraction)
-# Note: Using npx -y so it doesn't need global install, but keeping npm available
-RUN npm install -g mcp-remote || true
+# Pin version to match local to avoid OAuth credential version mismatches
+RUN npm install -g mcp-remote@0.1.31 || true
 
 # Copy application code
 COPY src/ ./src/
