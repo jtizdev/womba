@@ -13,7 +13,7 @@ anthropic==0.18.1
 openai==1.12.0
 
 # MCP Integration
-mcp==0.9.1
+mcp>=1.21.2
 
 # HTTP Client
 httpx==0.26.0
