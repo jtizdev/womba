@@ -45,9 +45,11 @@ RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 # Install Womba package (provides both 'womba' CLI and API)
 RUN pip install -e .
 
-# Create data directory for ChromaDB with proper permissions
+# Create data directories with proper permissions
 RUN mkdir -p /app/data/chroma && \
-    chown -R womba:womba /app/data
+    mkdir -p /home/womba/.mcp-auth && \
+    chown -R womba:womba /app/data && \
+    chown -R womba:womba /home/womba/.mcp-auth
 
 # Switch to non-root user
 USER womba

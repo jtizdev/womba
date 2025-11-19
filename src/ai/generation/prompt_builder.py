@@ -30,7 +30,6 @@ from src.ai.prompts_optimized import (
     CORE_INSTRUCTIONS as OPTIMIZED_CORE_INSTRUCTIONS,
     FEW_SHOT_EXAMPLES as OPTIMIZED_EXAMPLES,
     TEST_PLAN_JSON_SCHEMA as OPTIMIZED_SCHEMA,
-    MINIMAL_ARCHITECTURE_GUIDE,
     VALIDATION_RULES,
 )
 
@@ -190,18 +189,28 @@ class PromptBuilder:
             
             if enriched_story.api_specifications:
                 sections.append("\n--- API SPECIFICATIONS (Use EXACT endpoints/schemas) ---")
-                for api in enriched_story.api_specifications:
-                    sections.append(f"\nEndpoint: {api.http_methods} {api.endpoint_path}")
+                sections.append(f"\n⚠️ CRITICAL: This story has {len(enriched_story.api_specifications)} API endpoint(s). You MUST generate at least 1 API test for EACH endpoint listed below.")
+                sections.append(f"⚠️ ENDPOINT CHECKLIST - Generate tests for ALL of these:")
+                sections.append(f"\n🚨 MANDATORY: For EACH endpoint below, you MUST create at least ONE API test that uses that EXACT endpoint path.")
+                sections.append(f"🚨 DO NOT reuse the same endpoint in multiple tests - each endpoint needs its own dedicated test(s).")
+                sections.append(f"🚨 DO NOT skip any endpoint - if you see 4 endpoints, you need at least 4 API tests (one per endpoint minimum).")
+                for i, api in enumerate(enriched_story.api_specifications, 1):
+                    methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
+                    sections.append(f"\n  [{i}/{len(enriched_story.api_specifications)}] {methods_str} {api.endpoint_path}")
+                    sections.append(f"     ⚠️ YOU MUST CREATE A TEST FOR THIS ENDPOINT - DO NOT SKIP IT!")
                     if api.service_name:
-                        sections.append(f"Service: {api.service_name}")
+                        sections.append(f"     Service: {api.service_name}")
                     if api.parameters:
-                        sections.append(f"Parameters: {', '.join(api.parameters)}")
+                        sections.append(f"     Parameters: {', '.join(api.parameters)}")
                     if api.request_schema:
-                        sections.append(f"Request: {api.request_schema}")
+                        sections.append(f"     Request: {api.request_schema}")
                     if api.response_schema:
-                        sections.append(f"Response: {api.response_schema}")
+                        sections.append(f"     Response: {api.response_schema}")
                     if api.authentication:
-                        sections.append(f"Auth: {api.authentication}")
+                        sections.append(f"     Auth: {api.authentication}")
+                sections.append(f"\n⚠️ REMINDER: You must generate API tests for ALL {len(enriched_story.api_specifications)} endpoints above. Do not skip any!")
+                sections.append(f"⚠️ FINAL CHECK: Before returning, count your API tests. If you have fewer than {len(enriched_story.api_specifications)} API tests, you have FAILED!")
+                sections.append(f"⚠️ FINAL CHECK: Verify each endpoint path appears in at least one API test step. If any endpoint is missing, you have FAILED!")
             
             if enriched_story.plainid_components:
                 sections.append("\n--- PLAINID COMPONENTS INVOLVED ---")
@@ -701,11 +710,58 @@ Ensure all required fields are populated with realistic values.
         sections.append("\n")
         
         # ============================================================================
-        # SECTION 5: ARCHITECTURE REFERENCE (10% of budget - minimal)
+        # SECTION 5: COMPANY CONTEXT (conditional - only if PlainID detected)
         # ============================================================================
-        if enriched_story.plainid_components:
-            sections.append(MINIMAL_ARCHITECTURE_GUIDE)
-            sections.append("\n")
+        # Check if PlainID context should be injected
+        should_inject_plainid = (
+            enriched_story.plainid_components or
+            (rag_context_formatted and any(term in rag_context_formatted.lower() for term in ['plainid', 'pap', 'pdp', 'pop', 'pbac']))
+        )
+        
+        if should_inject_plainid:
+            # Inject PlainID architecture context from RAG or enriched story
+            sections.append("🏢 COMPANY CONTEXT (PlainID Platform)\n")
+            sections.append("=" * 80 + "\n")
+            sections.append("PlainID uses Policy-Based Access Control (PBAC). Key terms:\n")
+            sections.append("- PAP (Policy Administration Point): Web UI for policy authoring\n")
+            sections.append("- PDP (Policy Decision Point): Runtime authorization engine\n")
+            sections.append("- PEP (Policy Enforcement Point): Client-side enforcement\n")
+            sections.append("- POP (Policy Object Point): Deployed policy storage\n")
+            sections.append("- PIPs (Policy Information Points): Data sources that enrich policy evaluation context\n")
+            sections.append("- Authorizers: Data connectors (IDP, Database, API, File-based) that feed PIPs\n")
+            sections.append("\nWorkspaces:\n")
+            sections.append("- Authorization Workspace: Policies, Applications, Assets\n")
+            sections.append("- Identity Workspace: Identity sources, Dynamic Groups\n")
+            sections.append("- Orchestration Workspace: POPs, Vendor integration\n")
+            sections.append("- Administration Workspace: Audit, User management\n")
+            sections.append("\nPLAINID UI STRUCTURE (for writing UI test steps):\n")
+            sections.append("\nWORKSPACES & UI NAVIGATION:\n")
+            sections.append("- **Authorization Workspace** (Policy authoring, main workspace for policies/assets/applications):\n")
+            sections.append("  - Policies menu → Policy list → Create/Edit policy → Policy 360° views\n")
+            sections.append("  - Applications menu → Application list → Application details → (tabs: General, Policies, API Mappers)\n")
+            sections.append("  - Assets menu → Asset Types → Assets\n")
+            sections.append("  - Scopes menu\n")
+            sections.append("\n- **Identity Workspace** (Identity management):\n")
+            sections.append("  - Identity Sources menu → IDP configuration\n")
+            sections.append("  - Dynamic Groups menu → Group definitions\n")
+            sections.append("  - Attributes menu\n")
+            sections.append("  - Token Enrichment\n")
+            sections.append("\n- **Orchestration Workspace** (Vendor integration, POPs):\n")
+            sections.append("  - POPs menu → POP details → Discovery, Policies tabs\n")
+            sections.append("  - Discovery menu → Vendor discovery status\n")
+            sections.append("  - Reconciliation → Deployment/Override actions\n")
+            sections.append("\n- **Administration Workspace** (System admin):\n")
+            sections.append("  - Audit Events → Activity logs\n")
+            sections.append("  - User Management → Roles, permissions\n")
+            sections.append("  - Environment settings\n")
+            sections.append("\nUI TEST STEP REQUIREMENTS (CRITICAL):\n")
+            sections.append("- For UI tests, use UI navigation language: \"Navigate to...\", \"Click...\", \"Select...\", \"Verify displays...\"\n")
+            sections.append("- Always specify workspace: \"In Authorization Workspace, navigate to Applications\"\n")
+            sections.append("- Always specify menu/tab path: \"Applications → Select app-123 → Click Policies tab\"\n")
+            sections.append("- Verify UI elements: \"Verify policy list displays with search bar and paging controls\"\n")
+            sections.append("- NO API endpoints in UI test steps! (API calls go in separate backend/API tests)\n")
+            sections.append("\nFor detailed architecture, see retrieved context above.\n")
+            sections.append("=" * 80 + "\n\n")
         
         # ============================================================================
         # SECTION 5b: MANDATORY VALIDATION RULES (Self-check)

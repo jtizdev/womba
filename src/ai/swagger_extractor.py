@@ -95,11 +95,14 @@ class SwaggerExtractor:
         """
         Extract explicitly mentioned API endpoint paths from text.
         
+        Conservative approach: Only extracts endpoints that appear to be actual requirements,
+        not examples. Examples are filtered out by checking context.
+        
         Args:
             text: Text to scan
             
         Returns:
-            Set of endpoint paths found
+            Set of endpoint paths found (may include examples - will be filtered later)
         """
         endpoints = set()
         
@@ -114,14 +117,88 @@ class SwaggerExtractor:
             # Clean up query params and fragments for deduplication
             clean_path = path.split('?')[0].split('#')[0]
             if clean_path.count('/') >= 2:  # At least /segment/segment
-                endpoints.add(clean_path)
+                # Check context around this endpoint to see if it's an example
+                # We'll do basic filtering here, but AI filtering will do the heavy lifting
+                if not self._is_example_endpoint(clean_path, text):
+                    endpoints.add(clean_path)
+                else:
+                    logger.debug(f"Skipping example endpoint in explicit extraction: {clean_path}")
         
         # Pattern 2: /api/... style paths (for traditional API paths)
         api_pattern = r'/api/[a-zA-Z0-9/_\-{}.]+[a-zA-Z0-9}]'
         matches = re.findall(api_pattern, text)
-        endpoints.update(matches)
+        for match in matches:
+            if not self._is_example_endpoint(match, text):
+                endpoints.add(match)
+            else:
+                logger.debug(f"Skipping example endpoint in explicit extraction: {match}")
         
         return endpoints
+    
+    def _is_example_endpoint(self, endpoint_path: str, text: str) -> bool:
+        """
+        Check if an endpoint appears to be an example/reference rather than an actual requirement.
+        
+        This is a conservative rule-based check used during extraction.
+        More sophisticated AI-based filtering happens later in the enrichment pipeline.
+        
+        Args:
+            endpoint_path: Endpoint path to check
+            text: Full text to search for context
+            
+        Returns:
+            True if endpoint appears to be an example, False otherwise
+        """
+        # Find the endpoint in the text
+        endpoint_pattern = re.escape(endpoint_path)
+        match = re.search(endpoint_pattern, text, re.IGNORECASE)
+        
+        if not match:
+            # Endpoint not found - can't determine, so don't filter (let AI decide)
+            return False
+        
+        # Get context around endpoint (200 chars before and after)
+        start = max(0, match.start() - 200)
+        end = min(len(text), match.end() + 200)
+        context = text[start:end].lower()
+        
+        # Example indicator patterns - if found, likely an example
+        example_patterns = [
+            r'for\s+[^.]+\s+we\s+use',
+            r'similar\s+to',
+            r'same\s+as\s+existing',
+            r'example\s+.*\s+endpoint',
+            r'pattern',
+            r'reference',
+            r'like\s+.*\s+we\s+use',
+            r'for\s+.*\s+we\s+use\s+.*' + re.escape(endpoint_path.split('/')[-1] if '/' in endpoint_path else endpoint_path)
+        ]
+        
+        # Requirement indicator patterns - if found, likely a requirement
+        requirement_patterns = [
+            r'create\s+endpoint',
+            r'create\s+.*\s+endpoint',
+            r'implement\s+endpoint',
+            r'add\s+endpoint',
+            r'new\s+endpoint',
+            r'endpoint\s+for\s+.*\s+application',
+            r'fetch.*by\s+application',
+            r'need\s+to\s+create',
+            r'must\s+create'
+        ]
+        
+        # Check for example patterns
+        is_example_context = any(re.search(pattern, context, re.IGNORECASE) for pattern in example_patterns)
+        
+        # Check for requirement patterns
+        is_requirement_context = any(re.search(pattern, context, re.IGNORECASE) for pattern in requirement_patterns)
+        
+        # If it's in example context AND not in requirement context, it's likely an example
+        if is_example_context and not is_requirement_context:
+            return True
+        
+        # Otherwise, don't filter it out here (let AI filtering decide)
+        return False
     
     async def _extract_endpoints_semantic(
         self,
@@ -186,23 +263,51 @@ class SwaggerExtractor:
                 path_to_methods[clean_path] = []
             path_to_methods[clean_path].append(method.upper())
         
-        # Process semantic matches first (have full swagger data)
+        # Process semantic matches - ONLY include if explicitly mentioned or high similarity
+        # Be conservative: semantic matches are often examples, not actual requirements
         for match in semantic_matches:
             try:
                 doc_text = match.get('document', '')
                 metadata = match.get('metadata', {})
+                similarity = match.get('similarity', 0.0)
                 
                 # Parse swagger content from document
                 api_spec = self._parse_swagger_doc(doc_text, metadata)
                 
                 if api_spec and api_spec.endpoint_path not in seen_paths:
-                    # Prioritize if explicitly mentioned
-                    if any(explicit in api_spec.endpoint_path for explicit in explicit_paths):
-                        specs.insert(0, api_spec)  # Put at front
-                    else:
-                        specs.append(api_spec)
+                    # Check if endpoint is explicitly mentioned in story
+                    is_explicit = any(explicit in api_spec.endpoint_path or api_spec.endpoint_path in explicit for explicit in explicit_paths)
                     
-                    seen_paths.add(api_spec.endpoint_path)
+                    # Check if it's an example endpoint
+                    is_example = self._is_example_endpoint(api_spec.endpoint_path, text)
+                    
+                    # Only include if:
+                    # 1. Explicitly mentioned in story AND not an example, OR
+                    # 2. High similarity (>0.5) AND not an example AND explicitly mentioned as requirement
+                    if is_explicit and not is_example:
+                        specs.insert(0, api_spec)  # Put at front (explicit = highest priority)
+                        seen_paths.add(api_spec.endpoint_path)
+                    elif similarity > 0.5 and not is_example:
+                        # High similarity = likely relevant, but still check if it's explicitly a requirement
+                        # Check if context mentions creating/implementing this endpoint
+                        endpoint_pattern = re.escape(api_spec.endpoint_path)
+                        match_context = re.search(endpoint_pattern, text, re.IGNORECASE)
+                        if match_context:
+                            start = max(0, match_context.start() - 100)
+                            end = min(len(text), match_context.end() + 100)
+                            context = text[start:end].lower()
+                            requirement_keywords = ['create', 'implement', 'add', 'new endpoint', 'need to']
+                            if any(kw in context for kw in requirement_keywords):
+                                specs.append(api_spec)
+                                seen_paths.add(api_spec.endpoint_path)
+                            else:
+                                logger.debug(f"Skipping semantic match (no requirement context): {api_spec.endpoint_path} (similarity: {similarity:.3f})")
+                        else:
+                            logger.debug(f"Skipping semantic match (not in text): {api_spec.endpoint_path} (similarity: {similarity:.3f})")
+                    else:
+                        # Low similarity or example = probably not relevant, skip it
+                        reason = "example" if is_example else f"low similarity ({similarity:.3f})"
+                        logger.debug(f"Skipping semantic match ({reason}): {api_spec.endpoint_path}")
                     
             except Exception as e:
                 logger.debug(f"Failed to parse swagger match: {e}")

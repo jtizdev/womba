@@ -16,6 +16,7 @@ from loguru import logger
 
 from src.models.test_plan import TestPlan, TestPlanMetadata
 from src.models.test_case import TestCase, TestStep
+from src.models.enriched_story import EnrichedStory
 
 
 class ResponseParser:
@@ -261,7 +262,7 @@ class ResponseParser:
         
         return "General/Automated Tests"
 
-    def validate_test_cases(self, test_plan: TestPlan) -> List[str]:
+    def validate_test_cases(self, test_plan: TestPlan, enriched_story: Optional[EnrichedStory] = None) -> List[str]:
         """
         Validate generated test cases for quality issues with stricter criteria.
         
@@ -270,31 +271,61 @@ class ResponseParser:
         - Placeholder patterns
         - Generic test names
         - Empty descriptions
+        - API test requirements (if story has API specs)
+        - UI test navigation detail
+        - Test naming patterns (no "Verify" prefix)
         
         Args:
             test_plan: TestPlan to validate
+            enriched_story: Optional EnrichedStory to check for API specifications
             
         Returns:
             List of validation warnings
         """
         warnings = []
         
+        # Check if story has API specifications
+        has_api_specs = False
+        api_endpoints = []
+        if enriched_story and enriched_story.api_specifications:
+            has_api_specs = True
+            api_endpoints = [api.endpoint_path for api in enriched_story.api_specifications]
+        
+        # Count API and UI tests
+        api_tests = []
+        ui_tests = []
+        
         for tc in test_plan.test_cases:
-            # Check test name quality
-            if not tc.title.startswith("Verify"):
-                warnings.append(f"Test '{tc.title}' should start with 'Verify'")
+            # Check test name quality (NO "Verify" prefix)
+            if tc.title.startswith(("Verify", "Validate", "Test", "Check")):
+                warnings.append(f"Test '{tc.title}' should NOT start with 'Verify/Validate/Test/Check' - use business-focused naming")
             
             if any(generic in tc.title.lower() for generic in ["happy path", "test case", "basic test"]):
                 warnings.append(f"Test '{tc.title}' has generic naming")
+            
+            # Check if test title contains HTTP status codes (should be in steps, not title)
+            if any(code in tc.title for code in ["200", "400", "404", "500", "403", "401"]):
+                warnings.append(f"Test '{tc.title}' contains HTTP status code in title - status codes should be in test steps, not titles")
             
             # Check description
             if not tc.description or len(tc.description) < 20:
                 warnings.append(f"Test '{tc.title}' has insufficient description")
             
+            # Classify test type based on tags and steps
+            is_api_test = "API" in (tc.tags or [])
+            is_ui_test = "UI" in (tc.tags or [])
+            
+            if is_api_test:
+                api_tests.append(tc)
+            if is_ui_test:
+                ui_tests.append(tc)
+            
             # Check steps
             for step in tc.steps:
-                step_data = step.get('test_data', '') if isinstance(step, dict) else getattr(step, 'test_data', '')
-                step_number = step.get('step_number', '?') if isinstance(step, dict) else getattr(step, 'step_number', '?')
+                step_dict = step if isinstance(step, dict) else step.model_dump() if hasattr(step, 'model_dump') else {}
+                step_action = step_dict.get('action', '')
+                step_data = step_dict.get('test_data', '')
+                step_number = step_dict.get('step_number', '?')
                 
                 # Check for null or empty test_data
                 if step_data is None or (isinstance(step_data, str) and not step_data.strip()):
@@ -304,14 +335,71 @@ class ResponseParser:
                 placeholders = ['<', '>', 'Bearer ', 'placeholder', 'TODO', 'FIXME', '<token>', '<value>']
                 if any(placeholder in str(step_data) for placeholder in placeholders):
                     warnings.append(f"Test '{tc.title}' step {step_number} contains placeholder")
+                
+                # API test validation
+                if is_api_test:
+                    # Check if API test has HTTP method and endpoint (only for API call steps, not validation steps)
+                    is_api_call_step = any(method in step_action for method in ["GET ", "POST ", "PATCH ", "PUT ", "DELETE "])
+                    is_validation_step = any(word in step_action.lower() for word in ["validate", "check", "verify", "confirm"])
+                    
+                    if is_api_call_step:
+                        # This step makes an API call - must have endpoint
+                        has_endpoint = "/" in step_action and any(char in step_action for char in ["/policy-mgmt", "/api/", "/orchestrator", "/internal-assets"])
+                        if not has_endpoint:
+                            warnings.append(f"API test '{tc.title}' step {step_number} missing endpoint path")
+                    elif step_number == 1 and not is_validation_step:
+                        # First step must be an API call (unless it's a validation step)
+                        warnings.append(f"API test '{tc.title}' step {step_number} missing HTTP method (GET/POST/PATCH/DELETE) - first step must make an API call")
+                    
+                    # Check for UI navigation in API test (should not have)
+                    if any(nav in step_action for nav in ["Navigate to", "Click", "Select"]):
+                        warnings.append(f"API test '{tc.title}' step {step_number} contains UI navigation - API tests should only have HTTP calls")
+                
+                # UI test validation
+                if is_ui_test:
+                    # Check if UI test has detailed navigation (only first step needs navigation)
+                    is_navigation_step = "Navigate to" in step_action or "→" in step_action
+                    is_verification_step = any(word in step_action.lower() for word in ["check", "verify", "confirm", "validate"])
+                    
+                    if step_number == 1:
+                        # First step must have navigation
+                        has_workspace = any(ws in step_action for ws in ["Authorization Workspace", "Identity Workspace", "Orchestration Workspace", "Administration Workspace"])
+                        if not is_navigation_step:
+                            warnings.append(f"UI test '{tc.title}' step {step_number} missing navigation path - should include 'Navigate to Workspace → Menu → Item'")
+                        elif not has_workspace:
+                            warnings.append(f"UI test '{tc.title}' step {step_number} navigation should specify workspace (e.g., 'Authorization Workspace')")
+                    # Note: Step 2+ can be verification steps, so we don't require navigation
+                    
+                    # Check for API endpoints in UI test (should not have)
+                    if any(endpoint in step_action for endpoint in ["GET /", "POST /", "PATCH /", "PUT /", "DELETE /"]):
+                        warnings.append(f"UI test '{tc.title}' step {step_number} contains API endpoint - UI tests should only have navigation steps")
+        
+        # API test coverage validation
+        if has_api_specs:
+            if len(api_tests) == 0:
+                warnings.append(f"CRITICAL: Story has {len(api_endpoints)} API endpoint(s) but generated 0 API tests. Must generate at least 1 API test per endpoint.")
+            else:
+                # Check if we have tests for all endpoints
+                covered_endpoints = set()
+                for api_test in api_tests:
+                    for step in api_test.steps:
+                        step_dict = step if isinstance(step, dict) else step.model_dump() if hasattr(step, 'model_dump') else {}
+                        step_action = step_dict.get('action', '')
+                        for endpoint in api_endpoints:
+                            if endpoint in step_action or endpoint.split('/')[-1] in step_action:
+                                covered_endpoints.add(endpoint)
+                
+                missing_endpoints = set(api_endpoints) - covered_endpoints
+                if missing_endpoints:
+                    warnings.append(f"Story has {len(missing_endpoints)} API endpoint(s) without tests: {', '.join(list(missing_endpoints)[:3])}")
         
         # Log warnings
         if warnings:
             logger.warning(f"Found {len(warnings)} validation issues:")
-            for warning in warnings[:5]:  # Log first 5
+            for warning in warnings[:10]:  # Log first 10
                 logger.warning(f"  - {warning}")
-            if len(warnings) > 5:
-                logger.warning(f"  ... and {len(warnings) - 5} more")
+            if len(warnings) > 10:
+                logger.warning(f"  ... and {len(warnings) - 10} more")
         else:
             logger.info("✓ All tests passed validation")
         

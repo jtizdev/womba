@@ -13,7 +13,7 @@ from src.models.enriched_story import EnrichedStory
 from src.ai.generation.ai_client_factory import AIClientFactory
 from src.ai.generation.prompt_builder import PromptBuilder
 from src.ai.generation.response_parser import ResponseParser
-from src.ai.prompts_qa_focused import SYSTEM_INSTRUCTION
+from src.ai.prompts_optimized import SYSTEM_INSTRUCTION
 from src.ai.enrichment_cache import EnrichmentCache
 from src.ai.story_enricher import StoryEnricher
 
@@ -145,8 +145,8 @@ class TestPlanGenerator:
             f"Successfully generated {len(test_plan.test_cases)} test cases for {main_story.key}"
         )
         
-        # Step 6: Validate test cases
-        self.response_parser.validate_test_cases(test_plan)
+        # Step 6: Validate test cases (pass enriched_story for API spec validation)
+        self.response_parser.validate_test_cases(test_plan, enriched_story=enriched_story)
         
         # Step 7: Auto-index test plan for future RAG retrieval if enabled
         if use_rag and settings.rag_auto_index:

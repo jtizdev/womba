@@ -198,4 +198,85 @@ class GitLabClient:
             return False
         except GitlabError:
             return False
+    
+    def list_branches(
+        self,
+        project_id: int,
+        search_pattern: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List branches in a GitLab project, optionally filtered by search pattern.
+        
+        Args:
+            project_id: GitLab project ID
+            search_pattern: Optional pattern to filter branch names (e.g., "PLAT-13541")
+            
+        Returns:
+            List of branch dictionaries with name, commit info
+        """
+        try:
+            project = self.gl.projects.get(project_id)
+            branches = project.branches.list(all=True)
+            
+            branch_list = []
+            for branch in branches:
+                branch_name = branch.name
+                
+                # Filter by pattern if provided
+                if search_pattern and search_pattern.lower() not in branch_name.lower():
+                    continue
+                
+                branch_list.append({
+                    'name': branch_name,
+                    'default': branch.default if hasattr(branch, 'default') else False,
+                    'protected': branch.protected if hasattr(branch, 'protected') else False,
+                    'commit': {
+                        'id': branch.commit.get('id') if hasattr(branch, 'commit') else None,
+                        'message': branch.commit.get('message') if hasattr(branch, 'commit') else None
+                    } if hasattr(branch, 'commit') else None
+                })
+            
+            logger.debug(f"Found {len(branch_list)} branches in project {project_id} (pattern: {search_pattern})")
+            return branch_list
+            
+        except GitlabError as e:
+            logger.error(f"Failed to list branches for project {project_id}: {e}")
+            return []
+    
+    def search_code(
+        self,
+        project_id: int,
+        search_query: str,
+        ref: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for code in a GitLab project using GitLab's search API.
+        
+        Args:
+            project_id: GitLab project ID
+            search_query: Search query (e.g., "@router.get" or "openapi")
+            ref: Optional branch/tag to search in (defaults to default branch)
+            
+        Returns:
+            List of search results with file path, content snippets, etc.
+        """
+        try:
+            project = self.gl.projects.get(project_id)
+            
+            # Use GitLab's search API
+            # Note: GitLab search API might have limitations, so we'll use repository search
+            results = []
+            
+            # Try to use the project's search endpoint
+            # GitLab python library doesn't have direct search, so we'll use a workaround
+            # by searching through repository tree for relevant files
+            logger.debug(f"Searching code in project {project_id} for: {search_query}")
+            
+            # For now, return empty - actual search will be done by scanning files
+            # This method is a placeholder for future GitLab API search integration
+            return results
+            
+        except GitlabError as e:
+            logger.error(f"Failed to search code in project {project_id}: {e}")
+            return []
 

@@ -21,6 +21,7 @@ from src.ai.rag_store import RAGVectorStore
 from src.config.settings import settings
 from src.ai.confluence_processor import process_confluence_content
 from src.ai.qa_summarizer import summarize_for_qa
+from src.ai.generation.ai_client_factory import AIClientFactory
 
 
 class StoryEnricher:
@@ -73,6 +74,31 @@ class StoryEnricher:
             subtask_texts=subtask_texts
         )
         logger.info(f"Extracted {len(api_specs)} API specifications")
+        
+        # 4.5. Filter out example endpoints using AI-based filtering
+        if api_specs:
+            api_specs = await self._filter_example_endpoints_via_ai(
+                combined_text=combined_text,
+                extracted_endpoints=api_specs,
+                story_key=main_story.key
+            )
+            logger.info(f"After filtering: {len(api_specs)} API specifications remain")
+        
+        # 4.6. GitLab fallback if no endpoints found
+        if not api_specs:
+            logger.info("No endpoints found via normal extraction, trying GitLab fallback...")
+            try:
+                from src.ai.gitlab_fallback_extractor import GitLabFallbackExtractor
+                gitlab_extractor = GitLabFallbackExtractor()
+                api_specs = await gitlab_extractor.extract_from_codebase(
+                    story_key=main_story.key,
+                    story_text=combined_text,
+                    project_key=main_story.key.split('-')[0]
+                )
+                logger.info(f"GitLab fallback found {len(api_specs)} API specifications")
+            except Exception as e:
+                logger.warning(f"GitLab fallback extraction failed: {e}")
+                # Continue with empty api_specs
         
         # 5. Collect all acceptance criteria
         all_acceptance_criteria = self._collect_acceptance_criteria(all_stories)
@@ -702,4 +728,248 @@ class StoryEnricher:
             risks.append("Migration/Compatibility: Test upgrade paths and backward compatibility with existing data")
         
         return risks
+    
+    async def _filter_example_endpoints_via_ai(
+        self,
+        combined_text: str,
+        extracted_endpoints: List[APISpec],
+        story_key: str
+    ) -> List[APISpec]:
+        """
+        Filter out example/reference endpoints using AI-based analysis.
+        
+        Uses LLM to analyze context around each endpoint and determine if it's:
+        - An example/reference (should be filtered out)
+        - An actual endpoint being created/implemented (should be kept)
+        
+        Args:
+            combined_text: Full story text with all context
+            extracted_endpoints: List of extracted API specifications
+            story_key: Story key for logging
+            
+        Returns:
+            Filtered list of API specifications (only actual requirements)
+        """
+        if not extracted_endpoints:
+            return extracted_endpoints
+        
+        try:
+            # Create AI client for filtering
+            client, model, use_openai = AIClientFactory.create_client(
+                use_openai=True,
+                model="gpt-4o-mini"  # Use lightweight model for filtering
+            )
+            
+            # Build prompt for endpoint filtering
+            endpoint_list = []
+            for i, api in enumerate(extracted_endpoints, 1):
+                methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
+                endpoint_list.append(f"{i}. {methods_str} {api.endpoint_path}")
+            
+            filter_prompt = f"""You are analyzing a user story to identify which API endpoints are actual requirements vs examples/references.
+
+STORY CONTEXT:
+{combined_text[:3000]}  # Limit context to avoid token limits
+
+EXTRACTED ENDPOINTS:
+{chr(10).join(endpoint_list)}
+
+TASK: For each endpoint, determine if it is:
+1. AN EXAMPLE/REFERENCE - mentioned to show a pattern or existing implementation (e.g., "for ruleset we use GET /policy-mgmt/...")
+2. AN ACTUAL REQUIREMENT - explicitly mentioned as being created/implemented in this story
+
+Return a JSON array with one object per endpoint:
+[
+  {{"endpoint_index": 1, "is_example": true, "reason": "Found in example context: 'for ruleset we use'"}},
+  {{"endpoint_index": 2, "is_example": false, "reason": "Explicitly mentioned as new endpoint to create"}}
+]
+
+Only mark as is_example:false if the endpoint is explicitly mentioned as being created/implemented in this story.
+If uncertain, mark as is_example:true (better to filter out than test wrong endpoint)."""
+
+            # Call AI
+            if use_openai:
+                # Request JSON array format
+                filter_prompt_with_format = filter_prompt + "\n\nReturn ONLY a valid JSON array, no other text."
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": "You are an expert at analyzing software requirements and distinguishing examples from actual requirements. Always return valid JSON arrays."},
+                        {"role": "user", "content": filter_prompt_with_format}
+                    ],
+                    temperature=0.2,  # Low temperature for consistent filtering
+                )
+                result_text = response.choices[0].message.content
+            else:
+                # Anthropic path (if needed)
+                from anthropic import Anthropic
+                response = client.messages.create(
+                    model=model,
+                    max_tokens=2000,
+                    messages=[
+                        {"role": "user", "content": filter_prompt}
+                    ],
+                    temperature=0.2
+                )
+                result_text = response.content[0].text
+            
+            # Parse AI response
+            import json
+            try:
+                # Clean up response text
+                result_text = result_text.strip()
+                
+                # Try to parse as JSON
+                try:
+                    parsed = json.loads(result_text)
+                except json.JSONDecodeError:
+                    # Try to find JSON array in response
+                    json_match = re.search(r'\[.*\]', result_text, re.DOTALL)
+                    if json_match:
+                        parsed = json.loads(json_match.group(0))
+                    else:
+                        raise ValueError("No valid JSON found in AI response")
+                
+                # Handle different response formats
+                if isinstance(parsed, list):
+                    ai_results = parsed
+                elif isinstance(parsed, dict):
+                    if 'endpoints' in parsed:
+                        ai_results = parsed['endpoints']
+                    elif 'results' in parsed:
+                        ai_results = parsed['results']
+                    else:
+                        # Single object, wrap in list
+                        ai_results = [parsed]
+                else:
+                    raise ValueError(f"Unexpected response format: {type(parsed)}")
+                
+                # Validate structure
+                if not isinstance(ai_results, list):
+                    raise ValueError(f"Expected list, got {type(ai_results)}")
+                    
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(f"Failed to parse AI filtering response for {story_key}: {e}. Response: {result_text[:200]}")
+                # Fall back to rule-based filtering
+                return self._filter_example_endpoints_rule_based(combined_text, extracted_endpoints)
+            
+            # Filter endpoints based on AI analysis
+            filtered_endpoints = []
+            filtered_out = []
+            
+            for i, api in enumerate(extracted_endpoints, 1):
+                # Find AI result for this endpoint
+                ai_result = next((r for r in ai_results if r.get('endpoint_index') == i), None)
+                
+                if ai_result and ai_result.get('is_example', True):
+                    # Filter out - it's an example
+                    filtered_out.append({
+                        'endpoint': f"{' '.join(api.http_methods)} {api.endpoint_path}",
+                        'reason': ai_result.get('reason', 'AI identified as example')
+                    })
+                    logger.debug(f"Filtered out example endpoint: {api.endpoint_path} - {ai_result.get('reason', 'N/A')}")
+                else:
+                    # Keep - it's an actual requirement
+                    filtered_endpoints.append(api)
+                    logger.debug(f"Kept endpoint: {api.endpoint_path} - {ai_result.get('reason', 'AI identified as requirement') if ai_result else 'No AI result, keeping by default'}")
+            
+            if filtered_out:
+                logger.info(f"AI filtering for {story_key}: Filtered out {len(filtered_out)} example endpoint(s), kept {len(filtered_endpoints)} actual requirement(s)")
+                for item in filtered_out:
+                    logger.info(f"  - Filtered: {item['endpoint']} - {item['reason']}")
+            
+            return filtered_endpoints
+            
+        except Exception as e:
+            logger.warning(f"AI-based endpoint filtering failed for {story_key}: {e}. Falling back to rule-based filtering.")
+            # Fall back to rule-based filtering
+            return self._filter_example_endpoints_rule_based(combined_text, extracted_endpoints)
+    
+    def _filter_example_endpoints_rule_based(
+        self,
+        combined_text: str,
+        extracted_endpoints: List[APISpec]
+    ) -> List[APISpec]:
+        """
+        Rule-based fallback for filtering example endpoints.
+        
+        Used when AI filtering fails or is unavailable.
+        
+        Args:
+            combined_text: Full story text
+            extracted_endpoints: List of extracted API specifications
+            
+        Returns:
+            Filtered list of API specifications
+        """
+        filtered = []
+        filtered_out = []
+        
+        # Example indicator patterns
+        example_patterns = [
+            r'for\s+[^.]+\s+we\s+use',
+            r'similar\s+to',
+            r'same\s+as\s+existing',
+            r'example',
+            r'pattern',
+            r'reference',
+            r'like\s+.*\s+we\s+use'
+        ]
+        
+        # Requirement indicator patterns
+        requirement_patterns = [
+            r'create\s+endpoint',
+            r'create\s+.*\s+endpoint',
+            r'implement\s+endpoint',
+            r'add\s+endpoint',
+            r'new\s+endpoint',
+            r'endpoint\s+for\s+.*\s+application',
+            r'fetch.*by\s+application'
+        ]
+        
+        text_lower = combined_text.lower()
+        
+        for api in extracted_endpoints:
+            endpoint_path = api.endpoint_path
+            # Find context around endpoint in text
+            endpoint_pattern = re.escape(endpoint_path)
+            match = re.search(endpoint_pattern, combined_text, re.IGNORECASE)
+            
+            if match:
+                # Get context (200 chars before and after for better detection)
+                start = max(0, match.start() - 200)
+                end = min(len(combined_text), match.end() + 200)
+                context = combined_text[start:end].lower()
+                
+                # Check if it's an example
+                is_example = any(re.search(pattern, context, re.IGNORECASE) for pattern in example_patterns)
+                
+                # Check if it's explicitly a requirement
+                is_requirement = any(re.search(pattern, context, re.IGNORECASE) for pattern in requirement_patterns)
+                
+                # Conservative: if it's in example context OR not explicitly a requirement, filter it out
+                if is_example or not is_requirement:
+                    reason = 'Found in example context' if is_example else 'Not explicitly mentioned as requirement'
+                    filtered_out.append({
+                        'endpoint': f"{' '.join(api.http_methods)} {api.endpoint_path}",
+                        'reason': reason
+                    })
+                    logger.debug(f"Rule-based: Filtered out endpoint: {endpoint_path} - {reason}")
+                else:
+                    filtered.append(api)
+                    logger.debug(f"Rule-based: Kept endpoint: {endpoint_path} - explicitly mentioned as requirement")
+            else:
+                # Endpoint not found in text - be conservative, filter it out
+                filtered_out.append({
+                    'endpoint': f"{' '.join(api.http_methods)} {api.endpoint_path}",
+                    'reason': 'Endpoint not found in story text'
+                })
+                logger.debug(f"Rule-based: Filtered out endpoint not in text: {endpoint_path}")
+        
+        if filtered_out:
+            logger.info(f"Rule-based filtering: Filtered out {len(filtered_out)} endpoint(s), kept {len(filtered)}")
+            for item in filtered_out:
+                logger.info(f"  - Filtered: {item['endpoint']} - {item['reason']}")
+        
+        return filtered
 
