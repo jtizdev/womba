@@ -33,6 +33,15 @@ class GitLabMCPClient:
         self.mcp_process = None
         self.oauth_cache_dir = None
         
+        # First, check if mcp package is installed and accessible
+        try:
+            import mcp
+            import mcp.client.stdio  # Test if submodule is accessible
+        except ImportError as e:
+            logger.error(f"MCP package not properly installed: {e}")
+            logger.error("Install with: pip install 'mcp>=1.21.2'")
+            return
+        
         try:
             from mcp.client.stdio import stdio_client, StdioServerParameters
             from mcp.client.session import ClientSession
@@ -78,11 +87,9 @@ class GitLabMCPClient:
                 logger.warning(f"Failed to check for mcp-remote: {e}")
                 self.mcp_available = False
                 
-        except ImportError:
-            logger.warning("MCP Python library not available. Install with: pip install mcp")
-            self.mcp_available = False
         except Exception as e:
-            logger.warning(f"Failed to initialize MCP client: {e}")
+            logger.error(f"MCP initialization failed: {e}")
+            logger.error(f"  Full error: {type(e).__name__}: {e}")
             self.mcp_available = False
     
     async def semantic_code_search(

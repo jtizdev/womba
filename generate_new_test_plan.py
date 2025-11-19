@@ -8,11 +8,12 @@ import asyncio
 import json
 from pathlib import Path
 
-sys.path.insert(0, '/Users/royregev/womba/src')
+# Add project root (not just src) to maintain proper package import paths
+sys.path.insert(0, '/Users/royregev/womba')
 
-from aggregator.story_collector import StoryCollector
-from ai.test_plan_generator import TestPlanGenerator
-from ai.generation.response_parser import ResponseParser
+from src.aggregator.story_collector import StoryCollector
+from src.ai.test_plan_generator import TestPlanGenerator
+from src.ai.generation.response_parser import ResponseParser
 
 async def main():
     print("=" * 80)
@@ -53,7 +54,7 @@ async def main():
         # Get enriched story for validation
         enriched_story = None
         try:
-            from ai.story_enricher import StoryEnricher
+            from src.ai.story_enricher import StoryEnricher
             enricher = StoryEnricher()
             enriched_story = await enricher.enrich_story(context.main_story, context)
         except Exception as e:
