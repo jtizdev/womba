@@ -44,6 +44,30 @@ class UISpec(BaseModel):
     source: str = Field(description="Where this info came from (story, RAG, inference)")
 
 
+class APIContext(BaseModel):
+    """
+    API and UI context for prompt construction (separate from EnrichedStory).
+    
+    Built using a fallback flow:
+    1. Extract from story text directly
+    2. Fall back to Swagger RAG collection if incomplete
+    3. Fall back to GitLab MCP if Swagger has nothing
+    """
+    
+    api_specifications: List[APISpec] = Field(
+        default_factory=list,
+        description="API endpoints extracted via fallback flow (story → swagger → MCP)"
+    )
+    ui_specifications: List[UISpec] = Field(
+        default_factory=list,
+        description="UI navigation patterns extracted via fallback flow"
+    )
+    extraction_flow: str = Field(
+        default="story→swagger→mcp",
+        description="Which sources were used (e.g., 'story', 'story+swagger', 'story+swagger+mcp')"
+    )
+
+
 class ConfluenceDocRef(BaseModel):
     """Reference to a PRD/Confluence document relevant to the story with structured extraction."""
 
@@ -61,14 +85,18 @@ class ConfluenceDocRef(BaseModel):
 
 class EnrichedStory(BaseModel):
     """
-    Enriched story with synthesized narrative and extracted context.
+    Enriched story with Jira-native context.
     
-    This preprocessed story replaces raw dumps in prompts, providing:
+    This preprocessed story focuses on original Jira content, providing:
     - Compressed narrative explaining the feature
     - Complete acceptance criteria from all linked stories
-    - Relevant API specifications extracted from Swagger
     - Risk areas and integration points
-    - Related story context
+    - Related story context and Confluence references
+    - Functional points derived from story
+    
+    NOTE: API and UI specifications are NOT included here.
+    They are built separately during prompt construction via APIContext
+    using a fallback flow: story → swagger RAG → GitLab MCP.
     """
     
     story_key: str = Field(description="Primary story key (e.g., PLAT-123)")
@@ -76,10 +104,6 @@ class EnrichedStory(BaseModel):
     acceptance_criteria: List[str] = Field(
         default_factory=list,
         description="All acceptance criteria from story + linked stories"
-    )
-    api_specifications: List[APISpec] = Field(
-        default_factory=list,
-        description="Relevant API endpoints with schemas"
     )
     related_stories: List[str] = Field(
         default_factory=list,
@@ -108,10 +132,6 @@ class EnrichedStory(BaseModel):
     functional_points: List[str] = Field(
         default_factory=list,
         description="Key functional behaviors derived from story and PRD"
-    )
-    ui_specifications: List[UISpec] = Field(
-        default_factory=list,
-        description="UI navigation and access specifications"
     )
     
     class Config:

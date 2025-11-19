@@ -13,7 +13,7 @@ from typing import List, Optional, Set
 from loguru import logger
 
 from src.models.story import JiraStory
-from src.models.enriched_story import EnrichedStory, APISpec, ConfluenceDocRef, UISpec
+from src.models.enriched_story import EnrichedStory, ConfluenceDocRef
 from src.aggregator.story_collector import StoryContext
 from src.aggregator.jira_client import JiraClient
 from src.ai.swagger_extractor import SwaggerExtractor
@@ -63,42 +63,12 @@ class StoryEnricher:
         plainid_components = self._extract_plainid_components(all_stories)
         logger.debug(f"Found PlainID components: {plainid_components}")
         
-        # 3. Build combined text for API extraction
+        # 3. Build combined text (will be used in risk_areas and narrative, not for API extraction)
         combined_text = self._build_combined_text(main_story, all_stories)
         
-        # 4. Extract relevant API specifications
-        subtask_texts = [s.description or s.summary for s in story_context.get("subtasks", [])]
-        api_specs = await self.swagger_extractor.extract_endpoints(
-            story_text=combined_text,
-            project_key=main_story.key.split('-')[0],
-            subtask_texts=subtask_texts
-        )
-        logger.info(f"Extracted {len(api_specs)} API specifications")
-        
-        # 4.5. Filter out example endpoints using AI-based filtering
-        if api_specs:
-            api_specs = await self._filter_example_endpoints_via_ai(
-                combined_text=combined_text,
-                extracted_endpoints=api_specs,
-                story_key=main_story.key
-            )
-            logger.info(f"After filtering: {len(api_specs)} API specifications remain")
-        
-        # 4.6. GitLab fallback if no endpoints found
-        if not api_specs:
-            logger.info("No endpoints found via normal extraction, trying GitLab fallback...")
-            try:
-                from src.ai.gitlab_fallback_extractor import GitLabFallbackExtractor
-                gitlab_extractor = GitLabFallbackExtractor()
-                api_specs = await gitlab_extractor.extract_from_codebase(
-                    story_key=main_story.key,
-                    story_text=combined_text,
-                    project_key=main_story.key.split('-')[0]
-                )
-                logger.info(f"GitLab fallback found {len(api_specs)} API specifications")
-            except Exception as e:
-                logger.warning(f"GitLab fallback extraction failed: {e}")
-                # Continue with empty api_specs
+        # NOTE: API and UI spec extraction moved out of enrichment
+        # They will be built separately during prompt construction via APIContext
+        # using the fallback flow: story → swagger → MCP
         
         # 5. Collect all acceptance criteria
         all_acceptance_criteria = self._collect_acceptance_criteria(all_stories)
@@ -137,33 +107,27 @@ class StoryEnricher:
         # 8. Build related stories summary
         related_stories = self._build_related_stories_summary(all_stories[1:] if len(all_stories) > 1 else [])
         
-        # 9. Identify risk areas
+        # 9. Identify risk areas (note: API specs are NOT included here)
         risk_areas = self._identify_risk_areas(
             main_story=main_story,
             linked_stories=all_stories,
-            api_specs=api_specs,
+            api_specs=[],  # Empty - API specs are built separately in prompt construction
             plainid_components=plainid_components
         )
-        
-        # 10. Extract UI specifications
-        ui_specs = await self._extract_ui_specifications(main_story, story_context)
-        logger.info(f"Extracted {len(ui_specs)} UI specifications")
         
         enriched = EnrichedStory(
             story_key=main_story.key,
             feature_narrative=feature_narrative,
             acceptance_criteria=all_acceptance_criteria,
-            api_specifications=api_specs,
             related_stories=related_stories,
             risk_areas=risk_areas,
             source_story_ids=[s.key for s in all_stories],
             plainid_components=plainid_components,
             confluence_docs=confluence_refs,
-            functional_points=functional_points,
-            ui_specifications=ui_specs
+            functional_points=functional_points
         )
         
-        # Debug: Log complete enrichment data
+        # Debug: Log complete enrichment data (no API/UI specs logged here)
         logger.debug("=" * 80)
         logger.debug(f"ENRICHED STORY DATA: {enriched.story_key}")
         logger.debug("=" * 80)
@@ -172,9 +136,7 @@ class StoryEnricher:
         logger.debug(f"\nAcceptance Criteria ({len(all_acceptance_criteria)}):")
         for i, ac in enumerate(all_acceptance_criteria, 1):
             logger.debug(f"  {i}. {ac}")
-        logger.debug(f"\nAPI Specifications ({len(api_specs)}):")
-        for api in api_specs:
-            logger.debug(f"  - {' '.join(api.http_methods)} {api.endpoint_path} (service: {api.service_name})")
+        logger.debug(f"(API & UI Specifications now built separately via APIContext in prompt construction)")
         logger.debug(f"\nPlainID Components ({len(plainid_components)}):")
         for comp in plainid_components:
             logger.debug(f"  - {comp}")
@@ -631,74 +593,6 @@ class StoryEnricher:
         except Exception as e:
             logger.error(f"Failed to collect Confluence docs: {e}", exc_info=True)
         return refs
-
-    async def _extract_ui_specifications(
-        self,
-        main_story: JiraStory,
-        story_context: StoryContext
-    ) -> List[UISpec]:
-        """
-        Extract UI navigation and access specifications.
-        
-        Sources:
-        1. Story description (explicit navigation paths)
-        2. RAG similar UI patterns
-        3. Inference from feature requirements
-        """
-        ui_specs = []
-        combined_text = self._build_combined_text(main_story, [])
-        
-        # Pattern 1: Explicit navigation in story
-        # "navigate to X → Y → Z"
-        # "from the X page, click Y tab"
-        nav_patterns = [
-            r'navigate\s+to\s+([^.]+?)(?:\s+→\s+([^.]+?))?(?:\s+→\s+([^.]+?))?',
-            r'from\s+(?:the\s+)?([^,]+?),?\s+click\s+(?:the\s+)?([^.]+)',
-            r'(?:click|select|open)\s+(?:the\s+)?([^.]+?)\s+(?:tab|menu|button)',
-            r'in\s+(?:the\s+)?([^,]+?),?\s+(?:click|select)\s+([^.]+)',
-        ]
-        
-        for pattern in nav_patterns:
-            matches = re.finditer(pattern, combined_text, re.IGNORECASE)
-            for match in matches:
-                parts = [p.strip() for p in match.groups() if p]
-                if parts:
-                    nav_path = " → ".join(parts)
-                    ui_specs.append(UISpec(
-                        feature_name=main_story.summary,
-                        navigation_path=nav_path,
-                        access_method=f"Navigate: {nav_path}",
-                        ui_elements=parts,
-                        source="story_text"
-                    ))
-        
-        # Pattern 2: Query RAG for similar UI patterns
-        try:
-            rag_results = await self.rag_store.retrieve_similar(
-                collection_name="test_plans",
-                query_text=f"{main_story.summary} UI navigation",
-                top_k=3
-            )
-            for result in rag_results:
-                content = result.get("content", "")
-                # Extract navigation from test steps
-                nav_matches = re.findall(
-                    r'Navigate to ([^→]+(?:→[^→]+)*)',
-                    content,
-                    re.IGNORECASE
-                )
-                for nav in nav_matches[:2]:
-                    ui_specs.append(UISpec(
-                        feature_name=main_story.summary,
-                        navigation_path=nav.strip(),
-                        access_method=f"Navigate: {nav.strip()}",
-                        ui_elements=[e.strip() for e in nav.split('→')],
-                        source="rag_similar_tests"
-                    ))
-        except Exception as e:
-            logger.debug(f"RAG UI pattern extraction failed: {e}")
-        
-        return ui_specs
 
     def _derive_functional_points(self, main_story: JiraStory, confluence_refs: List[ConfluenceDocRef], subtasks: List[JiraStory]) -> List[str]:
         """

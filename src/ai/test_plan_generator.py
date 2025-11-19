@@ -66,6 +66,10 @@ class TestPlanGenerator:
         self.enrichment_cache = EnrichmentCache()
         self.story_enricher = StoryEnricher()
         
+        # API context builder (for fallback: story → swagger → MCP)
+        from src.ai.api_context_builder import APIContextBuilder
+        self.api_context_builder = APIContextBuilder()
+        
         logger.info(f"TestPlanGenerator initialized with model: {self.model} (optimized prompts: {self.prompt_builder.use_optimized})")
 
     async def generate_test_plan(
@@ -100,16 +104,28 @@ class TestPlanGenerator:
         # Step 0: Enrich story (preprocess and compress) if enabled
         enriched_story = await self._enrich_story(main_story, context) if settings.enable_story_enrichment else None
         
+        # Step 0.5: Build API context using fallback flow (story → swagger → MCP)
+        api_context = None
+        if enriched_story:
+            combined_text = self.story_enricher._build_combined_text(main_story, [])
+            api_context = await self.api_context_builder.build_api_context(
+                main_story=main_story,
+                story_context=context,
+                combined_text=combined_text
+            )
+            logger.info(f"API context built: {len(api_context.api_specifications)} endpoints, flow={api_context.extraction_flow}")
+        
         # Step 1: Retrieve RAG context if enabled (pass full context for better matching)
         rag_context = await self._retrieve_rag_context(main_story, context, use_rag)
         
-        # Step 2: Build prompt (with enriched story if available)
+        # Step 2: Build prompt (with enriched story + API context if available)
         prompt = self.prompt_builder.build_generation_prompt(
             context=context,
             rag_context=rag_context,
             existing_tests=existing_tests,
             folder_structure=folder_structure,
             enriched_story=enriched_story,
+            api_context=api_context,
         )
         
         # DEBUG: Save prompt to file for inspection

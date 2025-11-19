@@ -16,7 +16,7 @@ from typing import Optional, List, Dict, Any
 from loguru import logger
 
 from src.aggregator.story_collector import StoryContext
-from src.models.enriched_story import EnrichedStory
+from src.models.enriched_story import EnrichedStory, APIContext
 from src.ai.prompts_qa_focused import (
     SYSTEM_INSTRUCTION,
     REASONING_FRAMEWORK,
@@ -91,16 +91,18 @@ class PromptBuilder:
         existing_tests: Optional[list] = None,
         folder_structure: Optional[list] = None,
         enriched_story: Optional[EnrichedStory] = None,
+        api_context: Optional[APIContext] = None,
     ) -> str:
         """
         Build complete prompt for test generation with optimized structure.
         
         Uses enriched story (preprocessed narrative) if available, otherwise falls back to raw context.
+        API and UI specifications come from APIContext (built via fallback: story → swagger → MCP).
         
         Optimized ordering:
         1. Story understanding (enriched narrative or raw context)
         2. Acceptance criteria (explicitly listed)
-        3. API specifications (relevant endpoints)
+        3. API specifications (from APIContext, using fallback flow)
         4. Risk areas (what to focus testing on)
         5. RAG grounding (examples for style)
         6. Few-shot examples
@@ -113,20 +115,22 @@ class PromptBuilder:
             rag_context: Optional RAG context section
             existing_tests: Optional list of existing tests
             folder_structure: Optional Zephyr folder structure
-            enriched_story: Optional preprocessed EnrichedStory
+            enriched_story: Optional preprocessed EnrichedStory (Jira-native data only)
+            api_context: Optional APIContext with API/UI specs (built via fallback flow)
             
         Returns:
             Complete prompt string
         """
         # Route to optimized prompt if enabled
-        logger.info(f"Prompt builder state: use_optimized={self.use_optimized}, has_enriched_story={enriched_story is not None}")
+        logger.info(f"Prompt builder state: use_optimized={self.use_optimized}, has_enriched_story={enriched_story is not None}, has_api_context={api_context is not None}")
         if self.use_optimized and enriched_story:
             logger.info("🚀 Using OPTIMIZED prompt structure (new strategy)")
             return self.build_optimized_prompt(
                 enriched_story=enriched_story,
                 rag_context_formatted=rag_context or "",
                 existing_tests=existing_tests,
-                folder_structure=folder_structure
+                folder_structure=folder_structure,
+                api_context=api_context
             )
         
         main_story = context.main_story
@@ -187,64 +191,68 @@ class PromptBuilder:
                 for i, fp in enumerate(enriched_story.functional_points, 1):
                     sections.append(f"{i}. {fp}")
             
-            if enriched_story.api_specifications:
-                sections.append("\n--- API SPECIFICATIONS (Use EXACT endpoints/schemas/examples) ---")
-                sections.append(f"\n⚠️ CRITICAL: This story has {len(enriched_story.api_specifications)} API endpoint(s). You MUST generate at least 1 API test for EACH endpoint listed below.")
-                sections.append(f"⚠️ ENDPOINT CHECKLIST - Generate tests for ALL of these:")
-                sections.append(f"\n🚨 MANDATORY: For EACH endpoint below, you MUST create at least ONE API test that uses that EXACT endpoint path.")
-                sections.append(f"🚨 DO NOT reuse the same endpoint in multiple tests - each endpoint needs its own dedicated test(s).")
-                sections.append(f"🚨 DO NOT skip any endpoint - if you see 4 endpoints, you need at least 4 API tests (one per endpoint minimum).")
-                sections.append(f"🚨 USE THE EXAMPLE REQUEST/RESPONSE BODIES PROVIDED - they show you the EXACT format and fields to use in test steps!")
-                for i, api in enumerate(enriched_story.api_specifications, 1):
-                    methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
-                    sections.append(f"\n  [{i}/{len(enriched_story.api_specifications)}] {methods_str} {api.endpoint_path}")
-                    sections.append(f"     ⚠️ YOU MUST CREATE A TEST FOR THIS ENDPOINT - DO NOT SKIP IT!")
-                    if api.service_name:
-                        sections.append(f"     Service: {api.service_name}")
-                    if api.parameters:
-                        sections.append(f"     Parameters: {', '.join(api.parameters)}")
-                    
-                    # NEW: Include example request body
-                    if api.request_example:
-                        sections.append(f"     📝 EXAMPLE REQUEST BODY (use this exact format in test steps):")
-                        sections.append(f"        {api.request_example}")
-                    elif api.request_schema:
-                        sections.append(f"     Request Schema: {api.request_schema}")
-                    
-                    # NEW: Include example response body
-                    if api.response_example:
-                        sections.append(f"     📝 EXAMPLE RESPONSE BODY (expect this format in test steps):")
-                        sections.append(f"        {api.response_example}")
-                    elif api.response_schema:
-                        sections.append(f"     Response Schema: {api.response_schema}")
-                    
-                    # NEW: Include DTO field definitions
-                    if api.dto_definitions:
-                        sections.append(f"     📋 DTO FIELD DEFINITIONS:")
-                        for dto_name, dto_fields in api.dto_definitions.items():
-                            sections.append(f"        {dto_name}:")
-                            for field_name, field_info in list(dto_fields.items())[:10]:  # Limit to 10 fields
-                                field_type = field_info.get('type', 'unknown')
-                                required = "required" if field_info.get('required', False) else "optional"
-                                sections.append(f"          - {field_name}: {field_type} ({required})")
-                    
-                    if api.authentication:
-                        sections.append(f"     Auth: {api.authentication}")
-                sections.append(f"\n⚠️ REMINDER: You must generate API tests for ALL {len(enriched_story.api_specifications)} endpoints above. Do not skip any!")
-                sections.append(f"⚠️ FINAL CHECK: Before returning, count your API tests. If you have fewer than {len(enriched_story.api_specifications)} API tests, you have FAILED!")
-                sections.append(f"⚠️ FINAL CHECK: Verify each endpoint path appears in at least one API test step. If any endpoint is missing, you have FAILED!")
-                sections.append(f"⚠️ FINAL CHECK: Use the EXAMPLE REQUEST/RESPONSE bodies provided above in your test steps - they show the EXACT JSON format!")
-            
-            if enriched_story.ui_specifications:
-                sections.append("\n--- UI SPECIFICATIONS (Navigation & Access) ---")
-                sections.append(f"\n⚠️ This story has {len(enriched_story.ui_specifications)} UI feature(s). Use these navigation paths in UI test steps.")
-                for i, ui in enumerate(enriched_story.ui_specifications, 1):
-                    sections.append(f"\n  [{i}] {ui.feature_name}")
-                    sections.append(f"     Navigation: {ui.navigation_path}")
-                    sections.append(f"     Access: {ui.access_method}")
-                    if ui.ui_elements:
-                        sections.append(f"     UI Elements: {', '.join(ui.ui_elements)}")
-                    sections.append(f"     Source: {ui.source}")
+            # Use api_context for API/UI specs (built via fallback flow)
+            # api_context contains specs from story → swagger RAG → GitLab MCP
+            if api_context:
+                if api_context.api_specifications:
+                    sections.append("\n--- API SPECIFICATIONS (Use EXACT endpoints/schemas/examples) ---")
+                    sections.append(f"\n📊 Extraction Flow: {api_context.extraction_flow}")
+                    sections.append(f"\n⚠️ CRITICAL: This story has {len(api_context.api_specifications)} API endpoint(s). You MUST generate at least 1 API test for EACH endpoint listed below.")
+                    sections.append(f"⚠️ ENDPOINT CHECKLIST - Generate tests for ALL of these:")
+                    sections.append(f"\n🚨 MANDATORY: For EACH endpoint below, you MUST create at least ONE API test that uses that EXACT endpoint path.")
+                    sections.append(f"🚨 DO NOT reuse the same endpoint in multiple tests - each endpoint needs its own dedicated test(s).")
+                    sections.append(f"🚨 DO NOT skip any endpoint - if you see 4 endpoints, you need at least 4 API tests (one per endpoint minimum).")
+                    sections.append(f"🚨 USE THE EXAMPLE REQUEST/RESPONSE BODIES PROVIDED - they show you the EXACT format and fields to use in test steps!")
+                    for i, api in enumerate(api_context.api_specifications, 1):
+                        methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
+                        sections.append(f"\n  [{i}/{len(api_context.api_specifications)}] {methods_str} {api.endpoint_path}")
+                        sections.append(f"     ⚠️ YOU MUST CREATE A TEST FOR THIS ENDPOINT - DO NOT SKIP IT!")
+                        if api.service_name:
+                            sections.append(f"     Service: {api.service_name}")
+                        if api.parameters:
+                            sections.append(f"     Parameters: {', '.join(api.parameters)}")
+                        
+                        # Include example request body
+                        if api.request_example:
+                            sections.append(f"     📝 EXAMPLE REQUEST BODY (use this exact format in test steps):")
+                            sections.append(f"        {api.request_example}")
+                        elif api.request_schema:
+                            sections.append(f"     Request Schema: {api.request_schema}")
+                        
+                        # Include example response body
+                        if api.response_example:
+                            sections.append(f"     📝 EXAMPLE RESPONSE BODY (expect this format in test steps):")
+                            sections.append(f"        {api.response_example}")
+                        elif api.response_schema:
+                            sections.append(f"     Response Schema: {api.response_schema}")
+                        
+                        # Include DTO field definitions
+                        if api.dto_definitions:
+                            sections.append(f"     📋 DTO FIELD DEFINITIONS:")
+                            for dto_name, dto_fields in api.dto_definitions.items():
+                                sections.append(f"        {dto_name}:")
+                                for field_name, field_info in list(dto_fields.items())[:10]:  # Limit to 10 fields
+                                    field_type = field_info.get('type', 'unknown')
+                                    required = "required" if field_info.get('required', False) else "optional"
+                                    sections.append(f"          - {field_name}: {field_type} ({required})")
+                        
+                        if api.authentication:
+                            sections.append(f"     Auth: {api.authentication}")
+                    sections.append(f"\n⚠️ REMINDER: You must generate API tests for ALL {len(api_context.api_specifications)} endpoints above. Do not skip any!")
+                    sections.append(f"⚠️ FINAL CHECK: Before returning, count your API tests. If you have fewer than {len(api_context.api_specifications)} API tests, you have FAILED!")
+                    sections.append(f"⚠️ FINAL CHECK: Verify each endpoint path appears in at least one API test step. If any endpoint is missing, you have FAILED!")
+                    sections.append(f"⚠️ FINAL CHECK: Use the EXAMPLE REQUEST/RESPONSE bodies provided above in your test steps - they show the EXACT JSON format!")
+                
+                if api_context.ui_specifications:
+                    sections.append("\n--- UI SPECIFICATIONS (Navigation & Access) ---")
+                    sections.append(f"\n⚠️ This story has {len(api_context.ui_specifications)} UI feature(s). Use these navigation paths in UI test steps.")
+                    for i, ui in enumerate(api_context.ui_specifications, 1):
+                        sections.append(f"\n  [{i}] {ui.feature_name}")
+                        sections.append(f"     Navigation: {ui.navigation_path}")
+                        sections.append(f"     Access: {ui.access_method}")
+                        if ui.ui_elements:
+                            sections.append(f"     UI Elements: {', '.join(ui.ui_elements)}")
+                        sections.append(f"     Source: {ui.source}")
             
             if enriched_story.plainid_components:
                 sections.append("\n--- PLAINID COMPONENTS INVOLVED ---")
@@ -267,20 +275,27 @@ class PromptBuilder:
             logger.debug("=" * 80)
             logger.debug(f"Narrative length: {len(enriched_story.feature_narrative)} chars")
             logger.debug(f"Acceptance Criteria: {len(enriched_story.acceptance_criteria)}")
-            logger.debug(f"API Specifications: {len(enriched_story.api_specifications)}")
-            logger.debug(f"UI Specifications: {len(enriched_story.ui_specifications)}")
+            logger.debug(f"Confluence Docs: {len(enriched_story.confluence_docs)}")
+            logger.debug(f"Functional Points: {len(enriched_story.functional_points)}")
             logger.debug(f"PlainID Components: {len(enriched_story.plainid_components)}")
             logger.debug(f"Risk Areas: {len(enriched_story.risk_areas)}")
             logger.debug(f"Related Stories: {len(enriched_story.related_stories)}")
-            logger.debug("\nAPIs being sent to AI:")
-            for api in enriched_story.api_specifications:
-                logger.debug(f"  - {' '.join(api.http_methods)} {api.endpoint_path}")
+            
+            if api_context:
+                logger.debug(f"API Specifications (from APIContext): {len(api_context.api_specifications)}")
+                logger.debug(f"UI Specifications (from APIContext): {len(api_context.ui_specifications)}")
+                logger.debug(f"Extraction Flow: {api_context.extraction_flow}")
+                logger.debug("\nAPIs being sent to AI (via APIContext fallback):")
+                for api in api_context.api_specifications:
+                    logger.debug(f"  - {' '.join(api.http_methods)} {api.endpoint_path} (source: {api.service_name})")
+            
             logger.debug("\nAcceptance Criteria being sent to AI:")
             for i, ac in enumerate(enriched_story.acceptance_criteria, 1):
                 logger.debug(f"  {i}. {ac[:100]}{'...' if len(ac) > 100 else ''}")
             logger.debug("=" * 80)
             
-            logger.info(f"Using enriched story context (analyzed {len(enriched_story.source_story_ids)} stories, {len(enriched_story.api_specifications)} APIs)")
+            api_count = len(api_context.api_specifications) if api_context else 0
+            logger.info(f"Using enriched story context (analyzed {len(enriched_story.source_story_ids)} stories, {api_count} APIs via APIContext)")
         else:
             # Fallback to raw context
             full_context = context.get("full_context_text", "")
@@ -298,10 +313,11 @@ class PromptBuilder:
         
         sections.append("\n</story_to_test>\n")
         
-        # If we have API specs, add explicit API step requirements to force concrete payloads and paths
-        if enriched_story and enriched_story.api_specifications:
+        # If we have API specs (from APIContext), add explicit API step requirements to force concrete payloads and paths
+        if api_context and api_context.api_specifications:
             sections.append("\n" + "-" * 80)
-            sections.append("MANDATORY API STEP REQUIREMENTS (Use the API SPECIFICATIONS above)")
+            sections.append("MANDATORY API STEP REQUIREMENTS (Use the API SPECIFICATIONS from APIContext above)")
+            sections.append(f"Extraction Flow: {api_context.extraction_flow}")
             sections.append("-" * 80)
             sections.append("For ANY API-related test step, you MUST:")
             sections.append("- Include HTTP method and EXACT path (e.g., POST /api/v1/policies)")
@@ -651,6 +667,7 @@ Ensure all required fields are populated with realistic values.
         rag_context_formatted: str,
         existing_tests: Optional[list] = None,
         folder_structure: Optional[list] = None,
+        api_context: Optional[APIContext] = None,
     ) -> str:
         """
         Build OPTIMIZED prompt with story-first structure.
@@ -664,10 +681,11 @@ Ensure all required fields are populated with realistic values.
         6. Output schema (10% of tokens)
         
         Args:
-            enriched_story: Preprocessed story with all context
+            enriched_story: Preprocessed story with Jira-native data only
             rag_context_formatted: Pre-formatted RAG context (already optimized)
             existing_tests: Optional existing tests
             folder_structure: Optional folder structure
+            api_context: Optional APIContext with API/UI specs (built via fallback: story → swagger → MCP)
             
         Returns:
             Optimized prompt string
@@ -707,10 +725,11 @@ Ensure all required fields are populated with realistic values.
                 sections.append(f"- {fp}\n")
             sections.append("\n")
         
-        # API specifications (if any)
-        if enriched_story.api_specifications:
-            sections.append("**API Specifications** (use exact endpoints and examples):\n")
-            for api in enriched_story.api_specifications:
+        # API specifications (if any) - from APIContext (built via fallback)
+        if api_context and api_context.api_specifications:
+            sections.append(f"**API Specifications** (Extraction Flow: {api_context.extraction_flow}):\n")
+            sections.append("Use exact endpoints and examples below:\n")
+            for api in api_context.api_specifications:
                 sections.append(f"- {' '.join(api.http_methods)} {api.endpoint_path}\n")
                 if api.parameters:
                     sections.append(f"  Params: {', '.join(api.parameters)}\n")
