@@ -34,7 +34,7 @@ class APIContextBuilder:
         self,
         main_story: JiraStory,
         story_context: StoryContext,
-        combined_text: str
+        combined_text: str = None
     ) -> APIContext:
         """
         Build API and UI context using fallback flow.
@@ -42,23 +42,48 @@ class APIContextBuilder:
         Args:
             main_story: Primary story
             story_context: Story context with subtasks, linked stories
-            combined_text: Combined text from main story + linked stories
+            combined_text: Combined text from main story + linked stories (optional, will be built if not provided)
             
         Returns:
             APIContext with api_specifications, ui_specifications, and extraction_flow
         """
         logger.info(f"Building API context for {main_story.key}")
         
+        # If combined_text not provided, build it from story + subtasks + linked stories
+        if not combined_text:
+            subtasks = story_context.get("subtasks", [])
+            linked_stories = story_context.get("linked_stories", [])
+            
+            # Build text including main story, subtasks, and linked stories
+            parts = [
+                f"Story: {main_story.summary}",
+                main_story.description or "",
+                main_story.acceptance_criteria or ""
+            ]
+            
+            # Include subtask descriptions (where "we use" patterns are!)
+            for subtask in subtasks:
+                parts.append(f"\nSubtask: {subtask.summary}")
+                if subtask.description:
+                    parts.append(subtask.description)
+            
+            # Include linked stories
+            for story in linked_stories:
+                parts.append(f"\nLinked Story: {story.summary}")
+                if story.description:
+                    parts.append(story.description)
+            
+            combined_text = "\n".join(parts)
+        
         api_specs = []
         extraction_flow_parts = []
         
         # Step 1: Extract from story text directly
         logger.debug("Step 1: Extracting endpoints from story text")
-        subtask_texts = [s.description or s.summary for s in story_context.get("subtasks", [])]
         api_specs_from_story = await self.swagger_extractor.extract_endpoints(
-            story_text=combined_text,
+            story_text=combined_text,  # Now includes subtasks with "we use" patterns!
             project_key=main_story.key.split('-')[0],
-            subtask_texts=subtask_texts
+            subtask_texts=[]  # Already included in combined_text
         )
         logger.info(f"  Found {len(api_specs_from_story)} endpoints in story")
         
@@ -111,7 +136,23 @@ class APIContextBuilder:
                 )
                 logger.info(f"  GitLab MCP found {len(api_specs)} endpoints")
                 if api_specs:
-                    extraction_flow_parts.append("mcp")
+                    # Filter to keep only relevant endpoints
+                    api_specs = await self._filter_relevant_endpoints(
+                        endpoints=api_specs,
+                        story_key=main_story.key,
+                        story_text=combined_text
+                    )
+                    logger.info(f"  After relevance filtering: {len(api_specs)} relevant endpoints")
+                    if api_specs:
+                        extraction_flow_parts.append("mcp")
+                        
+                        # Step 4: Analyze codebase for supplementary test scenarios
+                        await self._integrate_code_analysis(
+                            api_specs=api_specs,
+                            main_story=main_story,
+                            story_context=story_context,
+                            combined_text=combined_text
+                        )
             except Exception as e:
                 logger.warning(f"GitLab MCP fallback failed: {e}")
         
@@ -136,42 +177,374 @@ class APIContextBuilder:
         endpoints: List[APISpec],
         story_key: str
     ) -> List[APISpec]:
-        """Filter out example/reference endpoints using AI-based logic."""
-        from src.ai.generation.ai_client_factory import AIClientFactory
+        """Use AI to determine if endpoints are actual requirements or just examples/references."""
         
         if not endpoints:
             return []
         
+        # Use AI to classify endpoints
         try:
-            client = AIClientFactory.get_client(model="gpt-4o-mini")
-            prompt = f"""
-Analyze these endpoints extracted from story {story_key}. Determine which are ACTUAL requirements vs EXAMPLES/REFERENCES.
-
-Story context:
-{combined_text[:2000]}
-
-Endpoints found:
-{chr(10).join([f"- {ep.http_methods[0] if ep.http_methods else 'GET'} {ep.endpoint_path}" for ep in endpoints])}
-
-For each endpoint, respond ONLY with the path and YES (keep) or NO (filter out).
-Format: /path → YES/NO
-"""
-            response = client.call_api(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.2,
-                max_tokens=500
+            from src.ai.generation.ai_client_factory import AIClientFactory
+            
+            client, model, use_openai = AIClientFactory.create_client(
+                use_openai=True,
+                model="gpt-4o-mini"
             )
             
-            # Parse response to determine which endpoints to keep
-            kept = []
-            for ep in endpoints:
-                if "→ YES" in response.get("content", ""):
-                    kept.append(ep)
+            endpoint_list = "\n".join([
+                f"{i+1}. {' '.join(ep.http_methods)} {ep.endpoint_path}"
+                for i, ep in enumerate(endpoints)
+            ])
             
-            return kept if kept else endpoints  # Default: keep all if parse fails
+            prompt = f"""Analyze these endpoints extracted from story {story_key}. Determine which are ACTUAL REQUIREMENTS vs EXAMPLES/REFERENCES.
+
+Story Context:
+{combined_text[:3000]}
+
+Extracted Endpoints:
+{endpoint_list}
+
+For each endpoint, determine:
+- ACTUAL: This endpoint is what needs to be created/tested for this story
+- EXAMPLE: This endpoint is just an example/reference showing how similar endpoints work elsewhere
+- REFERENCE: This endpoint is mentioned for comparison but not what this story implements
+
+Respond with ONLY a JSON array, one entry per endpoint:
+[
+  {{"number": 1, "endpoint": "GET /policy-mgmt/...", "classification": "ACTUAL|EXAMPLE|REFERENCE", "reason": "brief explanation"}},
+  ...
+]
+
+Be strict: If endpoints are listed together with phrases like "for X we use" or "similar to" or "idea: maybe", they are likely EXAMPLES."""
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=1000
+            )
+            
+            import json
+            content = response.choices[0].message.content or ""
+            
+            # Extract JSON from response
+            json_start = content.find('[')
+            json_end = content.rfind(']') + 1
+            if json_start != -1 and json_end > json_start:
+                classifications = json.loads(content[json_start:json_end])
+                
+                kept = []
+                filtered_out = []
+                
+                for i, ep in enumerate(endpoints):
+                    # Find matching classification
+                    classification = None
+                    for cls in classifications:
+                        if cls.get("number") == i + 1 or ep.endpoint_path in cls.get("endpoint", ""):
+                            classification = cls.get("classification", "").upper()
+                            break
+                    
+                    if classification in ["ACTUAL"]:
+                        kept.append(ep)
+                        logger.debug(f"  ✅ KEPT ({classification}): {ep.endpoint_path}")
+                    else:
+                        filtered_out.append(ep.endpoint_path)
+                        logger.info(f"  ❌ FILTERED ({classification or 'UNKNOWN'}): {ep.endpoint_path}")
+                
+                if filtered_out:
+                    logger.info(f"AI filtered {len(filtered_out)} example/reference endpoints")
+                
+                # Return kept endpoints (even if empty - empty means fallback to MCP)
+                return kept
+            else:
+                logger.warning("AI response did not contain valid JSON, keeping all endpoints")
+                return endpoints
+                
         except Exception as e:
             logger.warning(f"AI filtering failed: {e}, keeping all endpoints")
             return endpoints
+    
+    async def _filter_relevant_endpoints(
+        self,
+        endpoints: List[APISpec],
+        story_key: str,
+        story_text: str
+    ) -> List[APISpec]:
+        """
+        Filter MCP-found endpoints to keep only those relevant to the story.
+        
+        Uses AI to classify endpoints as:
+        - RELEVANT: Directly implements the story feature
+        - RELATED: Related but not the primary endpoint
+        - UNRELATED: Not relevant to this story
+        """
+        if not endpoints:
+            return []
+        
+        # If only one endpoint, likely relevant
+        if len(endpoints) == 1:
+            logger.debug(f"Only one MCP endpoint found, assuming relevant: {endpoints[0].endpoint_path}")
+            return endpoints
+        
+        try:
+            from src.ai.generation.ai_client_factory import AIClientFactory
+            
+            client, model, use_openai = AIClientFactory.create_client(
+                use_openai=True,
+                model="gpt-4o-mini"
+            )
+            
+            endpoint_list = "\n".join([
+                f"{i+1}. {' '.join(ep.http_methods)} {ep.endpoint_path}"
+                for i, ep in enumerate(endpoints)
+            ])
+            
+            story_snippet = ' '.join(story_text.split()[:500])  # First 500 words
+            
+            prompt = f"""Analyze these endpoints found via GitLab MCP for story {story_key}. Determine which are RELEVANT to this story.
+
+Story Context:
+{story_snippet}
+
+Endpoints Found:
+{endpoint_list}
+
+For each endpoint, classify as:
+- RELEVANT: This endpoint directly implements the feature described in the story
+- RELATED: This endpoint is related but not the primary implementation
+- UNRELATED: This endpoint is not relevant to this story
+
+Respond with ONLY a JSON array:
+[
+  {{"number": 1, "endpoint": "GET /policy-mgmt/...", "classification": "RELEVANT|RELATED|UNRELATED", "reason": "brief explanation"}},
+  ...
+]
+
+Be strict: Only mark endpoints as RELEVANT if they directly implement the story feature."""
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=1000
+            )
+            
+            import json
+            content = response.choices[0].message.content or ""
+            
+            # Extract JSON from response
+            json_start = content.find('[')
+            json_end = content.rfind(']') + 1
+            if json_start != -1 and json_end > json_start:
+                classifications = json.loads(content[json_start:json_end])
+                
+                relevant = []
+                related = []
+                
+                for i, ep in enumerate(endpoints):
+                    # Find matching classification
+                    classification = None
+                    for cls in classifications:
+                        if cls.get("number") == i + 1 or ep.endpoint_path in cls.get("endpoint", ""):
+                            classification = cls.get("classification", "").upper()
+                            break
+                    
+                    if classification == "RELEVANT":
+                        relevant.append(ep)
+                        logger.info(f"  ✅ RELEVANT: {ep.endpoint_path}")
+                    elif classification == "RELATED":
+                        related.append(ep)
+                        logger.debug(f"  ⚠️  RELATED: {ep.endpoint_path}")
+                    else:
+                        logger.info(f"  ❌ UNRELATED: {ep.endpoint_path}")
+                
+                # Return RELEVANT endpoints, or RELATED if no RELEVANT found
+                if relevant:
+                    logger.info(f"Found {len(relevant)} relevant endpoint(s), {len(related)} related, {len(endpoints) - len(relevant) - len(related)} unrelated")
+                    return relevant
+                elif related:
+                    logger.info(f"No relevant endpoints found, using {len(related)} related endpoint(s)")
+                    return related
+                else:
+                    logger.warning("No relevant or related endpoints found, keeping all")
+                    return endpoints
+            else:
+                logger.warning("AI response did not contain valid JSON, keeping all endpoints")
+                return endpoints
+                
+        except Exception as e:
+            logger.warning(f"Relevance filtering failed: {e}, keeping all endpoints")
+            return endpoints
+    
+    async def _deduplicate_scenarios(
+        self,
+        story_scenarios: List[str],
+        code_scenarios: List[str]
+    ) -> List[str]:
+        """
+        Remove redundant code-based scenarios that are already covered by story-based scenarios.
+        
+        Uses semantic similarity to identify duplicates.
+        
+        Args:
+            story_scenarios: Scenarios derived from story requirements, AC, functional points
+            code_scenarios: Scenarios found in codebase analysis
+            
+        Returns:
+            List of unique code-based scenarios (duplicates removed)
+        """
+        if not code_scenarios:
+            return []
+        
+        if not story_scenarios:
+            # No story scenarios to compare against, return all code scenarios
+            return code_scenarios
+        
+        try:
+            from src.ai.embedding_service import EmbeddingService
+            
+            embedding_service = EmbeddingService()
+            
+            # Generate embeddings for story scenarios
+            story_embeddings = await embedding_service.embed_texts(story_scenarios)
+            if not story_embeddings:
+                logger.warning("Failed to generate embeddings for story scenarios")
+                return code_scenarios
+            
+            # Generate embeddings for code scenarios
+            code_embeddings = await embedding_service.embed_texts(code_scenarios)
+            if not code_embeddings:
+                logger.warning("Failed to generate embeddings for code scenarios")
+                return code_scenarios
+            
+            # Calculate similarity between each code scenario and all story scenarios
+            unique_scenarios = []
+            threshold = 0.85  # Similarity threshold for duplicates
+            
+            import numpy as np
+            
+            for i, code_scenario in enumerate(code_scenarios):
+                code_embedding = code_embeddings[i]
+                
+                # Check similarity against all story scenarios
+                is_duplicate = False
+                max_similarity = 0.0
+                
+                for story_embedding in story_embeddings:
+                    # Calculate cosine similarity
+                    similarity = np.dot(code_embedding, story_embedding) / (
+                        np.linalg.norm(code_embedding) * np.linalg.norm(story_embedding)
+                    )
+                    max_similarity = max(max_similarity, similarity)
+                    
+                    if similarity > threshold:
+                        is_duplicate = True
+                        logger.debug(f"Filtered duplicate scenario (similarity {similarity:.2f}): {code_scenario[:50]}...")
+                        break
+                
+                if not is_duplicate:
+                    unique_scenarios.append(code_scenario)
+                    logger.debug(f"Kept unique scenario (max similarity {max_similarity:.2f}): {code_scenario[:50]}...")
+            
+            logger.info(f"Deduplication: {len(code_scenarios)} code scenarios -> {len(unique_scenarios)} unique (filtered {len(code_scenarios) - len(unique_scenarios)} duplicates)")
+            return unique_scenarios
+            
+        except Exception as e:
+            logger.warning(f"Deduplication failed: {e}, keeping all code scenarios")
+            return code_scenarios
+    
+    async def _integrate_code_analysis(
+        self,
+        api_specs: List[APISpec],
+        main_story: JiraStory,
+        story_context: StoryContext,
+        combined_text: str
+    ) -> None:
+        """
+        Integrate codebase analysis with deduplication for each endpoint.
+        
+        For each relevant endpoint:
+        1. Analyze codebase for test patterns
+        2. Extract story-based scenarios from AC and functional points
+        3. Deduplicate code-based scenarios against story-based
+        4. Attach unique suggestions to APISpec objects
+        """
+        if not api_specs:
+            return
+        
+        logger.info(f"Integrating codebase analysis for {len(api_specs)} endpoint(s)")
+        
+        # Extract story-based scenarios from acceptance criteria and functional points
+        story_scenarios = []
+        
+        # From acceptance criteria
+        if main_story.acceptance_criteria:
+            for ac in main_story.acceptance_criteria:
+                # Convert AC to test scenario format
+                story_scenarios.append(f"Verify {ac}")
+        
+        # From subtasks (engineering tasks often contain test scenarios)
+        subtasks = story_context.get("subtasks", [])
+        for subtask in subtasks:
+            if subtask.description:
+                # Look for test-related keywords in subtask descriptions
+                import re
+                test_keywords = re.findall(
+                    r'(?:test|verify|validate|check|ensure).*?(?:when|with|for|that)\s+([^.!?]+)',
+                    subtask.description,
+                    re.IGNORECASE
+                )
+                for keyword_match in test_keywords[:3]:  # Limit per subtask
+                    story_scenarios.append(f"Test {keyword_match.strip()}")
+        
+        # From story text: look for functional requirements patterns
+        import re
+        functional_patterns = re.findall(
+            r'(?:should|must|need to|will|shall)\s+([^.!?]+)',
+            combined_text,
+            re.IGNORECASE
+        )
+        for pattern in functional_patterns[:10]:  # Limit to 10
+            clean_pattern = pattern.strip()
+            if len(clean_pattern) > 10:  # Only meaningful patterns
+                story_scenarios.append(f"Test {clean_pattern}")
+        
+        logger.debug(f"Extracted {len(story_scenarios)} story-based scenarios")
+        
+        # Analyze codebase for each endpoint
+        for api_spec in api_specs:
+            try:
+                from src.ai.gitlab_fallback_extractor import GitLabFallbackExtractor
+                gitlab_extractor = GitLabFallbackExtractor()
+                
+                # Analyze codebase for this endpoint
+                code_analysis = await gitlab_extractor._analyze_codebase_for_tests(
+                    endpoint=api_spec,
+                    story_key=main_story.key,
+                    story_text=combined_text
+                )
+                
+                code_scenarios = code_analysis.get("suggested_test_scenarios", [])
+                code_examples = code_analysis.get("code_examples", {})
+                
+                if code_scenarios:
+                    # Deduplicate against story scenarios
+                    unique_scenarios = await self._deduplicate_scenarios(
+                        story_scenarios=story_scenarios,
+                        code_scenarios=code_scenarios
+                    )
+                    
+                    if unique_scenarios:
+                        api_spec.suggested_test_scenarios = unique_scenarios
+                        logger.info(f"  Attached {len(unique_scenarios)} unique test scenarios to {api_spec.endpoint_path}")
+                
+                if code_examples:
+                    api_spec.code_examples = code_examples
+                    logger.debug(f"  Attached code examples to {api_spec.endpoint_path}")
+                    
+            except Exception as e:
+                logger.warning(f"Code analysis integration failed for {api_spec.endpoint_path}: {e}")
+                continue
     
     def _parse_swagger_content(self, content: str) -> List[APISpec]:
         """Parse API endpoints from Swagger documentation."""

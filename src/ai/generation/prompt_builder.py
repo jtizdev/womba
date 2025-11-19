@@ -755,6 +755,29 @@ Ensure all required fields are populated with realistic values.
                             required = "required" if field_info.get('required', False) else "optional"
                             sections.append(f"      - {field_name}: {field_type} ({required})\n")
             sections.append("\n")
+            
+            # Add supplementary test scenarios from codebase analysis (if any)
+            has_supplementary = any(
+                api.suggested_test_scenarios for api in api_context.api_specifications
+            )
+            if has_supplementary:
+                sections.append("**Additional Test Scenarios** (suggested from codebase analysis - SUPPLEMENTARY):\n")
+                sections.append("⚠️  PRIMARY scenarios should come from story requirements above. These are additional considerations.\n\n")
+                
+                for api in api_context.api_specifications:
+                    if api.suggested_test_scenarios:
+                        sections.append(f"For endpoint {api.endpoint_path}:\n")
+                        for scenario in api.suggested_test_scenarios:
+                            sections.append(f"- Consider also testing: {scenario} (found in similar endpoint tests)\n")
+                        
+                        # Include code examples if available
+                        if api.code_examples:
+                            if api.code_examples.get("request"):
+                                sections.append(f"  Example request from codebase: {api.code_examples['request']}\n")
+                            if api.code_examples.get("response"):
+                                sections.append(f"  Example response from codebase: {api.code_examples['response']}\n")
+                        sections.append("\n")
+                sections.append("\n")
         
         # Risk areas
         if enriched_story.risk_areas:

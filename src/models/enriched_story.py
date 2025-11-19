@@ -32,6 +32,16 @@ class APISpec(BaseModel):
         default=None,
         description="DTO field definitions with types and descriptions (e.g., {'applicationId': {'type': 'string', 'required': true}})"
     )
+    
+    # Supplementary test scenarios from codebase analysis (not primary requirements)
+    suggested_test_scenarios: Optional[List[str]] = Field(
+        default=None,
+        description="Additional test scenarios suggested from codebase analysis (supplementary, not primary)"
+    )
+    code_examples: Optional[dict] = Field(
+        default=None,
+        description="Request/response examples extracted from codebase (e.g., {'request': {...}, 'response': {...}})"
+    )
 
 
 class UISpec(BaseModel):
