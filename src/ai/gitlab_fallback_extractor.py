@@ -2,14 +2,17 @@
 GitLab fallback endpoint extractor using MCP for discovering endpoints from codebase.
 Used when no endpoints are found via normal Swagger/RAG extraction.
 
-NOTE: Uses GitLab MCP functions (not REST API) for codebase search.
-The GitLab REST API client is only used for OpenAPI file fetching in RAG indexing.
+Uses mcp-remote with OAuth for secure authentication to GitLab MCP.
 """
 
 import re
 import json
 import yaml
-from typing import List, Optional, Set, Dict, Any
+import subprocess
+import os
+import asyncio
+from pathlib import Path
+from typing import List, Optional, Dict, Any
 from loguru import logger
 
 from src.models.enriched_story import APISpec
@@ -19,41 +22,56 @@ from src.ai.generation.ai_client_factory import AIClientFactory
 
 class GitLabMCPClient:
     """
-    Client wrapper for GitLab MCP functions using direct HTTP calls.
+    Client wrapper for GitLab MCP using mcp-remote with OAuth.
     
-    Uses GitLab's MCP REST API endpoint with token authentication.
-    No OAuth, no mcp-remote, no Node.js required - just HTTP + token.
+    Authenticates through browser OAuth login, credentials cached locally.
+    Works in Docker and Kubernetes without browser access (uses cached OAuth).
     """
     
     def __init__(self):
-        """Initialize GitLab MCP client."""
+        """Initialize GitLab MCP client with mcp-remote."""
         self.mcp_available = False
-        self.base_url = None
-        self.token = None
+        self.mcp_process = None
+        self.oauth_cache_dir = None
         
         try:
-            import httpx
+            # Set up OAuth cache directory
+            self.oauth_cache_dir = Path.home() / ".mcp-auth"
+            self.oauth_cache_dir.mkdir(parents=True, exist_ok=True)
             
-            # Get GitLab token and base URL
-            gitlab_token = settings.mcp_gitlab_token or settings.gitlab_token
-            gitlab_base_url = settings.gitlab_base_url or "https://gitlab.com"
+            logger.info(f"GitLab MCP client initialized (OAuth cache: {self.oauth_cache_dir})")
+            logger.info("Using mcp-remote with OAuth authentication")
             
-            if not gitlab_token:
-                logger.warning("GitLab token not configured for MCP")
+            # Check if mcp-remote is available
+            try:
+                result = subprocess.run(
+                    ["which", "mcp-remote"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    logger.debug(f"mcp-remote found at: {result.stdout.strip()}")
+                    self.mcp_available = True
+                else:
+                    logger.warning("mcp-remote not found in PATH - will try npx")
+                    # Try npx as fallback
+                    result = subprocess.run(
+                        ["which", "npx"],
+                        capture_output=True,
+                        text=True,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        logger.debug("npx found - can use 'npx mcp-remote'")
+                        self.mcp_available = True
+                    else:
+                        logger.warning("Neither mcp-remote nor npx found")
+                        self.mcp_available = False
+            except Exception as e:
+                logger.warning(f"Failed to check for mcp-remote: {e}")
                 self.mcp_available = False
-                return
-            
-            self.token = gitlab_token
-            self.base_url = gitlab_base_url.rstrip('/')
-            self.mcp_endpoint = f"{self.base_url}/api/v4/mcp"
-            
-            logger.info(f"GitLab MCP client initialized (endpoint: {self.mcp_endpoint})")
-            logger.info("Using direct HTTP calls with token authentication (no OAuth needed)")
-            self.mcp_available = True
                 
-        except ImportError:
-            logger.warning("httpx not available for MCP client")
-            self.mcp_available = False
         except Exception as e:
             logger.warning(f"Failed to initialize MCP client: {e}")
             self.mcp_available = False
@@ -66,7 +84,7 @@ class GitLabMCPClient:
         limit: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Perform semantic code search using GitLab MCP via direct HTTP calls.
+        Perform semantic code search using GitLab MCP via mcp-remote.
         
         Args:
             project_id: GitLab project ID or path
@@ -82,71 +100,55 @@ class GitLabMCPClient:
             return []
         
         try:
-            import httpx
-            
             logger.debug(f"Semantic code search via GitLab MCP: {semantic_query} in {project_id}")
             
-            # Call GitLab MCP endpoint directly using JSON-RPC
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Prepare JSON-RPC request
-                mcp_request = {
-                    "jsonrpc": "2.0",
-                    "method": "tools/call",
-                    "params": {
-                        "name": "semantic_code_search",
-                        "arguments": {
-                            "project_id": project_id,
-                            "semantic_query": semantic_query,
-                            "directory_path": directory_path,
-                            "limit": limit
-                        }
-                    },
-                    "id": 1
-                }
-                
-                headers = {
-                    "PRIVATE-TOKEN": self.token,
-                    "Content-Type": "application/json"
-                }
-                
-                response = await client.post(
-                    self.mcp_endpoint,
-                    json=mcp_request,
-                    headers=headers
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    if "result" in result:
-                        # Parse MCP response
-                        content = result["result"].get("content", [])
-                        results = []
-                        for item in content:
-                            if isinstance(item, dict) and "text" in item:
-                                try:
-                                    item_data = json.loads(item["text"])
-                                    if isinstance(item_data, list):
-                                        results.extend(item_data)
-                                    else:
-                                        results.append(item_data)
-                                except json.JSONDecodeError:
-                                    results.append({"content": item["text"]})
-                        return results
-                    elif "error" in result:
-                        error = result["error"]
-                        logger.warning(f"MCP error: {error.get('message', 'Unknown error')}")
-                elif response.status_code == 403:
-                    error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
-                    if "insufficient_scope" in str(error_data):
-                        logger.error(
-                            "GitLab token lacks 'mcp' scope. "
-                            "Create a new token with 'mcp', 'api', and 'read_api' scopes."
-                        )
-                    else:
-                        logger.warning(f"MCP authentication failed: {response.status_code}")
-                else:
-                    logger.warning(f"MCP request failed: {response.status_code} - {response.text[:200]}")
+            # Use mcp-remote to call GitLab MCP
+            # This will use cached OAuth credentials if available
+            cmd = [
+                "npx", "-y", "mcp-remote",
+                "https://gitlab.com/api/v4/mcp",
+                "--",
+                "semantic_code_search",
+                json.dumps({
+                    "project_id": project_id,
+                    "semantic_query": semantic_query,
+                    "directory_path": directory_path,
+                    "limit": limit
+                })
+            ]
             
+            logger.debug(f"Running: {' '.join(cmd[:4])} ...")
+            
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(self.oauth_cache_dir)
+            )
+            
+            if result.returncode == 0:
+                try:
+                    output = json.loads(result.stdout)
+                    if isinstance(output, list):
+                        return output
+                    elif isinstance(output, dict) and "result" in output:
+                        return output.get("result", [])
+                    return []
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse MCP response: {result.stdout[:200]}")
+                    return []
+            else:
+                if "authentication" in result.stderr.lower() or "oauth" in result.stderr.lower():
+                    logger.warning("MCP authentication failed - OAuth credentials may have expired")
+                    logger.info("Please re-authenticate by visiting: https://gitlab.com/-/user_settings/personal_access_tokens")
+                else:
+                    logger.warning(f"MCP request failed: {result.stderr[:200]}")
+                return []
+        
+        except subprocess.TimeoutExpired:
+            logger.warning("MCP semantic search timed out")
             return []
         except Exception as e:
             logger.error(f"Error in MCP semantic code search: {e}", exc_info=True)
@@ -161,7 +163,7 @@ class GitLabMCPClient:
         per_page: int = 20
     ) -> List[Dict[str, Any]]:
         """
-        Search GitLab using MCP search function via direct HTTP calls.
+        Search GitLab using MCP search function via mcp-remote.
         
         Args:
             scope: Search scope (blobs, commits, etc.)
@@ -178,72 +180,51 @@ class GitLabMCPClient:
             return []
         
         try:
-            import httpx
-            
             logger.debug(f"GitLab search via MCP: {search} (scope: {scope})")
             
-            # Call GitLab MCP endpoint directly using JSON-RPC
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                # Prepare JSON-RPC request
-                mcp_request = {
-                    "jsonrpc": "2.0",
-                    "method": "tools/call",
-                    "params": {
-                        "name": "gitlab_search",
-                        "arguments": {
-                            "scope": scope,
-                            "search": search,
-                            "project_id": project_id,
-                            "group_id": group_id,
-                            "per_page": per_page
-                        }
-                    },
-                    "id": 1
-                }
-                
-                headers = {
-                    "PRIVATE-TOKEN": self.token,
-                    "Content-Type": "application/json"
-                }
-                
-                response = await client.post(
-                    self.mcp_endpoint,
-                    json=mcp_request,
-                    headers=headers
-                )
-                
-                if response.status_code == 200:
-                    result = response.json()
-                    if "result" in result:
-                        # Parse MCP response
-                        content = result["result"].get("content", [])
-                        results = []
-                        for item in content:
-                            if isinstance(item, dict) and "text" in item:
-                                try:
-                                    item_data = json.loads(item["text"])
-                                    if isinstance(item_data, list):
-                                        results.extend(item_data)
-                                    else:
-                                        results.append(item_data)
-                                except json.JSONDecodeError:
-                                    results.append({"content": item["text"]})
-                        return results
-                    elif "error" in result:
-                        error = result["error"]
-                        logger.warning(f"MCP error: {error.get('message', 'Unknown error')}")
-                elif response.status_code == 403:
-                    error_data = response.json() if response.headers.get("content-type", "").startswith("application/json") else {}
-                    if "insufficient_scope" in str(error_data):
-                        logger.error(
-                            "GitLab token lacks 'mcp' scope. "
-                            "Create a new token with 'mcp', 'api', and 'read_api' scopes."
-                        )
-                    else:
-                        logger.warning(f"MCP authentication failed: {response.status_code}")
-                else:
-                    logger.warning(f"MCP request failed: {response.status_code} - {response.text[:200]}")
+            cmd = [
+                "npx", "-y", "mcp-remote",
+                "https://gitlab.com/api/v4/mcp",
+                "--",
+                "gitlab_search",
+                json.dumps({
+                    "scope": scope,
+                    "search": search,
+                    "project_id": project_id,
+                    "group_id": group_id,
+                    "per_page": per_page
+                })
+            ]
             
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(self.oauth_cache_dir)
+            )
+            
+            if result.returncode == 0:
+                try:
+                    output = json.loads(result.stdout)
+                    if isinstance(output, list):
+                        return output
+                    elif isinstance(output, dict) and "result" in output:
+                        return output.get("result", [])
+                    return []
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse MCP response: {result.stdout[:200]}")
+                    return []
+            else:
+                if "authentication" in result.stderr.lower() or "oauth" in result.stderr.lower():
+                    logger.warning("MCP authentication failed - OAuth credentials may have expired")
+                else:
+                    logger.warning(f"MCP request failed: {result.stderr[:200]}")
+                return []
+        
+        except subprocess.TimeoutExpired:
+            logger.warning("MCP GitLab search timed out")
             return []
         except Exception as e:
             logger.error(f"Error in MCP GitLab search: {e}", exc_info=True)
@@ -296,7 +277,7 @@ class GitLabFallbackExtractor:
             logger.debug("GitLab fallback is disabled")
             return []
         
-        if not self.mcp_client:
+        if not self.mcp_client or not self.mcp_client.mcp_available:
             logger.warning("GitLab MCP client not available for fallback extraction")
             return []
         
@@ -307,7 +288,6 @@ class GitLabFallbackExtractor:
             service_queries = await self._generate_service_search_queries(story_text, story_key)
             
             # 2. Search across GitLab group for relevant code using MCP semantic search
-            # Search for: API endpoints, route definitions, OpenAPI specs related to the story
             search_results = await self._search_codebase_via_mcp(
                 story_key=story_key,
                 story_text=story_text,
@@ -351,10 +331,9 @@ class GitLabFallbackExtractor:
         queries = []
         
         # Extract key terms from story
-        # Look for service names, feature names, API-related terms
         feature_terms = []
         
-        # Common patterns: "create endpoint", "new API", "add route", etc.
+        # Common patterns
         if re.search(r'(create|add|new|implement).*endpoint', story_text, re.IGNORECASE):
             feature_terms.append("API endpoint")
         if re.search(r'(route|router|path)', story_text, re.IGNORECASE):
@@ -371,7 +350,6 @@ class GitLabFallbackExtractor:
                 queries.append(f"{story_key} {term}")
         
         # Add story-specific query
-        # Extract first 50 words of story for context
         story_snippet = ' '.join(story_text.split()[:50])
         queries.append(f"{story_snippet} API endpoint")
         
@@ -396,8 +374,7 @@ class GitLabFallbackExtractor:
         """
         all_results = []
         
-        # Search in the configured GitLab group
-        group_id = settings.gitlab_group_path  # e.g., "plainid/srv"
+        group_id = settings.gitlab_group_path
         
         # Try different search strategies
         search_queries = [
@@ -407,20 +384,18 @@ class GitLabFallbackExtractor:
             f"REST API {story_key}",
         ]
         
-        # Add story-specific queries
         search_queries.extend(service_queries)
         
         for query in search_queries[:5]:  # Limit to 5 queries
             try:
-                # Use MCP semantic code search across the group
-                # This would search all projects in the group
+                # Use MCP semantic code search
                 results = await self.mcp_client.semantic_code_search(
                     project_id=group_id,
                     semantic_query=query,
                     limit=10
                 )
                 
-                # Also try regular GitLab search for blobs (code files)
+                # Also try regular GitLab search
                 blob_results = await self.mcp_client.gitlab_search(
                     scope="blobs",
                     search=query,
@@ -473,13 +448,10 @@ class GitLabFallbackExtractor:
                 
                 # Determine file type and parse accordingly
                 if any(ext in file_path.lower() for ext in ['.yaml', '.yml', '.json']):
-                    # OpenAPI file
                     specs = self._parse_openapi_file(content, file_path)
                 elif any(ext in file_path.lower() for ext in ['.py', '.ts', '.js']):
-                    # Route definition file
                     specs = self._parse_route_file(content, file_path)
                 else:
-                    # Try to parse as route file anyway
                     specs = self._parse_route_file(content, file_path)
                 
                 # Add unique endpoints
@@ -501,20 +473,10 @@ class GitLabFallbackExtractor:
         content: str,
         file_path: str
     ) -> List[APISpec]:
-        """
-        Parse OpenAPI YAML/JSON file and extract endpoints.
-        
-        Args:
-            content: File content
-            file_path: File path for context
-            
-        Returns:
-            List of APISpec objects
-        """
+        """Parse OpenAPI YAML/JSON file and extract endpoints."""
         specs = []
         
         try:
-            # Parse YAML or JSON
             if content.strip().startswith('{'):
                 spec = json.loads(content)
             else:
@@ -523,7 +485,6 @@ class GitLabFallbackExtractor:
             if not spec or 'paths' not in spec:
                 return specs
             
-            # Extract all paths and methods
             paths = spec.get('paths', {})
             for path, methods in paths.items():
                 if not isinstance(methods, dict):
@@ -537,7 +498,7 @@ class GitLabFallbackExtractor:
                 if not http_methods:
                     continue
                 
-                # Extract parameters
+                # Extract parameters and schemas
                 parameters = []
                 for method in http_methods:
                     method_spec = methods.get(method.lower(), {})
@@ -548,45 +509,12 @@ class GitLabFallbackExtractor:
                         if param_name:
                             parameters.append(f"{param_name} ({param_in})")
                 
-                # Extract request schema
-                request_schema = None
-                for method in http_methods:
-                    method_spec = methods.get(method.lower(), {})
-                    request_body = method_spec.get('requestBody', {})
-                    if request_body:
-                        content_types = request_body.get('content', {})
-                        if content_types:
-                            for content_type, schema_info in content_types.items():
-                                schema = schema_info.get('schema', {})
-                                if schema:
-                                    request_schema = json.dumps(schema, indent=2)[:500]
-                                    break
-                        if request_schema:
-                            break
-                
-                # Extract response schema
-                response_schema = None
-                for method in http_methods:
-                    method_spec = methods.get(method.lower(), {})
-                    responses = method_spec.get('responses', {})
-                    if responses:
-                        status_codes = []
-                        for status, response_info in list(responses.items())[:3]:
-                            description = response_info.get('description', '')
-                            status_codes.append(f"{status}: {description}")
-                        if status_codes:
-                            response_schema = "; ".join(status_codes)
-                            break
-                
-                # Extract service name from file path
                 service_name = file_path.split('/')[0] if '/' in file_path else 'unknown'
                 
                 specs.append(APISpec(
                     endpoint_path=path,
                     http_methods=http_methods,
                     parameters=list(set(parameters)) if parameters else [],
-                    request_schema=request_schema,
-                    response_schema=response_schema,
                     service_name=service_name
                 ))
         
@@ -602,39 +530,28 @@ class GitLabFallbackExtractor:
         content: str,
         file_path: str
     ) -> List[APISpec]:
-        """
-        Parse route definition file (FastAPI, Flask, Express, etc.) and extract endpoints.
-        
-        Args:
-            content: File content
-            file_path: File path for context
-            
-        Returns:
-            List of APISpec objects
-        """
+        """Parse route definition file (FastAPI, Flask, Express, etc.)."""
         specs = []
         
-        # FastAPI patterns: @router.get("/path"), @router.post("/path"), etc.
+        # FastAPI patterns
         fastapi_pattern = r'@router\.(get|post|put|patch|delete|head|options)\s*\(\s*["\']([^"\']+)["\']'
         
-        # Flask patterns: @app.route("/path", methods=["GET"]), @app.route("/path")
+        # Flask patterns
         flask_pattern = r'@app\.route\s*\(\s*["\']([^"\']+)["\'][^)]*\)'
         flask_methods_pattern = r'methods\s*=\s*\[([^\]]+)\]'
         
-        # Express patterns: router.get("/path"), app.post("/path"), etc.
+        # Express patterns
         express_pattern = r'(?:router|app)\.(get|post|put|patch|delete|head|options)\s*\(\s*["\']([^"\']+)["\']'
         
-        # Extract service name from file path
         service_name = file_path.split('/')[0] if '/' in file_path else 'unknown'
         
-        # Find all FastAPI routes
+        # FastAPI routes
         for match in re.finditer(fastapi_pattern, content, re.IGNORECASE):
             method = match.group(1).upper()
             path = match.group(2)
             if not path.startswith('/'):
                 path = '/' + path
             
-            # Extract path parameters
             parameters = []
             param_matches = re.findall(r'\{(\w+)\}', path)
             for param in param_matches:
@@ -647,21 +564,19 @@ class GitLabFallbackExtractor:
                 service_name=service_name
             ))
         
-        # Find all Flask routes
+        # Flask routes
         for match in re.finditer(flask_pattern, content, re.IGNORECASE):
             path = match.group(1)
             if not path.startswith('/'):
                 path = '/' + path
             
-            # Extract methods
-            methods = ['GET']  # Default
+            methods = ['GET']
             methods_match = re.search(flask_methods_pattern, match.group(0), re.IGNORECASE)
             if methods_match:
                 methods_str = methods_match.group(1)
                 methods = [m.strip().strip('"\'') for m in methods_str.split(',')]
                 methods = [m.upper() for m in methods if m]
             
-            # Extract path parameters
             parameters = []
             param_matches = re.findall(r'<(\w+)>', path)
             for param in param_matches:
@@ -674,14 +589,13 @@ class GitLabFallbackExtractor:
                 service_name=service_name
             ))
         
-        # Find all Express routes
+        # Express routes
         for match in re.finditer(express_pattern, content, re.IGNORECASE):
             method = match.group(1).upper()
             path = match.group(2)
             if not path.startswith('/'):
                 path = '/' + path
             
-            # Extract path parameters
             parameters = []
             param_matches = re.findall(r':(\w+)', path)
             for param in param_matches:

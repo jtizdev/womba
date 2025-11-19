@@ -1,61 +1,61 @@
-# GitLab MCP Implementation in Womba
+# GitLab MCP Implementation in Womba - OAuth Authentication
 
-## Quick Start
+This guide explains how to use GitLab MCP with Womba using **OAuth authentication** (no manual token management needed).
 
-### 1. Create GitLab Personal Access Token (PAT)
+## Quick Start (OAuth Flow)
 
-**Why**: Womba needs a token to authenticate with GitLab's MCP endpoint for semantic code search.
-
-**Steps**:
-1. Visit: https://gitlab.com/-/user_settings/personal_access_tokens
-2. Click "Add new token"
-3. Fill in:
-   - **Name**: `womba-mcp`
-   - **Expiration date**: 1 year (or your preference)
-4. **Select these scopes**:
-   - ✅ `api` - Full API access
-   - ✅ `read_api` - Read API access
-   - ✅ `mcp` - MCP protocol access (if available)
-   - ✅ `read_repository` - Read repository contents
-5. Click "Create personal access token"
-6. **Copy the token immediately** (you won't see it again!)
-
-### 2. Update `.env` File
-
-Add/update these variables:
+### 1. Enable MCP in `.env`
 
 ```bash
-GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxx        # Your PAT (for REST API)
-MCP_GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxx    # Same PAT (for MCP)
-GITLAB_FALLBACK_ENABLED=true                # Enable fallback
+GITLAB_FALLBACK_ENABLED=true
+GITLAB_BASE_URL=https://gitlab.com
+GITLAB_GROUP_PATH=plainid/srv
 ```
 
-### 3. Rebuild Docker
+### 2. First Run - Browser OAuth Login
 
+When you first generate a test plan or run:
 ```bash
-cd /Users/royregev/womba
-docker-compose build --no-cache womba-server
-docker-compose up -d
+docker-compose exec womba-server python test_mcp_setup.py
 ```
 
-### 4. Test It
+**What happens:**
+1. Browser automatically opens with GitLab OAuth login
+2. Click "Authorize" to grant MCP access
+3. OAuth token is **cached locally** in `~/.mcp-auth/`
+4. Browser closes automatically
 
-```bash
-# Option A: Run test script
-python test_mcp_setup.py
+### 3. Subsequent Runs
 
-# Option B: Check Docker logs
-docker-compose logs -f womba-server | grep -i mcp
+Your OAuth credentials are cached! No need to log in again:
+- ✅ Run multiple test generations
+- ✅ Restart container
+- ✅ Switch between local/Docker (cache persists)
 
-# Option C: Generate test plan for story with no normal endpoints
-# (Go to womba-ui and generate a test plan - MCP should kick in as fallback)
+---
+
+## How OAuth MCP Works
+
+```
+First Run:
+├─ Womba starts MCP client
+├─ Launches: npx -y mcp-remote https://gitlab.com/api/v4/mcp
+├─ Browser opens → GitLab OAuth login
+├─ User clicks "Authorize"
+├─ Token saved to ~/.mcp-auth/
+└─ Browser closes automatically
+
+Subsequent Runs:
+├─ Womba starts MCP client
+├─ Launches: npx -y mcp-remote https://gitlab.com/api/v4/mcp
+├─ Reads cached token from ~/.mcp-auth/
+├─ Connected immediately ✓
+└─ No browser, no user interaction needed
 ```
 
 ---
 
-## How It Works
-
-### Architecture
+## Architecture
 
 ```
 Story Enrichment Flow:
@@ -64,288 +64,281 @@ Story Enrichment Flow:
 ├─ Step 2: AI-based Filtering
 │         └─ Remove example endpoints that aren't relevant
 └─ Step 3: GitLab MCP Fallback (IF no endpoints found)
-          └─ Semantic code search across repositories
+          ├─ Use mcp-remote via npx
+          ├─ OAuth authentication (cached credentials)
+          ├─ Semantic code search across repositories
           └─ Extract endpoints from found code
 ```
 
-### Why This Design?
-
-1. **Swagger first**: Explicit API documentation is most reliable
-2. **RAG second**: Learn from existing tests and patterns
-3. **MCP fallback**: If endpoints aren't documented, search the code
-4. **Semantic search**: Uses AI to understand code, not just regex
-
 ---
 
-## What's Different from Cursor's MCP?
+## Installation & Setup
 
-| Aspect | Cursor's MCP | Womba's MCP |
-|--------|--------------|------------|
-| **Protocol** | stdio/HTTP | Direct HTTP calls |
-| **Auth** | OAuth (browser flow) | PAT token (no OAuth needed) |
-| **Setup** | Click "Enable MCP" in settings | Add env vars, rebuild Docker |
-| **Works in Docker** | ❌ No (needs browser) | ✅ Yes (uses PAT directly) |
-| **Works in K8s** | ❌ No (needs browser) | ✅ Yes (set env var in pod) |
-| **mcp-remote needed** | ✅ Yes | ❌ No (direct HTTP) |
+### Prerequisites
 
-**Key advantage**: Womba's approach works everywhere - local, Docker, Kubernetes - without needing a browser for OAuth.
+Docker image includes:
+- ✅ Node.js 20.x
+- ✅ npm (for `mpc-remote`)
+- ✅ Python MCP library
 
----
-
-## Configuration Reference
-
-### Environment Variables
+### Docker Setup
 
 ```bash
-# Required for MCP to work
-GITLAB_TOKEN=glpat-...                  # Token for REST API (OpenAPI fetching)
-MCP_GITLAB_TOKEN=glpat-...              # Token for MCP (same as above)
-
-# Optional (defaults shown)
+# 1. Update .env
+cat >> .env << 'EOF'
+GITLAB_FALLBACK_ENABLED=true
 GITLAB_BASE_URL=https://gitlab.com
 GITLAB_GROUP_PATH=plainid/srv
-GITLAB_FALLBACK_ENABLED=true
-GITLAB_FALLBACK_MAX_SERVICES=5
+EOF
 
-# Not needed (for reference only)
-MCP_GITLAB_SERVER_COMMAND=npx           # Womba doesn't use this
-MCP_GITLAB_SERVER_ARGS=[...]            # Womba doesn't use this
-```
-
-### Code Implementation
-
-**Entry point**: `src/ai/story_enricher.py` lines 88-98
-- Calls `GitLabFallbackExtractor.extract_from_codebase()`
-- Only triggered if zero endpoints found after filtering
-
-**MCP Client**: `src/ai/gitlab_fallback_extractor.py`
-- `GitLabMCPClient`: Handles HTTP communication with GitLab API
-- `GitLabFallbackExtractor`: Orchestrates codebase search
-
----
-
-## Troubleshooting
-
-### Issue: "MCP not available for semantic code search"
-
-**Cause**: Token not configured
-**Fix**:
-```bash
-# Check .env has both tokens
-grep GITLAB_TOKEN .env
-grep MCP_GITLAB_TOKEN .env
-
-# Rebuild Docker
+# 2. Rebuild Docker image
 docker-compose build --no-cache womba-server
+
+# 3. Start Womba
+docker-compose up -d womba-server
+
+# 4. Generate test plan (will trigger OAuth on first run)
+# or run: docker-compose exec womba-server python test_mcp_setup.py
 ```
 
-### Issue: "MCP authentication failed: 403"
+### Kubernetes Setup
 
-**Cause**: Token lacks required scopes
-**Fix**:
 ```bash
-# 1. Delete old token: https://gitlab.com/-/user_settings/personal_access_tokens
-# 2. Create new token with scopes: api, read_api, mcp, read_repository
-# 3. Update .env with new token
-# 4. Rebuild: docker-compose build --no-cache womba-server
+# 1. Create ConfigMap with settings
+kubectl create configmap womba-mcp-config \
+  --from-literal=GITLAB_FALLBACK_ENABLED=true \
+  --from-literal=GITLAB_BASE_URL=https://gitlab.com \
+  --from-literal=GITLAB_GROUP_PATH=plainid/srv
+
+# 2. Create persistent volume for OAuth cache
+# (Ensure ~/.mcp-auth is mounted as PVC)
+
+# 3. Update deployment to use ConfigMap and mount cache volume
+
+# 4. Deploy and trigger first test generation
+# (This will initiate OAuth flow - you'll need to manually authenticate)
 ```
-
-### Issue: "insufficient_scope in error"
-
-**Cause**: Token doesn't have `mcp` scope
-**Fix**:
-- If `mcp` scope not available in GitLab: use `api` + `read_api` (they work similarly)
-- Ensure token has at least these three scopes:
-  - ✅ `api`
-  - ✅ `read_api`
-  - ✅ `mcp` (optional, but recommended)
-
-### Issue: MCP returns no results
-
-**Cause**: Query not matching code, or endpoints in wrong format
-**Debug**:
-```bash
-# Check what MCP is searching
-docker-compose exec womba-server python test_mcp_setup.py
-
-# Check Docker logs for search queries
-docker-compose logs womba-server | grep "semantic query"
-```
-
-### Issue: "Token doesn't start with glpat-"
-
-**Cause**: Using wrong token format
-**Fix**:
-- Ensure you're using a Personal Access Token (glpat-*)
-- Not OAuth token or CI/CD token
 
 ---
 
 ## Testing MCP Setup
 
-### Local Testing (Before Docker)
+### Local Test Script
 
 ```bash
-# Set up .env with token
-export GITLAB_TOKEN=glpat-xxxxx
-export MCP_GITLAB_TOKEN=glpat-xxxxx
-
-# Run test script
 python test_mcp_setup.py
 ```
 
-### Docker Testing
+Expected output on first run:
+```
+======================================
+GitLab MCP Setup Validation
+======================================
+
+1. Configuration Check
+✓ Configuration looks good!
+
+2. MCP Client Initialization
+→ Browser will open for GitLab OAuth login
+→ Waiting for authentication...
+→ [Browser opens, user clicks "Authorize"]
+✓ MCP client initialized successfully!
+
+3. Semantic Code Search Test
+Searching for 'policy list API endpoint'...
+Found 5 results
+✓ Semantic search is working!
+
+...
+
+Total: 5/5 tests passed
+✓ All tests passed! GitLab MCP is properly configured.
+```
+
+### Docker Container Test
 
 ```bash
-# Build and start
-docker-compose build --no-cache womba-server
-docker-compose up -d womba-server
-
-# Run tests inside container
+# Run test inside container
 docker-compose exec womba-server python test_mcp_setup.py
 
-# Check logs
-docker-compose logs -f womba-server
+# Check MCP cache
+docker-compose exec womba-server ls -la ~/.mcp-auth/
+
+# Check logs for MCP activity
+docker-compose logs womba-server | grep -i "mcp\|oauth"
 ```
 
-### Kubernetes Testing
+---
+
+## Troubleshooting
+
+### Issue 1: "Browser didn't open for OAuth"
+
+**Cause**: Running in headless environment (Docker, K8s)
+**Fix**:
+- Authenticate on your local machine first: `python test_mcp_setup.py`
+- Copy `~/.mcp-auth/` to the pod/container
+- Or: Use `mcp-remote` manually to cache credentials
+
+### Issue 2: "OAuth credentials expired"
+
+**Cause**: Token cached from months ago
+**Fix**:
+```bash
+# Clear cache and re-authenticate
+rm -rf ~/.mcp-auth/*
+python test_mcp_setup.py  # Will prompt for OAuth again
+```
+
+### Issue 3: "MCP not available for semantic code search"
+
+**Cause**: mcp-remote not installed or npx not found
+**Fix**:
+```bash
+# Check if mcp-remote is installed
+which mcp-remote
+
+# Check if npx is available
+which npx
+
+# In Docker, rebuild to ensure Node.js is included
+docker-compose build --no-cache womba-server
+```
+
+### Issue 4: "Permission denied" for ~/.mcp-auth/
+
+**Cause**: Directory permission issue
+**Fix**:
+```bash
+# Ensure directory exists and has correct permissions
+mkdir -p ~/.mcp-auth
+chmod 700 ~/.mcp-auth
+```
+
+---
+
+## Using MCP in Docker/Kubernetes
+
+### Local + Docker (with shared cache)
 
 ```bash
-# Create secret with token
-kubectl -n womba create secret generic womba-gitlab-creds \
-  --from-literal=GITLAB_TOKEN=glpat-xxxxx \
-  --from-literal=MCP_GITLAB_TOKEN=glpat-xxxxx \
-  --dry-run=client -o yaml | kubectl apply -f -
+# 1. Authenticate locally first
+python test_mcp_setup.py
+# → Browser opens, you click "Authorize"
+# → Token saved to ~/.mcp-auth/
 
-# Update deployment to use secret (in K8s yaml)
-# env:
-# - name: GITLAB_TOKEN
-#   valueFrom:
-#     secretKeyRef:
-#       name: womba-gitlab-creds
-#       key: GITLAB_TOKEN
+# 2. Docker automatically uses cached token
+docker-compose up -d womba-server
+docker-compose exec womba-server python test_mcp_setup.py
+# → Works immediately, no browser needed!
+```
 
-# Restart pods
-kubectl -n womba rollout restart deployment/womba-server
+### Kubernetes (with PVC for cache)
 
-# Check logs
-kubectl -n womba logs -f deployment/womba-server
+```yaml
+# In your Deployment spec:
+spec:
+  template:
+    spec:
+      containers:
+      - name: womba-server
+        volumeMounts:
+        - name: mcp-auth-cache
+          mountPath: /home/womba/.mcp-auth
+      volumes:
+      - name: mcp-auth-cache
+        persistentVolumeClaim:
+          claimName: womba-mcp-auth-pvc
 ```
 
 ---
 
-## How to Use Womba with MCP
+## OAuth Flow Details
 
-### Example: Generate Test Plan with Fallback
+### What Happens Behind the Scenes
 
-1. **Create a story** in Jira (e.g., "Add pagination to policies endpoint")
-
-2. **Generate test plan** in womba-ui:
-   ```
-   Story: PLAT-13541
-   Generate → Wait for analysis
-   ```
-
-3. **Womba's process**:
-   - Step 1: Tries to find OpenAPI for policies endpoint → Success
-   - Step 2: Filters to remove examples
-   - Step 3: Generates tests from swagger
-   
-   **OR** (if Step 1 finds nothing):
-   - Step 1: No swagger docs found
-   - Step 2: Skipped (no endpoints)
-   - Step 3: Uses GitLab MCP to search codebase
-   - Step 4: Finds policy endpoint in code
-   - Step 5: Generates tests from found endpoints
-
-4. **Check logs** to see what MCP found:
+1. **mcp-remote Start**
    ```bash
-   docker-compose logs womba-server | grep -i "gitlab.*fallback"
+   npx -y mcp-remote https://gitlab.com/api/v4/mcp
    ```
 
+2. **OAuth Initiation**
+   - mcp-remote opens browser to GitLab OAuth endpoint
+   - Shows: "Authorize Womba to access your GitLab"
+
+3. **User Authorizes**
+   - User clicks "Authorize"
+   - GitLab redirects back to local callback
+
+4. **Token Caching**
+   - Token saved to `~/.mcp-auth/tokens.json` (encrypted)
+   - Refresh tokens stored for auto-renewal
+
+5. **Future Connections**
+   - mcp-remote reads cached token
+   - Connects immediately without browser
+
+### Security
+
+- ✅ OAuth tokens **never** exposed in logs
+- ✅ Tokens **encrypted** in cache directory
+- ✅ Only `api` and `read_api` scopes requested
+- ✅ No PAT tokens needed (browser login only)
+
 ---
 
-## Automatic vs. Manual Token Setup
+## Configuration Reference
 
-### Automatic (Cursor's MCP)
-- User clicks "Enable MCP" in Cursor settings
-- Browser opens for OAuth authentication
-- Token managed automatically by Cursor
-- **Problem**: Doesn't work in Docker/Kubernetes
-
-### Manual (Womba's MCP)
-- DevOps creates PAT in GitLab
-- Token stored in `.env` or Kubernetes secret
-- Womba uses token directly
-- **Advantage**: Works everywhere
-
-Your DevOps recommended the **manual approach**, which is why this implementation uses PAT tokens instead of OAuth.
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GITLAB_FALLBACK_ENABLED` | true | Enable MCP fallback |
+| `GITLAB_BASE_URL` | https://gitlab.com | GitLab instance |
+| `GITLAB_GROUP_PATH` | plainid/srv | Group to search |
+| `MCP_GITLAB_SERVER_COMMAND` | npx | Command to run mcp-remote |
+| `MCP_GITLAB_SERVER_ARGS` | ["-y", "mcp-remote", "..."] | Args for mcp-remote |
 
 ---
 
-## Common Questions
+## FAQ
 
-**Q: Do I need to run mcp-remote separately?**
-A: No. Womba makes direct HTTP calls to GitLab's API. mcp-remote is optional.
+**Q: Do I need to set a token?**
+A: No! OAuth handles it automatically. Just set `GITLAB_FALLBACK_ENABLED=true`.
 
-**Q: Why use MCP if we have Swagger?**
-A: As a fallback! Some endpoints might not be documented in Swagger but exist in code.
+**Q: Will the browser open every time?**
+A: No, only on first run. Credentials are cached afterward.
 
-**Q: Will this increase costs?**
-A: No. Uses existing GitLab API quota. No additional services to pay for.
+**Q: What if I'm in a Docker container?**
+A: Authenticate on your local machine first, then Docker uses the cached token.
 
-**Q: Is the token exposed?**
-A: No. It's stored in `.env` (not committed to git) or Kubernetes secret (encrypted in cluster).
+**Q: How long are OAuth tokens cached?**
+A: GitLab OAuth tokens last 2 hours, but refresh tokens renew them automatically.
 
-**Q: How often does MCP get called?**
-A: Only when normal endpoint extraction finds zero results. Very efficient.
+**Q: Can I use PAT tokens instead?**
+A: Yes, but OAuth is simpler and more secure (no token storage needed).
 
-**Q: Can I disable MCP?**
-A: Yes: `GITLAB_FALLBACK_ENABLED=false` in `.env`
+**Q: What scopes does Womba request?**
+A: Only `api` and `read_api` - no admin or sensitive scopes.
+
+**Q: Is this secure?**
+A: Yes! Tokens are cached encrypted, not stored in `.env` or git.
 
 ---
 
 ## Next Steps
 
-1. ✅ Create GitLab PAT with required scopes
-2. ✅ Add `GITLAB_TOKEN` and `MCP_GITLAB_TOKEN` to `.env`
-3. ✅ Rebuild Docker: `docker-compose build --no-cache womba-server`
-4. ✅ Start womba: `docker-compose up -d`
-5. ✅ Test: `python test_mcp_setup.py`
-6. ✅ Generate test plans and observe MCP fallback in logs
-
----
-
-## Support & Debugging
-
-**Still having issues?**
-
-Check these files for implementation details:
-- `src/ai/gitlab_fallback_extractor.py` - MCP client code
-- `src/ai/story_enricher.py` - Where MCP is called
-- `src/config/settings.py` - Configuration handling
-- `test_mcp_setup.py` - Comprehensive test script
-
-**Logs to check**:
-```bash
-# Docker
-docker-compose logs womba-server | grep -i "mcp\|fallback\|gitlab"
-
-# Kubernetes
-kubectl -n womba logs deployment/womba-server | grep -i "mcp\|fallback\|gitlab"
-```
-
-**Error messages to look for**:
-- "MCP not available" → Token not set
-- "insufficient_scope" → Token needs better scopes
-- "MCP authentication failed: 403" → Token invalid or expired
-- "No endpoints found via MCP" → Code doesn't match search query
+1. ✅ Add `GITLAB_FALLBACK_ENABLED=true` to `.env`
+2. ✅ Rebuild Docker: `docker-compose build --no-cache womba-server`
+3. ✅ Start: `docker-compose up -d`
+4. ✅ Test: `docker-compose exec womba-server python test_mcp_setup.py`
+5. ✅ Authenticate via browser OAuth login
+6. ✅ Generate test plans - MCP fallback will work!
 
 ---
 
 ## References
 
-- GitLab Personal Access Tokens: https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html
-- GitLab MCP: https://docs.gitlab.com/ee/api/graphql/
-- Womba MCP Docs: `docs/GITLAB_MCP_SETUP.md`
-
+- mcp-remote: https://github.com/modelcontextprotocol/server-gitlab
+- GitLab OAuth: https://docs.gitlab.com/ee/api/oauth2.html
+- Full setup guide: `docs/MCP_DOCKER_SETUP.md`
+- MCP implementation: `src/ai/gitlab_fallback_extractor.py`
+- Story enricher: `src/ai/story_enricher.py` (lines 88-98)
