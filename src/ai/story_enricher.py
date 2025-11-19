@@ -13,7 +13,7 @@ from typing import List, Optional, Set
 from loguru import logger
 
 from src.models.story import JiraStory
-from src.models.enriched_story import EnrichedStory, APISpec, ConfluenceDocRef
+from src.models.enriched_story import EnrichedStory, APISpec, ConfluenceDocRef, UISpec
 from src.aggregator.story_collector import StoryContext
 from src.aggregator.jira_client import JiraClient
 from src.ai.swagger_extractor import SwaggerExtractor
@@ -105,7 +105,7 @@ class StoryEnricher:
         logger.debug(f"Collected {len(all_acceptance_criteria)} acceptance criteria")
         
         # 6. Integrate Confluence/PRD documents from context (if available)
-        confluence_refs = self._collect_confluence_docs(story_context)
+        confluence_refs = await self._collect_confluence_docs(story_context)
         # Promote PRD acceptance criteria into global AC list
         if confluence_refs:
             prd_acs = []
@@ -145,6 +145,10 @@ class StoryEnricher:
             plainid_components=plainid_components
         )
         
+        # 10. Extract UI specifications
+        ui_specs = await self._extract_ui_specifications(main_story, story_context)
+        logger.info(f"Extracted {len(ui_specs)} UI specifications")
+        
         enriched = EnrichedStory(
             story_key=main_story.key,
             feature_narrative=feature_narrative,
@@ -155,7 +159,8 @@ class StoryEnricher:
             source_story_ids=[s.key for s in all_stories],
             plainid_components=plainid_components,
             confluence_docs=confluence_refs,
-            functional_points=functional_points
+            functional_points=functional_points,
+            ui_specifications=ui_specs
         )
         
         # Debug: Log complete enrichment data
@@ -559,33 +564,58 @@ class StoryEnricher:
         
         return '\n\n'.join(paragraphs)
 
-    def _collect_confluence_docs(self, context: StoryContext) -> List[ConfluenceDocRef]:
+    async def _collect_confluence_docs(self, context: StoryContext) -> List[ConfluenceDocRef]:
         """
-        Collect Confluence/PRD documents from story context.
+        Collect Confluence/PRD documents from story context with RAG fallback.
 
         Args:
             context: StoryContext containing any fetched Confluence docs
 
         Returns:
-            List of ConfluenceDocRef with title, url, and short summary
+            List of ConfluenceDocRef with title, url, and full content (no truncation)
         """
         refs: List[ConfluenceDocRef] = []
         try:
             docs = context.get("confluence_docs", []) or []
+            main_story = context.get("main_story")
+            
             for doc in docs[:5]:  # limit to 5
                 title = doc.get("title")
                 url = doc.get("url")
                 content = doc.get("content") or ""
+                
                 if not url:
                     continue
-                summary = content  # NO truncation - use full content
-                # Structured extraction (internal), plus QA-focused summary for prompt
+                
+                # FALLBACK: If content is empty or too short, try RAG
+                if not content or len(content) < 100:
+                    logger.info(f"Confluence doc '{title}' has no content, falling back to RAG")
+                    try:
+                        story_key = main_story.key if main_story else ""
+                        rag_results = await self.rag_store.retrieve_similar(
+                            query=f"{title} {story_key}",
+                            collection_name="confluence_docs",
+                            top_k=1
+                        )
+                        if rag_results:
+                            content = rag_results[0].get("content", "")
+                            logger.info(f"Retrieved {len(content)} chars from RAG for '{title}'")
+                    except Exception as e:
+                        logger.warning(f"RAG fallback failed for '{title}': {e}")
+                
+                if not content:
+                    logger.warning(f"No content for Confluence doc '{title}', skipping")
+                    continue
+                
+                # NO TRUNCATION - use full content
+                summary = content
                 structured = process_confluence_content(content)
                 qa_summary = summarize_for_qa(
                     story_summary=None,  # Don't repeat story summary in PRD section
                     content=content,
-                    max_chars=8000  # NO truncation - AI needs full context
+                    max_chars=None  # NO LIMIT
                 )
+                
                 refs.append(ConfluenceDocRef(
                     title=title,
                     url=url,
@@ -599,8 +629,76 @@ class StoryEnricher:
                     qa_summary=qa_summary,
                 ))
         except Exception as e:
-            logger.debug(f"Failed to collect Confluence docs: {e}")
+            logger.error(f"Failed to collect Confluence docs: {e}", exc_info=True)
         return refs
+
+    async def _extract_ui_specifications(
+        self,
+        main_story: JiraStory,
+        story_context: StoryContext
+    ) -> List[UISpec]:
+        """
+        Extract UI navigation and access specifications.
+        
+        Sources:
+        1. Story description (explicit navigation paths)
+        2. RAG similar UI patterns
+        3. Inference from feature requirements
+        """
+        ui_specs = []
+        combined_text = self._build_combined_text(main_story, [])
+        
+        # Pattern 1: Explicit navigation in story
+        # "navigate to X → Y → Z"
+        # "from the X page, click Y tab"
+        nav_patterns = [
+            r'navigate\s+to\s+([^.]+?)(?:\s+→\s+([^.]+?))?(?:\s+→\s+([^.]+?))?',
+            r'from\s+(?:the\s+)?([^,]+?),?\s+click\s+(?:the\s+)?([^.]+)',
+            r'(?:click|select|open)\s+(?:the\s+)?([^.]+?)\s+(?:tab|menu|button)',
+            r'in\s+(?:the\s+)?([^,]+?),?\s+(?:click|select)\s+([^.]+)',
+        ]
+        
+        for pattern in nav_patterns:
+            matches = re.finditer(pattern, combined_text, re.IGNORECASE)
+            for match in matches:
+                parts = [p.strip() for p in match.groups() if p]
+                if parts:
+                    nav_path = " → ".join(parts)
+                    ui_specs.append(UISpec(
+                        feature_name=main_story.summary,
+                        navigation_path=nav_path,
+                        access_method=f"Navigate: {nav_path}",
+                        ui_elements=parts,
+                        source="story_text"
+                    ))
+        
+        # Pattern 2: Query RAG for similar UI patterns
+        try:
+            rag_results = await self.rag_store.retrieve_similar(
+                query=f"{main_story.summary} UI navigation",
+                collection_name="test_plans",
+                top_k=3
+            )
+            for result in rag_results:
+                content = result.get("content", "")
+                # Extract navigation from test steps
+                nav_matches = re.findall(
+                    r'Navigate to ([^→]+(?:→[^→]+)*)',
+                    content,
+                    re.IGNORECASE
+                )
+                for nav in nav_matches[:2]:
+                    ui_specs.append(UISpec(
+                        feature_name=main_story.summary,
+                        navigation_path=nav.strip(),
+                        access_method=f"Navigate: {nav.strip()}",
+                        ui_elements=[e.strip() for e in nav.split('→')],
+                        source="rag_similar_tests"
+                    ))
+        except Exception as e:
+            logger.debug(f"RAG UI pattern extraction failed: {e}")
+        
+        return ui_specs
 
     def _derive_functional_points(self, main_story: JiraStory, confluence_refs: List[ConfluenceDocRef], subtasks: List[JiraStory]) -> List[str]:
         """
@@ -628,8 +726,8 @@ class StoryEnricher:
                 if re.search(r"\b(implement|add|create|update|delete|view|display|show|compare|filter|sort|export|import|validate|support|enable|allow|enforce|verify|check|click|select|open|close|save|edit|modify|remove|drag|drop|zoom|pinch|navigate|fetch|patch|post|get)\b", l, re.I):
                     # Strip bullets/numbers
                     l = re.sub(r"^([-*•]\s*|\d+\.\s*|[a-z]\.\s*)", "", l)
-                    # Skip if it's a URL, recording link, or overly long
-                    if not l.startswith('http') and 'zoom.us/rec' not in l and 'share link' not in l.lower() and len(l) < 250:
+                    # Skip if it's a URL, recording link (NO LENGTH LIMIT - full text)
+                    if not l.startswith('http') and 'zoom.us/rec' not in l and 'share link' not in l.lower():
                         points.append(l)
         
         # From subtasks - each subtask represents a functional capability
@@ -640,13 +738,13 @@ class StoryEnricher:
                 task_point = f"{task.summary}: {task.description.strip()}"
             points.append(task_point)
         
-        # Deduplicate, prefer earlier
+        # Deduplicate, prefer earlier (NO TRUNCATION)
         seen = set()
         unique = []
         for p in points:
             normalized = p.lower().strip()
             if normalized not in seen and len(p) > 10:
-                unique.append(p[:250])  # Cap length
+                unique.append(p)  # NO TRUNCATION - full text
                 seen.add(normalized)
             if len(unique) >= 30:
                 break

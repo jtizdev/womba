@@ -137,68 +137,33 @@ class SwaggerExtractor:
     
     def _is_example_endpoint(self, endpoint_path: str, text: str) -> bool:
         """
-        Check if an endpoint appears to be an example/reference rather than an actual requirement.
+        Check if endpoint is explicitly marked as example/reference.
         
-        This is a conservative rule-based check used during extraction.
-        More sophisticated AI-based filtering happens later in the enrichment pipeline.
-        
-        Args:
-            endpoint_path: Endpoint path to check
-            text: Full text to search for context
-            
-        Returns:
-            True if endpoint appears to be an example, False otherwise
+        CONSERVATIVE: Only filter if clearly marked as "example" or "reference".
+        Do NOT filter endpoints that are actual patterns to follow.
         """
-        # Find the endpoint in the text
-        endpoint_pattern = re.escape(endpoint_path)
-        match = re.search(endpoint_pattern, text, re.IGNORECASE)
-        
+        match = re.search(re.escape(endpoint_path), text, re.IGNORECASE)
         if not match:
-            # Endpoint not found - can't determine, so don't filter (let AI decide)
             return False
         
-        # Get context around endpoint (200 chars before and after)
         start = max(0, match.start() - 200)
         end = min(len(text), match.end() + 200)
         context = text[start:end].lower()
         
-        # Example indicator patterns - if found, likely an example
-        example_patterns = [
-            r'for\s+[^.]+\s+we\s+use',
-            r'similar\s+to',
-            r'same\s+as\s+existing',
-            r'example\s+.*\s+endpoint',
-            r'pattern',
-            r'reference',
-            r'like\s+.*\s+we\s+use',
-            r'for\s+.*\s+we\s+use\s+.*' + re.escape(endpoint_path.split('/')[-1] if '/' in endpoint_path else endpoint_path)
+        # ONLY filter if EXPLICITLY marked as example
+        explicit_example_patterns = [
+            r'example\s+endpoint',
+            r'example\s+of',
+            r'sample\s+endpoint',
+            r'for\s+reference',
+            r'as\s+a\s+reference',
         ]
         
-        # Requirement indicator patterns - if found, likely a requirement
-        requirement_patterns = [
-            r'create\s+endpoint',
-            r'create\s+.*\s+endpoint',
-            r'implement\s+endpoint',
-            r'add\s+endpoint',
-            r'new\s+endpoint',
-            r'endpoint\s+for\s+.*\s+application',
-            r'fetch.*by\s+application',
-            r'need\s+to\s+create',
-            r'must\s+create'
-        ]
+        for pattern in explicit_example_patterns:
+            if re.search(pattern, context):
+                return True
         
-        # Check for example patterns
-        is_example_context = any(re.search(pattern, context, re.IGNORECASE) for pattern in example_patterns)
-        
-        # Check for requirement patterns
-        is_requirement_context = any(re.search(pattern, context, re.IGNORECASE) for pattern in requirement_patterns)
-        
-        # If it's in example context AND not in requirement context, it's likely an example
-        if is_example_context and not is_requirement_context:
-            return True
-        
-        # Otherwise, don't filter it out here (let AI filtering decide)
-        return False
+        return False  # Default: keep endpoint
     
     async def _extract_endpoints_semantic(
         self,

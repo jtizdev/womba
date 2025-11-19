@@ -235,6 +235,17 @@ class PromptBuilder:
                 sections.append(f"⚠️ FINAL CHECK: Verify each endpoint path appears in at least one API test step. If any endpoint is missing, you have FAILED!")
                 sections.append(f"⚠️ FINAL CHECK: Use the EXAMPLE REQUEST/RESPONSE bodies provided above in your test steps - they show the EXACT JSON format!")
             
+            if enriched_story.ui_specifications:
+                sections.append("\n--- UI SPECIFICATIONS (Navigation & Access) ---")
+                sections.append(f"\n⚠️ This story has {len(enriched_story.ui_specifications)} UI feature(s). Use these navigation paths in UI test steps.")
+                for i, ui in enumerate(enriched_story.ui_specifications, 1):
+                    sections.append(f"\n  [{i}] {ui.feature_name}")
+                    sections.append(f"     Navigation: {ui.navigation_path}")
+                    sections.append(f"     Access: {ui.access_method}")
+                    if ui.ui_elements:
+                        sections.append(f"     UI Elements: {', '.join(ui.ui_elements)}")
+                    sections.append(f"     Source: {ui.source}")
+            
             if enriched_story.plainid_components:
                 sections.append("\n--- PLAINID COMPONENTS INVOLVED ---")
                 sections.append(", ".join(enriched_story.plainid_components))
@@ -257,6 +268,7 @@ class PromptBuilder:
             logger.debug(f"Narrative length: {len(enriched_story.feature_narrative)} chars")
             logger.debug(f"Acceptance Criteria: {len(enriched_story.acceptance_criteria)}")
             logger.debug(f"API Specifications: {len(enriched_story.api_specifications)}")
+            logger.debug(f"UI Specifications: {len(enriched_story.ui_specifications)}")
             logger.debug(f"PlainID Components: {len(enriched_story.plainid_components)}")
             logger.debug(f"Risk Areas: {len(enriched_story.risk_areas)}")
             logger.debug(f"Related Stories: {len(enriched_story.related_stories)}")

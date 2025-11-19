@@ -34,6 +34,16 @@ class APISpec(BaseModel):
     )
 
 
+class UISpec(BaseModel):
+    """UI navigation and access specification."""
+    
+    feature_name: str = Field(description="Name of the UI feature")
+    navigation_path: str = Field(description="Full navigation path (e.g., 'Authorization Workspace → Applications → Policies tab')")
+    access_method: str = Field(description="How to access (e.g., 'Click tab', 'Select from menu')")
+    ui_elements: List[str] = Field(default_factory=list, description="Key UI elements (buttons, tabs, fields)")
+    source: str = Field(description="Where this info came from (story, RAG, inference)")
+
+
 class ConfluenceDocRef(BaseModel):
     """Reference to a PRD/Confluence document relevant to the story with structured extraction."""
 
@@ -98,6 +108,10 @@ class EnrichedStory(BaseModel):
     functional_points: List[str] = Field(
         default_factory=list,
         description="Key functional behaviors derived from story and PRD"
+    )
+    ui_specifications: List[UISpec] = Field(
+        default_factory=list,
+        description="UI navigation and access specifications"
     )
     
     class Config:
