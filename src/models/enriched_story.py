@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 
 class APISpec(BaseModel):
-    """API endpoint specification extracted from Swagger docs."""
+    """API endpoint specification extracted from Swagger docs or GitLab MCP."""
     
     endpoint_path: str = Field(description="Full endpoint path (e.g., /api/v1/policies)")
     http_methods: List[str] = Field(description="HTTP methods mentioned (GET, POST, etc.)")
@@ -18,6 +18,20 @@ class APISpec(BaseModel):
     parameters: Optional[List[str]] = Field(default_factory=list, description="Path/query parameters")
     authentication: Optional[str] = Field(default=None, description="Auth requirements")
     service_name: Optional[str] = Field(default=None, description="Source service name")
+    
+    # Enhanced fields for complete API documentation (from GitLab MCP)
+    request_example: Optional[str] = Field(
+        default=None,
+        description="Example JSON request body for test steps (e.g., '{\"applicationId\": \"app-123\"}')"
+    )
+    response_example: Optional[str] = Field(
+        default=None,
+        description="Example JSON response body for test steps (e.g., '{\"policies\": [...]}')"
+    )
+    dto_definitions: Optional[dict] = Field(
+        default=None,
+        description="DTO field definitions with types and descriptions (e.g., {'applicationId': {'type': 'string', 'required': true}})"
+    )
 
 
 class ConfluenceDocRef(BaseModel):

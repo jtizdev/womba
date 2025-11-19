@@ -188,12 +188,13 @@ class PromptBuilder:
                     sections.append(f"{i}. {fp}")
             
             if enriched_story.api_specifications:
-                sections.append("\n--- API SPECIFICATIONS (Use EXACT endpoints/schemas) ---")
+                sections.append("\n--- API SPECIFICATIONS (Use EXACT endpoints/schemas/examples) ---")
                 sections.append(f"\n⚠️ CRITICAL: This story has {len(enriched_story.api_specifications)} API endpoint(s). You MUST generate at least 1 API test for EACH endpoint listed below.")
                 sections.append(f"⚠️ ENDPOINT CHECKLIST - Generate tests for ALL of these:")
                 sections.append(f"\n🚨 MANDATORY: For EACH endpoint below, you MUST create at least ONE API test that uses that EXACT endpoint path.")
                 sections.append(f"🚨 DO NOT reuse the same endpoint in multiple tests - each endpoint needs its own dedicated test(s).")
                 sections.append(f"🚨 DO NOT skip any endpoint - if you see 4 endpoints, you need at least 4 API tests (one per endpoint minimum).")
+                sections.append(f"🚨 USE THE EXAMPLE REQUEST/RESPONSE BODIES PROVIDED - they show you the EXACT format and fields to use in test steps!")
                 for i, api in enumerate(enriched_story.api_specifications, 1):
                     methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
                     sections.append(f"\n  [{i}/{len(enriched_story.api_specifications)}] {methods_str} {api.endpoint_path}")
@@ -202,15 +203,37 @@ class PromptBuilder:
                         sections.append(f"     Service: {api.service_name}")
                     if api.parameters:
                         sections.append(f"     Parameters: {', '.join(api.parameters)}")
-                    if api.request_schema:
-                        sections.append(f"     Request: {api.request_schema}")
-                    if api.response_schema:
-                        sections.append(f"     Response: {api.response_schema}")
+                    
+                    # NEW: Include example request body
+                    if api.request_example:
+                        sections.append(f"     📝 EXAMPLE REQUEST BODY (use this exact format in test steps):")
+                        sections.append(f"        {api.request_example}")
+                    elif api.request_schema:
+                        sections.append(f"     Request Schema: {api.request_schema}")
+                    
+                    # NEW: Include example response body
+                    if api.response_example:
+                        sections.append(f"     📝 EXAMPLE RESPONSE BODY (expect this format in test steps):")
+                        sections.append(f"        {api.response_example}")
+                    elif api.response_schema:
+                        sections.append(f"     Response Schema: {api.response_schema}")
+                    
+                    # NEW: Include DTO field definitions
+                    if api.dto_definitions:
+                        sections.append(f"     📋 DTO FIELD DEFINITIONS:")
+                        for dto_name, dto_fields in api.dto_definitions.items():
+                            sections.append(f"        {dto_name}:")
+                            for field_name, field_info in list(dto_fields.items())[:10]:  # Limit to 10 fields
+                                field_type = field_info.get('type', 'unknown')
+                                required = "required" if field_info.get('required', False) else "optional"
+                                sections.append(f"          - {field_name}: {field_type} ({required})")
+                    
                     if api.authentication:
                         sections.append(f"     Auth: {api.authentication}")
                 sections.append(f"\n⚠️ REMINDER: You must generate API tests for ALL {len(enriched_story.api_specifications)} endpoints above. Do not skip any!")
                 sections.append(f"⚠️ FINAL CHECK: Before returning, count your API tests. If you have fewer than {len(enriched_story.api_specifications)} API tests, you have FAILED!")
                 sections.append(f"⚠️ FINAL CHECK: Verify each endpoint path appears in at least one API test step. If any endpoint is missing, you have FAILED!")
+                sections.append(f"⚠️ FINAL CHECK: Use the EXAMPLE REQUEST/RESPONSE bodies provided above in your test steps - they show the EXACT JSON format!")
             
             if enriched_story.plainid_components:
                 sections.append("\n--- PLAINID COMPONENTS INVOLVED ---")
@@ -674,15 +697,32 @@ Ensure all required fields are populated with realistic values.
         
         # API specifications (if any)
         if enriched_story.api_specifications:
-            sections.append("**API Specifications** (use exact endpoints):\n")
+            sections.append("**API Specifications** (use exact endpoints and examples):\n")
             for api in enriched_story.api_specifications:
                 sections.append(f"- {' '.join(api.http_methods)} {api.endpoint_path}\n")
                 if api.parameters:
                     sections.append(f"  Params: {', '.join(api.parameters)}\n")
-                if api.request_schema:
+                
+                # Include example request/response if available
+                if api.request_example:
+                    sections.append(f"  Example Request:\n{api.request_example}\n")
+                elif api.request_schema:
                     sections.append(f"  Request Schema:\n{api.request_schema}\n")
-                if api.response_schema:
+                
+                if api.response_example:
+                    sections.append(f"  Example Response:\n{api.response_example}\n")
+                elif api.response_schema:
                     sections.append(f"  Response Schema:\n{api.response_schema}\n")
+                
+                # Include DTO definitions if available
+                if api.dto_definitions:
+                    sections.append(f"  DTO Fields:\n")
+                    for dto_name, dto_fields in api.dto_definitions.items():
+                        sections.append(f"    {dto_name}:\n")
+                        for field_name, field_info in list(dto_fields.items())[:10]:
+                            field_type = field_info.get('type', 'unknown')
+                            required = "required" if field_info.get('required', False) else "optional"
+                            sections.append(f"      - {field_name}: {field_type} ({required})\n")
             sections.append("\n")
         
         # Risk areas
