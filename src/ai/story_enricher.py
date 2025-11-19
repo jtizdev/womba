@@ -13,7 +13,7 @@ from typing import List, Optional, Set
 from loguru import logger
 
 from src.models.story import JiraStory
-from src.models.enriched_story import EnrichedStory, ConfluenceDocRef
+from src.models.enriched_story import EnrichedStory, ConfluenceDocRef, APISpec
 from src.aggregator.story_collector import StoryContext
 from src.aggregator.jira_client import JiraClient
 from src.ai.swagger_extractor import SwaggerExtractor

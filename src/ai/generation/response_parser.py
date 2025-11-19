@@ -285,11 +285,11 @@ class ResponseParser:
         warnings = []
         
         # Check if story has API specifications
+        # NOTE: API specs are now in APIContext, not EnrichedStory
         has_api_specs = False
         api_endpoints = []
-        if enriched_story and enriched_story.api_specifications:
-            has_api_specs = True
-            api_endpoints = [api.endpoint_path for api in enriched_story.api_specifications]
+        # Enriched story no longer contains API specs - they're built separately
+        # This validation now just checks test structure
         
         # Count API and UI tests
         api_tests = []
