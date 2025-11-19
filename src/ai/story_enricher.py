@@ -593,8 +593,8 @@ class StoryEnricher:
                     try:
                         story_key = main_story.key if main_story else ""
                         rag_results = await self.rag_store.retrieve_similar(
-                            query=f"{title} {story_key}",
                             collection_name="confluence_docs",
+                            query_text=f"{title} {story_key}",
                             top_k=1
                         )
                         if rag_results:
@@ -675,8 +675,8 @@ class StoryEnricher:
         # Pattern 2: Query RAG for similar UI patterns
         try:
             rag_results = await self.rag_store.retrieve_similar(
-                query=f"{main_story.summary} UI navigation",
                 collection_name="test_plans",
+                query_text=f"{main_story.summary} UI navigation",
                 top_k=3
             )
             for result in rag_results:

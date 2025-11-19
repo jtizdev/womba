@@ -423,7 +423,9 @@ class GitLabFallbackExtractor:
             return []
         
         if not self.mcp_client or not self.mcp_client.mcp_available:
-            logger.warning("GitLab MCP client not available for fallback extraction")
+            logger.error("GitLab MCP client not available - CRITICAL: MCP must be working for endpoint extraction")
+            logger.error("Ensure 'mcp' package is installed: pip install 'mcp>=1.21.2'")
+            logger.error("Ensure 'mcp-remote' is installed: npm install -g mcp-remote")
             return []
         
         logger.info(f"Starting GitLab MCP fallback extraction for {story_key}")
