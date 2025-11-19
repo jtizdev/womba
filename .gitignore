@@ -76,3 +76,4 @@ debug_prompts/
 data/enrichment_cache/
 
 .env.bak
+mcp-oauth-credentials/

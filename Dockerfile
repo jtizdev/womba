@@ -51,6 +51,13 @@ RUN mkdir -p /app/data/chroma && \
     chown -R womba:womba /app/data && \
     chown -R womba:womba /home/womba/.mcp-auth
 
+# Copy MCP OAuth credentials (manually exported)
+# To export OAuth credentials:
+#   1. Run: ./export_mcp_oauth.sh (creates mcp-oauth-credentials/ directory)
+#   2. Build: docker compose build
+# The mcp-oauth-credentials/ directory must exist (can be empty)
+COPY --chown=womba:womba mcp-oauth-credentials/ /home/womba/.mcp-auth/
+
 # Switch to non-root user
 USER womba
 
