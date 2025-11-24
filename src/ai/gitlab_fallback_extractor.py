@@ -46,8 +46,11 @@ class GitLabMCPClient:
             from mcp.client.stdio import stdio_client, StdioServerParameters
             from mcp.client.session import ClientSession
             
-            # Set up OAuth cache directory
-            self.oauth_cache_dir = Path.home() / ".mcp-auth"
+            # Set up OAuth cache directory (configurable for K8s)
+            if settings.mcp_oauth_cache_dir:
+                self.oauth_cache_dir = Path(settings.mcp_oauth_cache_dir)
+            else:
+                self.oauth_cache_dir = Path.home() / ".mcp-auth"
             self.oauth_cache_dir.mkdir(parents=True, exist_ok=True)
             
             # Check if mcp-remote is available
@@ -489,8 +492,10 @@ class GitLabFallbackExtractor:
                 logger.warning(f"⚠️  No branches found for {story_key} - will search group-wide")
             
             # 2. Use AI to generate intelligent semantic queries based on story content
+            # CRITICAL: Use full story text to understand what endpoint is being created
             ai_queries = await self._generate_ai_endpoint_search_queries(story_text, story_key)
             logger.info(f"Generated {len(ai_queries)} AI-powered search queries")
+            logger.info(f"Sample queries: {ai_queries[:3]}")
             
             # 3. Search in found repos FIRST (most likely to have the code)
             search_results = []
@@ -504,40 +509,55 @@ class GitLabFallbackExtractor:
                     
                     logger.info(f"   Searching project {project_id}...")
                     
-                    # Use AI queries to search this specific project
-                    for query in ai_queries[:5]:  # Top 5 AI queries per project
+                    # Use MORE AI queries per project (top 10 instead of 5)
+                    for query in ai_queries[:10]:  # Increased from 5 to 10
                         try:
                             results = await self.mcp_client.semantic_code_search(
                                 project_id=str(project_id),
                                 semantic_query=query,
-                                limit=15  # Get more results per query
+                                limit=20  # Increased from 15 to 20
                             )
                             if results:
-                                logger.info(f"      ✅ Found {len(results)} results with query: '{query}'")
+                                logger.info(f"      ✅ Found {len(results)} results with query: '{query[:60]}...'")
                                 search_results.extend(results)
                         except Exception as e:
                             logger.debug(f"      Error searching project {project_id}: {e}")
                             continue
             
-            # 4. Also search group-wide if we didn't find enough results
-            if len(search_results) < 5:
-                logger.info(f"🔍 Group-wide search (found {len(search_results)} results so far)")
-                group_id = settings.gitlab_group_path
-                
-                # Use AI queries for group-wide blob search
-                for query in ai_queries[:10]:
+            # 4. Also search group-wide MORE AGGRESSIVELY
+            # Use semantic code search (better than blob search) for group-wide
+            logger.info(f"🔍 Group-wide semantic search (found {len(search_results)} results so far)")
+            group_id = settings.gitlab_group_path
+            
+            # Try semantic code search first (more accurate)
+            for query in ai_queries[:15]:  # Increased from 10 to 15
+                try:
+                    # Try semantic code search if we have a project ID from branches
+                    if branches and branches[0].get('project_id'):
+                        # Use the first project as reference for group-wide semantic search
+                        results = await self.mcp_client.semantic_code_search(
+                            project_id=str(branches[0]['project_id']),
+                            semantic_query=query,
+                            limit=20
+                        )
+                        if results:
+                            logger.info(f"   ✅ Found {len(results)} semantic results with query: '{query[:60]}...'")
+                            search_results.extend(results)
+                except Exception as e:
+                    logger.debug(f"   Error in semantic search with '{query[:30]}...': {e}")
+                    # Fallback to blob search
                     try:
                         blob_results = await self.mcp_client.gitlab_search(
                             scope="blobs",
                             search=query,
                             group_id=group_id,
-                            per_page=15
+                            per_page=20  # Increased from 15
                         )
                         if blob_results:
-                            logger.info(f"   ✅ Found {len(blob_results)} blobs with query: '{query}'")
+                            logger.info(f"   ✅ Found {len(blob_results)} blobs with query: '{query[:60]}...'")
                             search_results.extend(blob_results)
-                    except Exception as e:
-                        logger.debug(f"   Error searching with '{query}': {e}")
+                    except Exception as e2:
+                        logger.debug(f"   Error in blob search: {e2}")
                         continue
             
             if not search_results:
@@ -576,7 +596,7 @@ class GitLabFallbackExtractor:
         Use AI to generate intelligent semantic search queries for finding endpoints/DTOs.
         
         This is the KEY method - uses AI to understand what endpoints/DTOs to look for
-        based on the story content.
+        based on the story content. Focuses on finding the EXACT endpoint being created.
         """
         try:
             client, model, use_openai = AIClientFactory.create_client(
@@ -584,39 +604,55 @@ class GitLabFallbackExtractor:
                 model="gpt-4o-mini"
             )
             
-            story_snippet = ' '.join(story_text.split()[:300])  # First 300 words
+            # Get full story context (not just snippet) to understand what endpoint is being created
+            story_snippet = story_text[:2000]  # More context for better understanding
             
-            prompt = f"""You are analyzing a Jira story to find relevant API endpoints and DTOs in a GitLab codebase.
+            prompt = f"""You are analyzing a Jira story to find the EXACT API endpoint being created or modified.
 
 Story Key: {story_key}
-Story Summary: {story_snippet}
+Full Story Context:
+{story_snippet}
 
-Generate 10-15 specific semantic search queries that will help find:
-1. API endpoints (REST routes, controllers, @GetMapping/@PostMapping annotations)
-2. DTO classes (request/response objects, data transfer objects)
-3. Service methods that implement the feature
+CRITICAL: The story describes creating or modifying a specific API endpoint. Your job is to generate semantic search queries that will find THIS EXACT ENDPOINT in the codebase.
 
-Focus on:
-- Specific technical terms from the story (e.g., "policy", "application", "policies by application")
-- Common patterns in Java Spring (e.g., "@GetMapping", "PolicyController", "PolicyDto")
-- REST API patterns (e.g., "GET /policy-mgmt", "application endpoint")
-- The story key itself (e.g., "{story_key} endpoint", "{story_key} DTO")
+Analyze the story to determine:
+1. What HTTP method is needed? (GET, POST, PATCH, DELETE)
+2. What resource/entity is being accessed? (e.g., "policies", "applications")
+3. What action is being performed? (e.g., "fetch by application", "list by application", "get policies for application")
+4. What path pattern should it follow? (Look for examples in the story like "/policy-mgmt/dynamic-group/.../policies")
 
-Return ONLY a JSON array of query strings, one per line:
+Based on the story, generate 15-20 HIGHLY SPECIFIC semantic search queries that target:
+- The exact endpoint pattern (e.g., "GET policies by application", "PolicyController getPoliciesByApplication")
+- Controller methods implementing this feature (e.g., "@GetMapping application policies", "PolicyController application")
+- Route definitions matching the pattern (e.g., "/policy-mgmt/application", "/policy-mgmt/policies application")
+- DTOs used by this endpoint (e.g., "PolicyDto application", "ApplicationPolicyRequest")
+- Service methods (e.g., "fetchPoliciesByApplication", "getPoliciesForApplication")
+
+IMPORTANT:
+- Include queries with the story key: "{story_key} endpoint", "{story_key} PolicyController"
+- Include queries matching the pattern shown in story examples (e.g., if story shows "/policy-mgmt/dynamic-group/.../policies", search for "/policy-mgmt/application/.../policies")
+- Use Java Spring annotations: "@GetMapping", "@PostMapping", "@RequestMapping"
+- Use controller naming: "PolicyController", "ApplicationController"
+- Be VERY specific about the relationship (e.g., "policies by application", "policies for application", "application policies")
+
+Return ONLY a JSON array of query strings:
 [
-  "API endpoint for policies by application",
-  "PolicyController @GetMapping application",
-  "PolicyDto application",
+  "GET /policy-mgmt/application policies endpoint",
+  "PolicyController @GetMapping application policies",
+  "fetchPoliciesByApplication method",
+  "GET policies by application ID",
+  "{story_key} PolicyController application",
+  "/policy-mgmt/application/policies route",
   ...
 ]
 
-Be specific and technical. Use terms that would appear in actual code."""
+Be extremely specific and technical. These queries will search actual code."""
 
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=500
+                temperature=0.2,  # Lower temperature for more focused queries
+                max_tokens=800  # Increased from 500 to allow more queries
             )
             
             content = response.choices[0].message.content or ""
@@ -628,12 +664,13 @@ Be specific and technical. Use terms that would appear in actual code."""
             if json_start != -1 and json_end > json_start:
                 queries = json.loads(content[json_start:json_end])
                 logger.info(f"AI generated {len(queries)} semantic search queries")
-                return queries[:15]  # Limit to 15 queries
+                # Return more queries (up to 20) for better coverage
+                return queries[:20]
             else:
                 # Fallback: parse lines if JSON fails
                 lines = [line.strip().strip('"').strip("'") for line in content.split('\n') 
                         if line.strip() and not line.strip().startswith('[') and not line.strip().startswith(']')]
-                return lines[:15]
+                return lines[:20]
                 
         except Exception as e:
             logger.warning(f"AI query generation failed: {e}, using fallback queries")

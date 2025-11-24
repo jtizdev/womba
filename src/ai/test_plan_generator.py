@@ -207,17 +207,16 @@ class TestPlanGenerator:
             logger.debug(f"NEW ENRICHMENT CREATED FOR: {main_story.key}")
             logger.debug("=" * 80)
             logger.debug(f"Stories analyzed: {enriched.source_story_ids}")
-            apis_list = [f"{' '.join(api.http_methods)} {api.endpoint_path}" for api in enriched.api_specifications]
-            logger.debug(f"APIs extracted: {apis_list}")
             logger.debug(f"Acceptance Criteria count: {len(enriched.acceptance_criteria)}")
+            logger.debug(f"Functional Points count: {len(enriched.functional_points)}")
             logger.debug(f"PlainID Components: {enriched.plainid_components}")
             logger.debug(f"Risk Areas: {enriched.risk_areas}")
             logger.debug("=" * 80)
             
             logger.info(
                 f"Story enriched: {len(enriched.source_story_ids)} stories analyzed, "
-                f"{len(enriched.api_specifications)} APIs extracted, "
-                f"{len(enriched.acceptance_criteria)} ACs collected"
+                f"{len(enriched.acceptance_criteria)} ACs collected, "
+                f"{len(enriched.functional_points)} functional points derived"
             )
             
             return enriched

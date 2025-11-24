@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     mcp_gitlab_server_command: Optional[str] = Field(default="npx", description="MCP server command (default: 'npx' for mcp-remote)")
     mcp_gitlab_server_args: Optional[str] = Field(default='["-y", "mcp-remote", "https://gitlab.com/api/v4/mcp"]', description="MCP server arguments as JSON string (default: mcp-remote with GitLab API endpoint)")
     mcp_gitlab_token: Optional[str] = Field(default=None, description="GitLab token for MCP server authentication (if not using Cursor's MCP connection)")
+    mcp_oauth_cache_dir: Optional[str] = Field(default=None, description="MCP OAuth cache directory path (default: ~/.mcp-auth). Set this in K8s to match your PVC mount path (e.g., /home/womba/.mcp-auth)")
     bitbucket_token: Optional[str] = Field(default=None, description="Bitbucket token (optional)")
 
     # Figma (Optional)

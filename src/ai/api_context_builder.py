@@ -156,6 +156,19 @@ class APIContextBuilder:
             except Exception as e:
                 logger.warning(f"GitLab MCP fallback failed: {e}")
         
+        # Step 4: AI Inference (only if MCP found nothing or found wrong endpoints)
+        # This step uses AI to infer endpoints from story examples, but only if confident
+        if not api_specs or (len(api_specs) == 1 and not self._is_endpoint_relevant_for_story(api_specs[0], combined_text)):
+            logger.info("Step 4: MCP found nothing or wrong endpoints, trying AI inference from story examples")
+            inferred_endpoints = await self._infer_endpoints_from_story_examples(
+                story_text=combined_text,
+                story_key=main_story.key
+            )
+            if inferred_endpoints:
+                logger.info(f"  AI inferred {len(inferred_endpoints)} endpoint(s) from story examples")
+                api_specs.extend(inferred_endpoints)
+                extraction_flow_parts.append("ai_inference")
+        
         # Extract UI specifications (from story + RAG)
         ui_specs = await self._extract_ui_specifications(main_story, story_context, combined_text)
         
@@ -452,6 +465,142 @@ Be strict: Only mark endpoints as RELEVANT if they directly implement the story 
         except Exception as e:
             logger.warning(f"Deduplication failed: {e}, keeping all code scenarios")
             return code_scenarios
+    
+    def _is_endpoint_relevant_for_story(self, endpoint: APISpec, story_text: str) -> bool:
+        """
+        Quick check if an endpoint seems relevant to the story.
+        Used to determine if we should try AI inference.
+        """
+        story_lower = story_text.lower()
+        endpoint_lower = endpoint.endpoint_path.lower()
+        
+        # Check if endpoint path contains key story terms
+        key_terms = ["policy", "application", "app"]
+        story_has_policy = "policy" in story_lower
+        story_has_app = "application" in story_lower or "app" in story_lower
+        
+        endpoint_has_policy = "policy" in endpoint_lower
+        endpoint_has_app = "application" in endpoint_lower or "app" in endpoint_lower
+        
+        # If story is about policies by application, endpoint should have both
+        if story_has_policy and story_has_app:
+            return endpoint_has_policy and endpoint_has_app
+        
+        # Otherwise, at least one should match
+        return endpoint_has_policy or endpoint_has_app
+    
+    async def _infer_endpoints_from_story_examples(
+        self,
+        story_text: str,
+        story_key: str
+    ) -> List[APISpec]:
+        """
+        Use AI to infer endpoints from story examples.
+        Only runs if we're confident based on clear patterns in the story.
+        
+        Returns empty list if not confident.
+        """
+        try:
+            from src.ai.generation.ai_client_factory import AIClientFactory
+            from src.models.enriched_story import APISpec
+            
+            # Look for example endpoints in story text
+            example_patterns = re.findall(
+                r'(?:GET|POST|PATCH|PUT|DELETE)\s+([^\s]+)',
+                story_text,
+                re.IGNORECASE
+            )
+            
+            if not example_patterns:
+                logger.debug("No example endpoints found in story text for AI inference")
+                return []
+            
+            # Check if story explicitly mentions creating an endpoint
+            if not re.search(r'(?:create|add|implement|new).*endpoint', story_text, re.IGNORECASE):
+                logger.debug("Story doesn't explicitly mention creating an endpoint, skipping AI inference")
+                return []
+            
+            client, model, use_openai = AIClientFactory.create_client(
+                use_openai=True,
+                model="gpt-4o-mini"
+            )
+            
+            story_snippet = story_text[:1500]  # More context for better inference
+            
+            prompt = f"""Analyze this story and infer the API endpoint that needs to be created.
+
+Story Key: {story_key}
+Story Context:
+{story_snippet}
+
+The story mentions creating an endpoint and provides examples:
+{chr(10).join(f'- {pattern}' for pattern in example_patterns[:5])}
+
+Based on the examples and story requirements, infer:
+1. HTTP method (GET, POST, etc.)
+2. Endpoint path pattern (following the examples)
+3. What resource/entity it operates on
+
+CRITICAL: Only infer if you are CONFIDENT based on clear patterns. If uncertain, return empty.
+
+Return ONLY a JSON object:
+{{
+  "confident": true/false,
+  "endpoint": {{
+    "method": "GET",
+    "path": "/policy-mgmt/1.0/policies/{{applicationId}}",
+    "reason": "Story shows pattern /policy-mgmt/{{resource}}/{{id}}/policies, needs application variant"
+  }}
+}}
+
+If not confident, return: {{"confident": false}}"""
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=300
+            )
+            
+            import json
+            content = response.choices[0].message.content or ""
+            
+            # Extract JSON
+            json_start = content.find('{')
+            json_end = content.rfind('}') + 1
+            if json_start != -1 and json_end > json_start:
+                result = json.loads(content[json_start:json_end])
+                
+                if result.get("confident") and result.get("endpoint"):
+                    endpoint_info = result["endpoint"]
+                    method = endpoint_info.get("method", "GET").upper()
+                    path = endpoint_info.get("path", "")
+                    
+                    if path:
+                        logger.info(f"  ✅ AI inferred endpoint: {method} {path}")
+                        logger.info(f"     Reason: {endpoint_info.get('reason', 'N/A')}")
+                        
+                        return [APISpec(
+                            endpoint_path=path,
+                            http_methods=[method],
+                            service_name="policy-mgmt",  # Infer from path
+                            request_schema=None,
+                            response_schema=None,
+                            parameters=None,
+                            authentication=None
+                        )]
+                    else:
+                        logger.debug("AI inference returned empty path")
+                else:
+                    logger.debug("AI not confident enough to infer endpoint")
+            else:
+                logger.debug("Failed to parse AI inference response")
+            
+            return []
+            
+        except Exception as e:
+            logger.warning(f"AI endpoint inference failed: {e}")
+            return []
     
     async def _integrate_code_analysis(
         self,
