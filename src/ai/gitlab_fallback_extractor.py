@@ -351,10 +351,10 @@ class GitLabFallbackExtractor:
         Find branches matching the story key pattern.
         
         Convention: ALL stories have branches with the story key in the name
-        (e.g., "PLAT-13541", "feature/PLAT-13541", "bugfix/PLAT-13541")
+        (e.g., "PROJ-12345", "feature/PROJ-12345", "bugfix/PROJ-12345")
         
         Args:
-            story_key: Story key (e.g., "PLAT-13541")
+            story_key: Story key (e.g., "PROJ-12345")
             
         Returns:
             List of branch/project information
@@ -460,7 +460,7 @@ class GitLabFallbackExtractor:
         Extract endpoints from GitLab codebase using MCP as fallback.
         
         Args:
-            story_key: Story key (e.g., "PLAT-13541")
+            story_key: Story key (e.g., "PROJ-12345")
             story_text: Combined story text for analysis
             project_key: Project key (e.g., "PLAT")
             
@@ -762,7 +762,7 @@ Be extremely specific and technical. These queries will search actual code."""
         
         Args:
             story_text: Story summary and description
-            story_key: Story key (e.g., "PLAT-13541")
+            story_key: Story key (e.g., "PROJ-12345")
             entities: Extracted entities (e.g., ["policy", "application"])
             
         Returns:

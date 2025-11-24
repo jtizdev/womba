@@ -57,7 +57,7 @@ RAG_AUTO_INDEX=true
 
 ### Index a Story
 ```bash
-womba index PLAT-12991
+womba index PROJ-12991
 ```
 Indexes the story's context (Confluence docs, linked stories, etc.)
 
@@ -90,7 +90,7 @@ GET /api/v1/rag/stats
 ```bash
 POST /api/v1/rag/index
 {
-  "story_key": "PLAT-12991",
+  "story_key": "PROJ-12991",
   "project_key": "PLAT"
 }
 ```
@@ -179,7 +179,7 @@ RAG uses `project_key` to filter results, so each project learns from its own co
 
 **Solutions**:
 1. Run initial indexing: `womba index-all`
-2. Or index specific stories: `womba index PLAT-123`
+2. Or index specific stories: `womba index PROJ-123`
 3. System will now work gracefully with empty collections (returns no context)
 
 **Verify**: Check `womba rag-stats` for document counts
@@ -265,11 +265,11 @@ womba rag-stats
 # Should show > 0 documents
 
 # 2. Index test data
-womba index PLAT-123
+womba index PROJ-123
 # Should complete without errors
 
 # 3. Generate with RAG
-womba generate PLAT-124
+womba generate PROJ-124
 # Check logs for "RAG context retrieved" message
 
 # 4. Verify retrieval

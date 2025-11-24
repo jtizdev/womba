@@ -21,7 +21,7 @@ def mock_jira_client():
         
         # Mock search_issues to return test data
         mock_story = Mock()
-        mock_story.key = "PLAT-123"
+        mock_story.key = "PROJ-123"
         mock_story.summary = "Test story"
         mock_story.description = "Test description"
         mock_story.issue_type = "Story"
@@ -65,7 +65,7 @@ def mock_zephyr_client():
         
         # Mock get_test_cases to return test data
         mock_test = {
-            'key': 'PLAT-T123',
+            'key': 'PROJ-T123',
             'name': 'Test case',
             'objective': 'Test objective',
             'precondition': 'Test precondition',
@@ -294,7 +294,7 @@ async def test_jql_pagination():
         mock_client_class.return_value = mock_client
         
         # Mock all stories returned by search_all_issues
-        mock_stories = [Mock(key=f"PLAT-{i}") for i in range(75)]
+        mock_stories = [Mock(key=f"PROJ-{i}") for i in range(75)]
         mock_client.search_all_issues.return_value = mock_stories
         
         # Mock indexer to avoid actual indexing

@@ -24,7 +24,7 @@ fi
 export WOMBA_API_URL="https://womba.onrender.com"
 export WOMBA_API_KEY="${WOMBA_API_KEY:-test-key}"
 
-TEST_STORY="PLAT-12991"
+TEST_STORY="PROJ-12345"
 
 # Test 1: Generate command
 echo ""

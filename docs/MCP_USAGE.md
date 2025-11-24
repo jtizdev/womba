@@ -33,7 +33,7 @@ When triggered, the `GitLabFallbackExtractor`:
 2. **Searches Codebase via MCP**:
    - Semantic code search for endpoint-related code
    - Searches for OpenAPI files, route definitions
-   - Looks in branches matching story key (e.g., `PLAT-XXXXX`)
+   - Looks in branches matching story key (e.g., `PROJ-XXXXX`)
 
 3. **Extracts Endpoints**:
    - Parses OpenAPI YAML/JSON files
@@ -80,13 +80,13 @@ MCP fallback **only** triggers when:
 
 ## Example Scenario
 
-**Story**: PLAT-13541 (no endpoints in story, no Swagger matches)
+**Story**: PROJ-13541 (no endpoints in story, no Swagger matches)
 
 1. Normal extraction: 0 endpoints
 2. AI filtering: N/A (nothing to filter)
 3. **MCP fallback triggers**:
    - Searches configured GitLab group
-   - Finds branches: `feature/PLAT-13541`, `PLAT-13541`
+   - Finds branches: `feature/PROJ-13541`, `PROJ-13541`
    - Searches for OpenAPI files and route definitions
    - Extracts endpoints from found code
 4. Returns extracted endpoints
@@ -97,7 +97,7 @@ MCP fallback **only** triggers when:
 
 ```bash
 # Enrich a story that should trigger MCP fallback
-kubectl -n womba exec <pod> -- womba enrich PLAT-XXXXX --no-cache
+kubectl -n womba exec <pod> -- womba enrich PROJ-XXXXX --no-cache
 
 # Check logs for MCP activity
 kubectl -n womba logs -f <pod> | grep -i "mcp\|fallback\|gitlab"
@@ -107,7 +107,7 @@ kubectl -n womba logs -f <pod> | grep -i "mcp\|fallback\|gitlab"
 
 ```
 No endpoints found via normal extraction, trying GitLab fallback...
-Starting GitLab MCP fallback extraction for PLAT-XXXXX
+Starting GitLab MCP fallback extraction for PROJ-XXXXX
 GitLab MCP client configured with command: npx
 Semantic code search via MCP: ...
 GitLab MCP fallback extracted X API specifications

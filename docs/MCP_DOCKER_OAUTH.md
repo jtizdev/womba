@@ -40,7 +40,7 @@ The Docker setup includes:
 
 ```bash
 # Trigger MCP call (this will start OAuth flow)
-docker exec womba-server womba enrich PLAT-13541 --no-cache
+docker exec womba-server womba enrich PROJ-13541 --no-cache
 
 # Check logs for OAuth URL
 docker logs womba-server | grep -i "authorize\|oauth"

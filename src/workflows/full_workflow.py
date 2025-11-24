@@ -131,7 +131,7 @@ class FullWorkflowOrchestrator:
         
         zephyr = ZephyrIntegration()
         
-        # Extract project key from story key (e.g., PLAT-12991 -> PLAT)
+        # Extract project key from story key (e.g., PROJ-12345 -> PROJ)
         project_key = self.story_key.split('-')[0]
         
         results = await zephyr.upload_test_plan(
@@ -290,7 +290,7 @@ async def run_full_workflow(story_key: str, config: WombaConfig, repo_path: Opti
     Convenience function to run full workflow
     
     Args:
-        story_key: Jira story key (e.g., PLAT-12991)
+        story_key: Jira story key (e.g., PROJ-12345)
         config: Womba configuration
         repo_path: Override repository path
         folder_path: Optional Zephyr folder path

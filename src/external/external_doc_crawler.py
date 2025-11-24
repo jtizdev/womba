@@ -54,7 +54,7 @@ class ExternalDocCrawler:
     def is_available(self) -> bool:
         """Check if required dependencies are available."""
         if requests is None or BeautifulSoup is None:
-            logger.warning("PlainID crawler unavailable: install requests and beautifulsoup4")
+            logger.warning("External doc crawler unavailable: install requests and beautifulsoup4")
             return False
         return True
 
@@ -189,7 +189,7 @@ class ExternalDocCrawler:
         
         # Accept URLs that are:
         # 1. Under the base path (e.g., /v1-api/...)
-        # 2. OR under /apidocs/ (PlainID API documentation)
+        # 2. OR under /apidocs/ (API documentation)
         # 3. OR under /docs/ (general documentation)
         if not (path.startswith(self.base_path) or 
                 path.startswith('/apidocs/') or 
@@ -212,7 +212,7 @@ class ExternalDocCrawler:
                 logger.debug(f"Page not found (404): {url}")
                 return None
             if response.status_code != 200:
-                logger.warning(f"PlainID crawler HTTP {response.status_code} for {url}")
+                logger.warning(f"External doc crawler HTTP {response.status_code} for {url}")
                 return None
             response.encoding = response.encoding or "utf-8"
             return response.text
@@ -220,7 +220,7 @@ class ExternalDocCrawler:
             logger.warning(f"Timeout fetching {url}")
             return None
         except requests.exceptions.RequestException as exc:
-            logger.warning(f"PlainID crawler failed to fetch {url}: {exc}")
+            logger.warning(f"External doc crawler failed to fetch {url}: {exc}")
             return None
         except Exception as exc:  # pragma: no cover - network issues
             logger.warning(f"Unexpected error fetching {url}: {exc}")

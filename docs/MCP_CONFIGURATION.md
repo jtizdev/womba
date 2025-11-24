@@ -87,7 +87,7 @@ To verify MCP is working:
 2. **Test fallback extraction:**
    - Create a story with no explicit API endpoints
    - Run story enrichment
-   - Check logs for: `Starting GitLab MCP fallback extraction for PLAT-XXXXX`
+   - Check logs for: `Starting GitLab MCP fallback extraction for PROJ-XXXXX`
    - If MCP is working, you'll see search results
 
 3. **Common Issues:**
@@ -112,7 +112,7 @@ To verify MCP is working:
 
 ### No Results from MCP Search
 
-- Verify the story key matches branch naming conventions (e.g., `PLAT-13541`)
+- Verify the story key matches branch naming conventions (e.g., `PROJ-13541`)
 - Check that repositories in `GITLAB_GROUP_PATH` are accessible
 - Review MCP search query logs to see what's being searched
 

@@ -165,7 +165,7 @@ class ContextIndexer:
 
     async def index_external_docs(self) -> int:
         """
-        Index external PlainID documentation.
+        Index external documentation.
         Uses DocumentFetcher and DocumentIndexer services.
         
         Returns:

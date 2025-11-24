@@ -80,7 +80,7 @@ async def enrich_story_command(
         print(f"\n🔬 Enriching story with context analysis...")
         print("   • Following linked stories recursively")
         print("   • Extracting API specifications from Swagger")
-        print("   • Identifying PlainID components")
+        print("   • Identifying platform components")
         print("   • Analyzing risk areas")
         
         enriched = await story_enricher.enrich_story(

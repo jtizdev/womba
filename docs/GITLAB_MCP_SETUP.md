@@ -76,7 +76,7 @@ Example flow:
 # When no endpoints found:
 gitlab_extractor = GitLabFallbackExtractor()
 api_specs = await gitlab_extractor.extract_from_codebase(
-    story_key="PLAT-13541",
+    story_key="PROJ-13541",
     story_text="Policy list with pagination...",
     project_key="PLAT"
 )
@@ -199,7 +199,7 @@ import asyncio
 async def debug_search():
     extractor = GitLabFallbackExtractor()
     results = await extractor._search_codebase_via_mcp(
-        story_key='PLAT-13541',
+        story_key='PROJ-13541',
         story_text='Policy list endpoint with pagination',
         service_queries=['policy', 'list', 'endpoint']
     )

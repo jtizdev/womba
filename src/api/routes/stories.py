@@ -73,7 +73,7 @@ async def search_stories(request: SearchRequest):
         import re
         collection = store.client.get_collection("jira_issues")
         
-        # Check if query looks like a Jira key (e.g., "PLAT-13541")
+        # Check if query looks like a Jira key (e.g., "PROJ-12345")
         jira_key_pattern = r'^[A-Z]+-\d+$'
         if re.match(jira_key_pattern, request.query.strip(), re.IGNORECASE):
             # Try exact key match first
@@ -102,7 +102,7 @@ async def search_stories(request: SearchRequest):
             # Try multiple query variations to improve semantic search matching
             # Longer queries sometimes don't match well, so try both original and simplified
             
-            # Extract project key if query contains something like "PLAT-XXX" pattern
+            # Extract project key if query contains something like "PROJ-XXX" pattern
             project_key = None
             import re
             key_match = re.search(r'([A-Z]+)-\d+', request.query, re.IGNORECASE)
@@ -216,9 +216,9 @@ async def search_stories(request: SearchRequest):
                         # Keep result with highest similarity
                         if key not in results_by_key or similarity > results_by_key[key].get('similarity', 0.0):
                             results_by_key[key] = result
-                            # Log if we found PLAT-13541
+                            # Log if we found the story
                             if '13541' in key:
-                                logger.info(f"✅ Found PLAT-13541 with query variant: '{query_variant[:50]}...' (similarity={similarity:.4f})")
+                                logger.info(f"✅ Found story with query variant: '{query_variant[:50]}...' (similarity={similarity:.4f})")
             
             # Convert dict to list
             all_results = list(results_by_key.values())
@@ -228,12 +228,12 @@ async def search_stories(request: SearchRequest):
             # Sort by similarity (best matches first)
             all_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
             
-            # Check if PLAT-13541 is in the results
+            # Check if the story is in the results
             plat13541_found = any('13541' in r.get('metadata', {}).get('story_key', '') for r in all_results)
             if plat13541_found:
                 for r in all_results:
                     if '13541' in r.get('metadata', {}).get('story_key', ''):
-                        logger.info(f"PLAT-13541 found at position {all_results.index(r)+1} with similarity {r.get('similarity', 0):.4f}")
+                        logger.info(f"Story found at position {all_results.index(r)+1} with similarity {r.get('similarity', 0):.4f}")
                         break
             
             results = all_results[:request.max_results * 2]
@@ -255,7 +255,7 @@ async def search_stories(request: SearchRequest):
                 )
                 
                 # Extract description from the RAG document
-                # Format is "Story: PLAT-XXX - Title\n\nDescription..."
+                # Format is "Story: PROJ-XXX - Title\n\nDescription..."
                 full_document = result.get("document", "")
                 description = "No description available"
                 if full_document:

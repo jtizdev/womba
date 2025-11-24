@@ -331,7 +331,7 @@ class RAGRetriever:
         query: str,
         metadata_filter: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Retrieve similar external documentation (PlainID API docs)."""
+        """Retrieve similar external documentation (external API docs)."""
         try:
             # Check if collection has documents
             stats = self.store.get_collection_stats(self.store.EXTERNAL_DOCS_COLLECTION)
@@ -416,7 +416,7 @@ class RAGRetriever:
             'swagger_docs': 1.12,      # API specs = very relevant
             'existing_tests': 1.10,    # Similar tests = helpful for style
             'confluence_docs': 1.05,   # Internal docs = somewhat relevant
-            'external_docs': 1.02,     # PlainID docs = background only
+            'external_docs': 1.02,     # External docs = background only
         }
         
         def priority_score(doc: Dict[str, Any]) -> float:

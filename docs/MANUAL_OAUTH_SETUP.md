@@ -156,7 +156,7 @@ async def test():
     client = GitLabMCPClient()
     print(f'MCP Available: {client.mcp_available}')
     if client.mcp_available:
-        results = await client.semantic_code_search('plainid/srv', 'API endpoint', limit=1)
+        results = await client.semantic_code_search('your-group/your-services', 'API endpoint', limit=1)
         print(f'✅ Success! Got {len(results)} results')
     else:
         print('❌ MCP not available')

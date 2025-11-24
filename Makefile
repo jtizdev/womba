@@ -63,13 +63,13 @@ deploy-test-pypi:
 
 # Usage examples
 example-generate:
-	python3 generate_test_plan.py PLAT-12991
+	python3 generate_test_plan.py PROJ-12345
 
 example-upload:
-	python3 upload_to_zephyr.py PLAT-12991
+	python3 upload_to_zephyr.py PROJ-12345
 
 example-evaluate:
-	python3 evaluate_quality.py PLAT-12991
+	python3 evaluate_quality.py PROJ-12345
 
 # Development
 dev:

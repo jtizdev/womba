@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 # Test configuration
-TEST_STORY = "PLAT-12991"
+TEST_STORY = "PROJ-12345"
 WOMBA_API_URL = "https://womba.onrender.com"
 WOMBA_API_KEY = "test-key"  # Override with env var
 

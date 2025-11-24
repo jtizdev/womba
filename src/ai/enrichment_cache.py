@@ -38,7 +38,7 @@ class EnrichmentCache:
         Get cache file path for a story.
         
         Args:
-            story_key: Story key (e.g., PLAT-123)
+            story_key: Story key (e.g., PROJ-123)
             story_updated: Optional story update timestamp for versioning
             
         Returns:

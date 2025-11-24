@@ -217,7 +217,7 @@ class ZephyrIntegration:
         via a separate endpoint: POST /testcases/{key}/teststeps
         
         Args:
-            test_case_key: The Zephyr test case key (e.g., 'PLAT-T1234')
+            test_case_key: The Zephyr test case key (e.g., 'PROJ-T1234')
             steps: List of TestStep objects
         """
         url = f"{self.base_url}/testcases/{test_case_key}/teststeps"

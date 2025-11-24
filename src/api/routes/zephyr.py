@@ -88,7 +88,7 @@ async def upload_test_cases(request: UploadTestCasesRequest):
                 
                 if tc_id:
                     selected_identifiers.add(tc_id)
-                    # Try to extract index from ID format like "TC-PLAT-13541-1" -> index 0
+                    # Try to extract index from ID format like "TC-PROJ-12345-1" -> index 0
                     # Pattern: TC-{PROJECT}-{ISSUE}-{INDEX}
                     match = re.search(r'-(\d+)$', tc_id)
                     if match:

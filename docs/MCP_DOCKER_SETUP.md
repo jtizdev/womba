@@ -168,7 +168,7 @@ docker-compose logs -f womba-server | grep -i "mcp\|fallback"
 
 Look for messages like:
 ```
-INFO: Starting GitLab MCP fallback extraction for PLAT-13541
+INFO: Starting GitLab MCP fallback extraction for PROJ-13541
 INFO: GitLab MCP client initialized (endpoint: https://gitlab.com/api/v4/mcp)
 INFO: Using direct HTTP calls with token authentication (no OAuth needed)
 INFO: Semantic code search via GitLab MCP: ...
@@ -182,7 +182,7 @@ INFO: Semantic code search via GitLab MCP: ...
 
 2. **Generate test plan** for a story with no Swagger docs:
    ```
-   Example: PLAT-13541 (if Swagger doesn't have this endpoint)
+   Example: PROJ-13541 (if Swagger doesn't have this endpoint)
    ```
 
 3. **Check logs** to see MCP kick in:
@@ -199,7 +199,7 @@ INFO: Semantic code search via GitLab MCP: ...
 curl -X POST http://localhost:8000/api/v1/test-plans \
   -H "Content-Type: application/json" \
   -d '{
-    "issue_key": "PLAT-13541",
+    "issue_key": "PROJ-13541",
     "project_key": "PLAT"
   }'
 ```

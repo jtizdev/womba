@@ -15,7 +15,7 @@ from src.config.settings import settings
 
 class APIDocsClient:
     """
-    Fetches API documentation for ANY customer, not just PlainID.
+    Fetches API documentation for any customer.
     
     Supports multiple doc formats:
     - OpenAPI/Swagger (JSON/YAML)

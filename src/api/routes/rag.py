@@ -187,7 +187,7 @@ async def search_rag(request: SearchRequest):
         if request.project_key:
             metadata_filter["project_key"] = request.project_key
         
-        # Check if query looks like a Jira key (e.g., "PLAT-18104")
+        # Check if query looks like a Jira key (e.g., "PROJ-12345")
         import re
         jira_key_pattern = r'^[A-Z]+-\d+$'
         exact_match = None

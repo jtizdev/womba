@@ -19,32 +19,32 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  womba generate PLAT-12991              # Generate test plan
-  womba upload PLAT-12991                # Upload to Zephyr
-  womba generate PLAT-12991 --upload     # Generate and upload
-  womba evaluate PLAT-12991              # Check quality score
+  womba generate PROJ-12345              # Generate test plan
+  womba upload PROJ-12345                # Upload to Zephyr
+  womba generate PROJ-12345 --upload     # Generate and upload
+  womba evaluate PROJ-12345              # Check quality score
   womba configure                        # Interactive setup
   
   # Full end-to-end workflow:
-  womba all PLAT-12991                   # Generate + Upload + Create tests + PR
+  womba all PROJ-12345                   # Generate + Upload + Create tests + PR
   
   # Automation (generate executable test code):
-  womba automate PLAT-12991 --repo /path/to/test/repo
-  womba automate PLAT-12991 --repo /path/to/test/repo --framework playwright
-  womba automate PLAT-12991 --repo /path/to/test/repo --ai-tool cursor
+  womba automate PROJ-12345 --repo /path/to/test/repo
+  womba automate PROJ-12345 --repo /path/to/test/repo --framework playwright
+  womba automate PROJ-12345 --repo /path/to/test/repo --ai-tool cursor
   
   # Story enrichment (preprocessing & analysis):
-  womba enrich PLAT-12991                # Enrich story with context
-  womba enrich PLAT-12991 --no-cache     # Force re-enrichment
-  womba enrich PLAT-12991 --export enriched.json  # Export to file
+  womba enrich PROJ-12345                # Enrich story with context
+  womba enrich PROJ-12345 --no-cache     # Force re-enrichment
+  womba enrich PROJ-12345 --export enriched.json  # Export to file
   
   # RAG (Retrieval-Augmented Generation) management:
-  womba index PLAT-12991                 # Index a story's context
+  womba index PROJ-12345                 # Index a story's context
   womba index-all                        # Index all available data (batch)
   womba rag-stats                        # Show RAG statistics
   womba rag-clear                        # Clear RAG database
-  womba generate PLAT-12991 --upload --folder "Regression/UI"   # Generate + upload into folder
-  womba upload-plan --file test_plans/test_plan_PLAT-12991.json --folder "Regression/UI"   # Upload saved plan
+  womba generate PROJ-12345 --upload --folder "Regression/UI"   # Generate + upload into folder
+  womba upload-plan --file test_plans/test_plan_PROJ-12345.json --folder "Regression/UI"   # Upload saved plan
   womba index-source --source jira --source confluence              # Index specific sources only
         """
     )
@@ -59,7 +59,7 @@ Examples:
     parser.add_argument(
         'story_key',
         nargs='?',
-        help='Jira story key (e.g., PLAT-12991)'
+        help='Jira story key (e.g., PROJ-12345)'
     )
     
     parser.add_argument(
@@ -116,7 +116,7 @@ Examples:
         '--source',
         dest='sources',
         action='append',
-        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, plainid, gitlab, swagger. Repeatable.'
+        help='Data source to index (use with index-source). Options: jira, confluence, zephyr, external, gitlab, swagger. Repeatable.'
     )
     
     parser.add_argument(
@@ -284,12 +284,11 @@ Examples:
             print("💡 Run 'womba configure' or provide --project-key")
             return
 
-        valid_sources = {'zephyr', 'jira', 'confluence', 'plainid', 'external', 'gitlab', 'swagger'}
+        valid_sources = {'zephyr', 'jira', 'confluence', 'external', 'gitlab', 'swagger'}
         canonical_map = {
             'zephyr': 'tests',
             'jira': 'stories',
             'confluence': 'docs',
-            'plainid': 'external_docs',
             'external': 'external_docs',
             'gitlab': 'swagger_docs',
             'swagger': 'swagger_docs'

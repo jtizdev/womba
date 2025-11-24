@@ -213,7 +213,7 @@ async def index_all_data(
     print("  1. All existing Zephyr tests")
     print("  2. All Jira stories from the project (Stories, Tasks, Bugs)")
     print("  3. All Confluence docs from project spaces")
-    print("  4. PlainID developer portal documentation")
+    print("  4. External developer portal documentation")
     print("  5. GitLab Swagger/OpenAPI documentation")
     print("\n⏳ Estimated time: 5-15 minutes for large projects...")
     print("=" * 70 + "\n")
@@ -263,8 +263,8 @@ async def index_all_data(
         logger.error(f"Phase 3 failed: {e}")
         print(f"❌ Phase 3 failed: {e}\n")
     
-    # Phase 4: External Docs (PlainID)
-    print("\n🌐 [4/5] PHASE 4: Fetching and indexing PlainID documentation...")
+    # Phase 4: External Docs
+    print("\n🌐 [4/5] PHASE 4: Fetching and indexing external documentation...")
     phase_start = time.time()
     try:
         results['external_docs'] = await indexer.index_external_docs()
@@ -366,7 +366,7 @@ async def index_specific_sources(
         canonical_to_record.add('docs')
 
     if any(src in normalized_sources for src in ('plainid', 'external')):
-        print("\n🌐 Fetching and indexing PlainID documentation...")
+        print("\n🌐 Fetching and indexing external documentation...")
         try:
             results['external_docs'] = await indexer.index_external_docs()
             print(f"✅ Indexed {results['external_docs']} external docs")

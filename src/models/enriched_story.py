@@ -109,7 +109,7 @@ class EnrichedStory(BaseModel):
     using a fallback flow: story → swagger RAG → GitLab MCP.
     """
     
-    story_key: str = Field(description="Primary story key (e.g., PLAT-123)")
+    story_key: str = Field(description="Primary story key (e.g., PROJ-123)")
     feature_narrative: str = Field(description="2-3 paragraph synthesis explaining what/why")
     acceptance_criteria: List[str] = Field(
         default_factory=list,
@@ -121,7 +121,7 @@ class EnrichedStory(BaseModel):
     )
     risk_areas: List[str] = Field(
         default_factory=list,
-        description="Integration points, PlainID components, failure scenarios"
+        description="Integration points, platform components, failure scenarios"
     )
     enrichment_timestamp: datetime = Field(
         default_factory=datetime.utcnow,

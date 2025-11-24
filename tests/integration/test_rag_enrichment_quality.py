@@ -95,7 +95,7 @@ async def test_prompt_includes_rag_content():
     
     # Collect context for a real story
     collector = StoryCollector()
-    context = await collector.collect_story_context('PLAT-15596')
+    context = await collector.collect_story_context('PROJ-15596')
     
     # Generate with RAG enabled
     generator = TestPlanGenerator(use_openai=True)
@@ -117,7 +117,7 @@ async def test_prompt_includes_rag_content():
 async def test_enrichment_no_truncation():
     """Test that enrichment includes all subtasks without truncation."""
     collector = StoryCollector()
-    context = await collector.collect_story_context('PLAT-15596')
+    context = await collector.collect_story_context('PROJ-15596')
     
     enricher = StoryEnricher()
     enriched = await enricher.enrich_story(context.main_story, context)
@@ -143,7 +143,7 @@ async def test_enrichment_no_truncation():
 async def test_acceptance_criteria_extraction():
     """Test that acceptance criteria are extracted correctly, not corrupted."""
     collector = StoryCollector()
-    context = await collector.collect_story_context('PLAT-15596')
+    context = await collector.collect_story_context('PROJ-15596')
     
     story = context.main_story
     
@@ -173,7 +173,7 @@ def test_rag_database_not_empty():
 async def test_prd_content_quality_in_enrichment():
     """Test that PRD content in enrichment is meaningful, not just URLs."""
     collector = StoryCollector()
-    context = await collector.collect_story_context('PLAT-15596')
+    context = await collector.collect_story_context('PROJ-15596')
     
     enricher = StoryEnricher()
     enriched = await enricher.enrich_story(context.main_story, context)

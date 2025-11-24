@@ -1,7 +1,7 @@
 """
-Regression test for PLAT-13541 quality.
+Regression test for story quality.
 
-This test validates that the specific story PLAT-13541 maintains quality standards.
+This test validates that story enrichment and test plan generation maintain quality standards.
 Run this test regularly to catch regressions.
 """
 
@@ -15,16 +15,16 @@ from src.ai.test_plan_generator import TestPlanGenerator
 
 
 @pytest.mark.asyncio
-async def test_plat_13541_enrichment_quality():
-    """Regression test for PLAT-13541 enrichment quality."""
+async def test_story_quality_enrichment_quality():
+    """Regression test for PROJ-12345 enrichment quality."""
     collector = StoryCollector()
-    context = await collector.collect_story_context('PLAT-13541')
+    context = await collector.collect_story_context('PROJ-12345')
     
     enricher = StoryEnricher()
     enriched = await enricher.enrich_story(context.main_story, context)
     
     # Story-specific validations
-    assert enriched.story_key == 'PLAT-13541'
+    assert enriched.story_key == 'PROJ-12345'
     assert len(enriched.feature_narrative) > 1500, \
         f"Narrative should be detailed, got {len(enriched.feature_narrative)} chars"
     assert len(enriched.acceptance_criteria) >= 4, \
@@ -49,15 +49,15 @@ async def test_plat_13541_enrichment_quality():
 
 
 @pytest.mark.asyncio
-async def test_plat_13541_test_generation_quality():
-    """Regression test for PLAT-13541 test plan quality."""
+async def test_story_quality_test_generation_quality():
+    """Regression test for PROJ-12345 test plan quality."""
     # Use cached test plan if available, otherwise generate
-    test_plan_path = Path('test_plans/test_plan_PLAT-13541.json')
+    test_plan_path = Path('test_plans/test_plan_PROJ-12345.json')
     
     if not test_plan_path.exists():
         # Generate test plan
         collector = StoryCollector()
-        context = await collector.collect_story_context('PLAT-13541')
+        context = await collector.collect_story_context('PROJ-12345')
         
         generator = TestPlanGenerator(use_openai=True)
         test_plan = await generator.generate_test_plan(context)
@@ -101,9 +101,9 @@ async def test_plat_13541_test_generation_quality():
             f"Test '{test.get('title')}' should reference story-specific concepts"
 
 
-def test_plat_13541_prompt_file_exists():
+def test_story_quality_prompt_file_exists():
     """Test that prompt debug file was created."""
-    prompt_path = Path('debug_prompts/prompt_PLAT-13541.txt')
+    prompt_path = Path('debug_prompts/prompt_PROJ-12345.txt')
     assert prompt_path.exists(), "Prompt debug file should be created"
     
     # Check prompt size

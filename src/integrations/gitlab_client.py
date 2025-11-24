@@ -57,7 +57,7 @@ class GitLabClient:
         List all projects in a GitLab group.
         
         Args:
-            group_path: Full path to the group (e.g., "plainid/srv")
+            group_path: Full path to the group (e.g., "your-group/your-services")
             
         Returns:
             List of project dictionaries with id, name, path, web_url
@@ -209,7 +209,7 @@ class GitLabClient:
         
         Args:
             project_id: GitLab project ID
-            search_pattern: Optional pattern to filter branch names (e.g., "PLAT-13541")
+            search_pattern: Optional pattern to filter branch names (e.g., "PROJ-12345")
             
         Returns:
             List of branch dictionaries with name, commit info

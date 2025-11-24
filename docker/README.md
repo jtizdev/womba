@@ -44,7 +44,7 @@ Container includes:
 
 ```bash
 # Clone the repository
-git clone https://github.com/plainid/womba.git
+git clone <repository-url>
 cd womba
 
 # Copy environment template
@@ -93,14 +93,14 @@ docker exec -it womba-server womba --help
 
 ```bash
 # Build unified image with API + CLI
-docker build -t plainid/womba:latest .
+docker build -t womba:latest .
 ```
 
 ### Build with Specific Version Tags
 
 ```bash
 # Tag with version
-docker build -t plainid/womba:2.0.0 -t plainid/womba:latest .
+docker build -t womba:2.0.0 -t womba:latest .
 ```
 
 ### Build via Docker Compose
@@ -125,31 +125,28 @@ docker login
 ### 2. Tag Image for Your Organization
 
 ```bash
-# If using plainid organization (already tagged)
-docker tag plainid/womba:latest plainid/womba:latest
-
-# Or tag with your organization
-docker tag plainid/womba:latest yourorg/womba:latest
+# Tag with your organization
+docker tag womba:latest yourorg/womba:latest
 
 # Tag with version
-docker tag plainid/womba:latest plainid/womba:2.0.0
+docker tag womba:latest yourorg/womba:2.0.0
 ```
 
 ### 3. Push to Docker Hub
 
 ```bash
 # Push latest tag
-docker push plainid/womba:latest
+docker push yourorg/womba:latest
 
 # Push specific version
-docker push plainid/womba:2.0.0
+docker push yourorg/womba:2.0.0
 ```
 
 ### 4. Pull and Run on Any Server
 
 ```bash
 # On your deployment server
-docker pull plainid/womba:latest
+docker pull yourorg/womba:latest
 
 # Run with docker-compose
 docker-compose up -d
@@ -160,7 +157,7 @@ docker run -d \
   -p 8000:8000 \
   -v womba-data:/app/data \
   --env-file .env \
-  plainid/womba:latest
+  yourorg/womba:latest
 ```
 
 ## Configuration

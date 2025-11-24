@@ -57,17 +57,17 @@ Ensure your test repository:
 
 1. **Generate test plan** (as usual):
 ```bash
-womba generate PLAT-12991
+womba generate PROJ-12991
 ```
 
 2. **Review the generated test plan**:
 ```json
-test_plan_PLAT-12991.json
+test_plan_PROJ-12991.json
 ```
 
 3. **Generate executable test code**:
 ```bash
-womba automate PLAT-12991 --repo /path/to/your/test/repo
+womba automate PROJ-12991 --repo /path/to/your/test/repo
 ```
 
 This will:
@@ -82,21 +82,21 @@ This will:
 
 **Specify framework explicitly:**
 ```bash
-womba automate PLAT-12991 \
+womba automate PROJ-12991 \
   --repo /path/to/test/repo \
   --framework playwright
 ```
 
 **Use cursor instead of aider:**
 ```bash
-womba automate PLAT-12991 \
+womba automate PROJ-12991 \
   --repo /path/to/test/repo \
   --ai-tool cursor
 ```
 
 **Generate code without creating PR:**
 ```bash
-womba automate PLAT-12991 \
+womba automate PROJ-12991 \
   --repo /path/to/test/repo \
   --create-pr false
 ```
@@ -143,14 +143,14 @@ The AI tool (aider or cursor):
 
 ```bash
 # Full workflow
-womba generate PLAT-15471
-womba automate PLAT-15471 --repo /Users/you/projects/my-tests
+womba generate PROJ-15471
+womba automate PROJ-15471 --repo /Users/you/projects/my-tests
 
 # Output:
-🤖 Womba Test Automation - PLAT-15471
+🤖 Womba Test Automation - PROJ-15471
 ================================================================================
 
-📄 Loading test plan from test_plan_PLAT-15471.json...
+📄 Loading test plan from test_plan_PROJ-15471.json...
 ✅ Loaded 6 test cases
 
 🔧 Initializing test code generator...

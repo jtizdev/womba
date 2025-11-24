@@ -1,6 +1,6 @@
 """
 Document fetching service for retrieving documents from external sources.
-Single Responsibility: Fetching documents from PlainID, GitLab, web, etc.
+Single Responsibility: Fetching documents from external sources, GitLab, web, etc.
 """
 
 import asyncio
@@ -16,7 +16,7 @@ class DocumentFetcher:
     """
     Fetches documents from various external sources.
     Features:
-    - PlainID documentation crawling and fetching
+    - External documentation crawling and fetching
     - URL discovery
     - Content retrieval
     """
