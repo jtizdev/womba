@@ -13,12 +13,9 @@ with open("requirements-minimal.txt", "r", encoding="utf-8") as fh:
 setup(
     name="womba",
     version="1.8.0",
-    author="PlainID",
-    author_email="support@plainid.com",
     description="AI-powered test generation from Jira stories to Zephyr Scale",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/plainid/womba",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

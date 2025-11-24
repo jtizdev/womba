@@ -131,9 +131,9 @@ class EnrichedStory(BaseModel):
         default_factory=list,
         description="All story IDs analyzed during enrichment"
     )
-    plainid_components: List[str] = Field(
+    platform_components: List[str] = Field(
         default_factory=list,
-        description="PlainID components involved (PAP, PDP, POPs, etc.)"
+        description="Platform components involved (architecture-specific components)"
     )
     confluence_docs: List[ConfluenceDocRef] = Field(
         default_factory=list,

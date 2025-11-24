@@ -107,7 +107,7 @@ class SwaggerExtractor:
         endpoints = set()
         
         # Pattern 1: Method + path (GET /path, POST /path, etc.)
-        # This catches PlainID endpoints like "GET policy-mgmt/policies" or "GET /policy-mgmt/policies"
+        # This catches API endpoints like "GET policy-mgmt/policies" or "GET /policy-mgmt/policies"
         method_pattern = r'(GET|POST|PUT|PATCH|DELETE)\s+(/?[a-zA-Z][a-zA-Z0-9_/\-{}.?&=%\[\]]+)'
         method_matches = re.findall(method_pattern, text, re.IGNORECASE)
         for method, path in method_matches:

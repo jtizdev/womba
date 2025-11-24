@@ -639,7 +639,7 @@ class ZephyrIntegration:
         async with httpx.AsyncClient() as client:
             # Get Jira issue details
             jira_response = await client.get(
-                f"https://plainid.atlassian.net/rest/api/2/issue/{issue_key}",
+                f"{settings.atlassian_base_url}/rest/api/2/issue/{issue_key}",
                 headers={
                     'Authorization': f'Basic {jira_auth}',
                     'Content-Type': 'application/json'

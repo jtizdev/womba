@@ -1,9 +1,9 @@
 """
 Dynamic API documentation client - fetches customer-specific API docs.
 
-NOTE: This class is currently not in use. PlainIDDocCrawler (src/external/plainid_crawler.py)
+NOTE: This class is currently not in use. ExternalDocCrawler (src/external/external_doc_crawler.py)
 is the preferred implementation for fetching API documentation. This class is kept for
-potential future use with non-PlainID customers.
+potential future use with alternative documentation sources.
 """
 
 from typing import Dict, List, Optional
@@ -81,11 +81,7 @@ class APIDocsClient:
         API_DOCS_URL=https://docs.mycompany.com/api
         API_DOCS_TYPE=openapi  # or 'postman', 'readme'
         """
-        # For PlainID specifically (temporary)
-        if project_key == "PLAT":
-            return "https://docs.plainid.io/apidocs/policy-management-apis"
-        
-        # Check environment variable for other customers
+        # Check environment variable for configured external docs
         api_docs_url = getattr(settings, 'api_docs_url', None)
         return api_docs_url
     

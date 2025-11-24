@@ -81,7 +81,7 @@ class GitLabProvider(GitProvider):
         
         # Fallback: construct URL manually
         # Extract project path from remote URL
-        # gitlab.com/plainid/srv/automation.git -> plainid/srv/automation
+        # gitlab.com/company/services/automation.git -> company/services/automation
         remote_url = self.remote_url.replace(".git", "")
         if "gitlab.com/" in remote_url:
             project_path = remote_url.split("gitlab.com/")[1]

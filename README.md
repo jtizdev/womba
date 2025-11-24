@@ -17,7 +17,7 @@ Womba automatically generates comprehensive test cases by:
 
 ```bash
 # Clone repository
-git clone https://github.com/plainid/womba.git
+git clone <repository-url>
 cd womba
 
 # Configure environment
@@ -101,15 +101,12 @@ python3 womba_cli.py all PLAT-12345
 
 - **Clean Output**: Test titles are clear and specific (no generic prefixes)
 
-## Docker Hub Deployment
+## Docker Deployment
 
-Womba is available as Docker images for easy deployment:
+Womba can be deployed using Docker:
 
 ```bash
-# Pull image from Docker Hub
-docker pull plainid/womba:latest
-
-# Or use docker-compose (recommended)
+# Build and run with docker-compose (recommended)
 docker-compose up -d
 
 # Use API
@@ -158,6 +155,3 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 MIT
 
-## Maintainers
-
-Maintained by [jtizdev](https://github.com/jtizdev)

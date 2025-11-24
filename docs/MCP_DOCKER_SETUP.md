@@ -58,7 +58,7 @@ GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxx        # Paste your token
 MCP_GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxx    # Same token
 GITLAB_FALLBACK_ENABLED=true                # Enable MCP fallback
 GITLAB_BASE_URL=https://gitlab.com
-GITLAB_GROUP_PATH=plainid/srv
+GITLAB_GROUP_PATH=your-company/services
 ```
 
 Save the file. Docker will automatically load these when you run `docker-compose up`.
@@ -306,7 +306,7 @@ from src.ai.gitlab_fallback_extractor import GitLabMCPClient
 async def test():
     client = GitLabMCPClient()
     results = await client.semantic_code_search(
-        project_id='plainid/srv',
+        project_id='your-company/services',
         semantic_query='policy list endpoint',
         limit=10
     )

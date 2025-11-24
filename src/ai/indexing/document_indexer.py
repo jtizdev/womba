@@ -373,10 +373,10 @@ class DocumentIndexer:
         
         now = datetime.now()
         return {
-            "source": "plainid_docs",
+            "source": "external_docs",
             "source_url": url,
             "title": title,
-            "project_key": settings.plainid_doc_project_key,
+            "project_key": settings.external_doc_project_key,
             "doc_hash": doc_hash,
             "timestamp": now.isoformat(),
             "last_updated": now.strftime("%b %d, %Y"),  # Human-readable date for display

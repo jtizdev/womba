@@ -59,9 +59,9 @@ class StoryEnricher:
         all_stories = await self._collect_linked_stories(main_story, story_context)
         logger.info(f"Collected {len(all_stories)} linked stories")
         
-        # 2. Extract PlainID components mentioned
-        plainid_components = self._extract_plainid_components(all_stories)
-        logger.debug(f"Found PlainID components: {plainid_components}")
+        # 2. Extract platform components mentioned
+        platform_components = self._extract_platform_components(all_stories)
+        logger.debug(f"Found platform components: {platform_components}")
         
         # 3. Build combined text (will be used in risk_areas and narrative, not for API extraction)
         combined_text = self._build_combined_text(main_story, all_stories)
@@ -101,7 +101,7 @@ class StoryEnricher:
             main_story=main_story,
             linked_stories=all_stories[1:] if len(all_stories) > 1 else [],
             story_context=story_context,
-            plainid_components=plainid_components
+            platform_components=platform_components
         )
         
         # 8. Build related stories summary
@@ -112,7 +112,7 @@ class StoryEnricher:
             main_story=main_story,
             linked_stories=all_stories,
             api_specs=[],  # Empty - API specs are built separately in prompt construction
-            plainid_components=plainid_components
+            platform_components=platform_components
         )
         
         enriched = EnrichedStory(
@@ -122,7 +122,7 @@ class StoryEnricher:
             related_stories=related_stories,
             risk_areas=risk_areas,
             source_story_ids=[s.key for s in all_stories],
-            plainid_components=plainid_components,
+            platform_components=platform_components,
             confluence_docs=confluence_refs,
             functional_points=functional_points
         )
@@ -137,8 +137,8 @@ class StoryEnricher:
         for i, ac in enumerate(all_acceptance_criteria, 1):
             logger.debug(f"  {i}. {ac}")
         logger.debug(f"(API & UI Specifications now built separately via APIContext in prompt construction)")
-        logger.debug(f"\nPlainID Components ({len(plainid_components)}):")
-        for comp in plainid_components:
+        logger.debug(f"\nPlatform Components ({len(platform_components)}):")
+        for comp in platform_components:
             logger.debug(f"  - {comp}")
         logger.debug(f"\nRisk Areas ({len(risk_areas)}):")
         for risk in risk_areas:
@@ -356,20 +356,20 @@ class StoryEnricher:
         logger.info(f"Collected {len(all_stories)} stories (1 main + {len(all_stories)-1} linked, scored by relevance)")
         return all_stories
     
-    def _extract_plainid_components(self, stories: List[JiraStory]) -> List[str]:
+    def _extract_platform_components(self, stories: List[JiraStory]) -> List[str]:
         """
-        Extract PlainID components mentioned in stories.
+        Extract platform components mentioned in stories.
         
         Args:
             stories: List of stories to analyze
             
         Returns:
-            List of unique PlainID components found
+            List of unique platform components found
         """
         components = set()
         
-        # PlainID architecture components
-        plainid_terms = {
+        # Platform architecture components (can be customized per platform)
+        platform_terms = {
             'PAP': 'Policy Administration Point',
             'PDP': 'Policy Decision Point',
             'PEP': 'Policy Enforcement Point',
@@ -378,9 +378,9 @@ class StoryEnricher:
             'Authorizer': 'Authorization Service',
             'Runtime': 'Runtime Engine',
             'Policy': 'Policy Management',
-            'Environment': 'PlainID Environment',
-            'Workspace': 'PlainID Workspace',
-            'Tenant': 'PlainID Tenant',
+            'Environment': 'Platform Environment',
+            'Workspace': 'Platform Workspace',
+            'Tenant': 'Platform Tenant',
             'PBAC': 'Policy-Based Access Control',
             'Authorization API': 'Authorization API',
             'Management API': 'Management API'
@@ -390,9 +390,9 @@ class StoryEnricher:
             text = f"{story.summary} {story.description or ''} {story.acceptance_criteria or ''}"
             text_upper = text.upper()
             
-            for term in plainid_terms.keys():
+            for term in platform_terms.keys():
                 if term.upper() in text_upper or term.lower() in text.lower():
-                    components.add(plainid_terms[term])
+                    components.add(platform_terms[term])
             
             # Also add components from story components field
             for comp in story.components:
@@ -463,7 +463,7 @@ class StoryEnricher:
         main_story: JiraStory,
         linked_stories: List[JiraStory],
         story_context: StoryContext,
-        plainid_components: List[str]
+        platform_components: List[str]
     ) -> str:
         """
         Synthesize feature narrative (2-3 paragraphs).
@@ -472,7 +472,7 @@ class StoryEnricher:
             main_story: Main story
             linked_stories: Linked stories
             story_context: Story context with subtasks, comments, etc.
-            plainid_components: PlainID components involved
+            platform_components: Platform components involved
             
         Returns:
             Narrative text explaining the feature
@@ -495,8 +495,8 @@ class StoryEnricher:
         # Paragraph 2: Technical context and architecture - INCLUDE IMPLEMENTATION DETAILS
         p2_parts = []
         
-        if plainid_components:
-            p2_parts.append(f"**PlainID Architecture**: {', '.join(plainid_components[:8])}")
+        if platform_components:
+            p2_parts.append(f"**Platform Architecture**: {', '.join(platform_components[:8])}")
         
         subtasks = story_context.get("subtasks", [])
         if subtasks:
@@ -670,7 +670,7 @@ class StoryEnricher:
         main_story: JiraStory,
         linked_stories: List[JiraStory],
         api_specs: List[APISpec],
-        plainid_components: List[str]
+        platform_components: List[str]
     ) -> List[str]:
         """
         Identify risk areas and integration points.
@@ -679,7 +679,7 @@ class StoryEnricher:
             main_story: Main story
             linked_stories: Linked stories
             api_specs: API specifications
-            plainid_components: PlainID components
+            platform_components: Platform components
             
         Returns:
             List of risk descriptions
@@ -691,8 +691,8 @@ class StoryEnricher:
             risks.append(f"API Integration: {len(api_specs)} endpoints involved - verify request/response formats, error handling, and auth")
         
         # Component interaction risks
-        if len(plainid_components) > 1:
-            risks.append(f"Multi-component interaction: {len(plainid_components)} components - test data flow and consistency")
+        if len(platform_components) > 1:
+            risks.append(f"Multi-component interaction: {len(platform_components)} components - test data flow and consistency")
         
         # Policy-related risks
         policy_keywords = ['policy', 'authorization', 'permission', 'access control', 'rbac', 'pbac']

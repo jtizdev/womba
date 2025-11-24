@@ -171,10 +171,10 @@ class ContextIndexer:
         Returns:
             Number of documents indexed
         """
-        # Fetch PlainID documents
-        plainid_docs = await self.fetcher.fetch_plainid_docs()
+        # Fetch external documents
+        external_docs = await self.fetcher.fetch_external_docs()
         
-        if not plainid_docs:
+        if not external_docs:
             return 0
         
         # Process documents (ChromaDB will handle upserts based on stable IDs)
@@ -182,7 +182,7 @@ class ContextIndexer:
         metadatas = []
         ids = []
         
-        for doc in plainid_docs:
+        for doc in external_docs:
             # Process document text
             doc_text = self.processor.build_external_doc_document(doc.url, doc.title, doc.html)
             if not doc_text:

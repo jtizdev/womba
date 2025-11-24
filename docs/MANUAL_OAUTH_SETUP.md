@@ -41,7 +41,7 @@ This is the **easiest** way - no OAuth flow needed:
    async def test():
        client = GitLabMCPClient()
        if client.mcp_available:
-           results = await client.semantic_code_search('plainid/srv', 'test', limit=1)
+           results = await client.semantic_code_search('your-company/services', 'test', limit=1)
            print(f'✅ MCP working! Got {len(results)} results')
        else:
            print('❌ MCP not available')

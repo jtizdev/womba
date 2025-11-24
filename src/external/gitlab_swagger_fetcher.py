@@ -64,7 +64,7 @@ class GitLabSwaggerFetcher:
     
     def fetch_all(self) -> List[SwaggerDocument]:
         """
-        Fetch all Swagger/OpenAPI documents from plainid/srv/shared/doc/openapi project.
+        Fetch all Swagger/OpenAPI documents from configured GitLab group.
         
         Returns:
             List of SwaggerDocument objects
@@ -72,16 +72,21 @@ class GitLabSwaggerFetcher:
         if not self.is_available():
             return []
         
-        logger.info("🚀 Starting Swagger fetch from plainid/srv/shared/doc/openapi")
-        
-        # Get all projects in the plainid/srv/shared/doc subgroup
-        projects = self.client.list_group_projects("plainid/srv/shared/doc")
-        
-        if not projects:
-            logger.warning("No projects found in plainid/srv/shared/doc")
+        group_path = settings.gitlab_group_path
+        if not group_path:
+            logger.warning("GitLab group path not configured, skipping Swagger fetch")
             return []
         
-        logger.info(f"Found {len(projects)} projects in plainid/srv/shared/doc")
+        logger.info(f"🚀 Starting Swagger fetch from GitLab group: {group_path}")
+        
+        # Get all projects in the configured GitLab group
+        projects = self.client.list_group_projects(group_path)
+        
+        if not projects:
+            logger.warning(f"No projects found in {group_path}")
+            return []
+        
+        logger.info(f"Found {len(projects)} projects in {group_path}")
         
         # Find the "openapi" project
         swagger_docs = []

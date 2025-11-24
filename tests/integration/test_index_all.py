@@ -133,17 +133,17 @@ async def test_index_all_basic_workflow(mock_jira_client, mock_confluence_client
 
 
 @pytest.mark.asyncio
-async def test_plainid_doc_indexing():
-    """Test PlainID documentation indexing."""
+async def test_external_doc_indexing():
+    """Test external documentation indexing."""
     indexer = ContextIndexer()
     
-    # Mock the document fetcher's fetch_plainid_docs method
+    # Mock the document fetcher's fetch_external_docs method
     mock_docs = [
-        Mock(url="https://docs.plainid.io/v1-api/endpoint1", title="Endpoint 1", html="<html>Content 1</html>"),
-        Mock(url="https://docs.plainid.io/v1-api/endpoint2", title="Endpoint 2", html="<html>Content 2</html>")
+        Mock(url="https://docs.example.com/v1-api/endpoint1", title="Endpoint 1", html="<html>Content 1</html>"),
+        Mock(url="https://docs.example.com/v1-api/endpoint2", title="Endpoint 2", html="<html>Content 2</html>")
     ]
     
-    with patch.object(indexer.fetcher, 'fetch_plainid_docs', new_callable=AsyncMock, return_value=mock_docs):
+    with patch.object(indexer.fetcher, 'fetch_external_docs', new_callable=AsyncMock, return_value=mock_docs):
         # Mock the store to avoid actual embedding
         with patch.object(indexer.store, 'add_documents', new_callable=AsyncMock) as mock_add:
             count = await indexer.index_external_docs()
@@ -154,13 +154,13 @@ async def test_plainid_doc_indexing():
 
 
 @pytest.mark.asyncio
-async def test_plainid_doc_indexing_disabled():
-    """Test that PlainID indexing respects the enabled flag."""
+async def test_external_doc_indexing_disabled():
+    """Test that external documentation indexing respects the enabled flag."""
     indexer = ContextIndexer()
     
-    # Temporarily disable PlainID indexing
-    original_enabled = settings.plainid_doc_index_enabled
-    settings.plainid_doc_index_enabled = False
+    # Temporarily disable external documentation indexing
+    original_enabled = settings.external_doc_index_enabled
+    settings.external_doc_index_enabled = False
     
     try:
         count = await indexer.index_external_docs()
@@ -168,7 +168,7 @@ async def test_plainid_doc_indexing_disabled():
         # Should return 0 when disabled
         assert count == 0
     finally:
-        settings.plainid_doc_index_enabled = original_enabled
+        settings.external_doc_index_enabled = original_enabled
 
 
 @pytest.mark.asyncio

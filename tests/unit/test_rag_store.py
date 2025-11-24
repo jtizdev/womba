@@ -293,8 +293,8 @@ async def test_external_docs_collection():
         "Authentication guide for PlainID"
     ]
     metadatas = [
-        {"source": "plainid", "url": "https://docs.plainid.io/endpoint1"},
-        {"source": "plainid", "url": "https://docs.plainid.io/auth"}
+        {"source": "external_docs", "url": "https://docs.example.com/endpoint1"},
+        {"source": "external_docs", "url": "https://docs.example.com/auth"}
     ]
     ids = ["plainid_endpoint1", "plainid_auth"]
     

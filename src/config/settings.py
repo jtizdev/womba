@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     github_token: Optional[str] = Field(default=None, description="GitHub personal access token (optional)")
     gitlab_token: Optional[str] = Field(default=None, description="GitLab personal access token (optional)")
     gitlab_base_url: str = Field(default="https://gitlab.com", description="GitLab base URL")
-    gitlab_group_path: str = Field(default="plainid/srv", description="GitLab group path for service repositories")
+    gitlab_group_path: str = Field(default="", description="GitLab group path for service repositories")
     gitlab_swagger_enabled: bool = Field(default=True, description="Enable GitLab Swagger indexing")
     gitlab_fallback_enabled: bool = Field(default=True, description="Enable GitLab fallback endpoint extraction when no endpoints found (uses MCP)")
     gitlab_fallback_max_services: int = Field(default=5, description="Maximum number of services to search in GitLab fallback")
@@ -64,7 +64,7 @@ class Settings(BaseSettings):
     company_overview: Optional[str] = Field(
         default=None,
         description="Company overview/terminology guidance to inject into AI prompts (supports Markdown/HTML). "
-                    "If not provided, the default PlainID overview is used."
+                    "If not provided, a default company overview may be used."
     )
 
     # API Documentation (Optional, customer-specific)
@@ -136,21 +136,17 @@ class Settings(BaseSettings):
     rag_min_similarity: float = Field(default=0.25, description="Minimum similarity threshold (0.0-1.0) - lowered for broader UI search results")
     rag_refresh_hours: Optional[float] = Field(default=None, description="Minimum hours between automatic full RAG refresh runs")
 
-    # PlainID External Documentation Indexing
-    plainid_doc_index_enabled: bool = Field(default=True, description="Enable PlainID documentation indexing")
-    plainid_doc_base_url: Optional[str] = Field(default=None, description="Base URL for PlainID Developer Portal (optional)")
-    plainid_doc_urls: Optional[list] = Field(
-        default=[
-            "https://docs.plainid.io/apidocs/authorization-apis",
-            "https://docs.plainid.io/apidocs/policy-management-apis",
-            "https://docs.plainid.io/apidocs/authentication-mgmt-apis"
-        ],
-        description="List of PlainID API documentation entry points to crawl from"
+    # External Documentation Indexing
+    external_doc_index_enabled: bool = Field(default=False, description="Enable external documentation indexing")
+    external_doc_base_url: Optional[str] = Field(default=None, description="Base URL for external developer portal (optional)")
+    external_doc_urls: Optional[list] = Field(
+        default=[],
+        description="List of external API documentation entry points to crawl from"
     )
-    plainid_doc_max_pages: int = Field(default=10000, description="Maximum pages to crawl from PlainID docs (set high for no limit)")
-    plainid_doc_max_depth: int = Field(default=5, description="Maximum crawl depth for PlainID docs")
-    plainid_doc_request_delay: float = Field(default=0.3, description="Delay between requests (seconds)")
-    plainid_doc_project_key: str = Field(default="PLAT", description="Project key for PlainID docs")
+    external_doc_max_pages: int = Field(default=10000, description="Maximum pages to crawl from external docs (set high for no limit)")
+    external_doc_max_depth: int = Field(default=5, description="Maximum crawl depth for external docs")
+    external_doc_request_delay: float = Field(default=0.3, description="Delay between requests (seconds)")
+    external_doc_project_key: str = Field(default="", description="Project key for external docs")
 
     # Story Enrichment Configuration
     enable_story_enrichment: bool = Field(default=True, description="Enable story preprocessing/enrichment pipeline")

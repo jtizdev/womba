@@ -156,10 +156,10 @@ class PromptBuilder:
         if enriched_story:
             sections.append(f"\n=== STORY: {enriched_story.story_key} ===\n")
             
-            # Add PlainID architecture overview early if components are involved
-            if enriched_story.plainid_components:
+            # Add platform architecture overview early if components are involved
+            if enriched_story.platform_components:
                 from src.ai.prompts_qa_focused import COMPANY_OVERVIEW
-                sections.append("--- PLAINID PLATFORM CONTEXT (Know the architecture) ---")
+                sections.append("--- PLATFORM CONTEXT (Know the architecture) ---")
                 sections.append(COMPANY_OVERVIEW)
                 sections.append("-" * 80 + "\n")
             
@@ -207,27 +207,27 @@ class PromptBuilder:
                         methods_str = " ".join(api.http_methods) if api.http_methods else "UNKNOWN"
                         sections.append(f"\n  [{i}/{len(api_context.api_specifications)}] {methods_str} {api.endpoint_path}")
                         sections.append(f"     ⚠️ YOU MUST CREATE A TEST FOR THIS ENDPOINT - DO NOT SKIP IT!")
-                        if api.service_name:
-                            sections.append(f"     Service: {api.service_name}")
-                        if api.parameters:
-                            sections.append(f"     Parameters: {', '.join(api.parameters)}")
-                        
-                        # Include example request body
-                        if api.request_example:
-                            sections.append(f"     📝 EXAMPLE REQUEST BODY (use this exact format in test steps):")
-                            sections.append(f"        {api.request_example}")
-                        elif api.request_schema:
-                            sections.append(f"     Request Schema: {api.request_schema}")
-                        
-                        # Include example response body
-                        if api.response_example:
-                            sections.append(f"     📝 EXAMPLE RESPONSE BODY (expect this format in test steps):")
-                            sections.append(f"        {api.response_example}")
-                        elif api.response_schema:
-                            sections.append(f"     Response Schema: {api.response_schema}")
-                        
-                        # Include DTO field definitions
-                        if api.dto_definitions:
+                    if api.service_name:
+                        sections.append(f"     Service: {api.service_name}")
+                    if api.parameters:
+                        sections.append(f"     Parameters: {', '.join(api.parameters)}")
+                    
+                    # Include example request body
+                    if api.request_example:
+                        sections.append(f"     📝 EXAMPLE REQUEST BODY (use this exact format in test steps):")
+                        sections.append(f"        {api.request_example}")
+                    elif api.request_schema:
+                        sections.append(f"     Request Schema: {api.request_schema}")
+                    
+                    # Include example response body
+                    if api.response_example:
+                        sections.append(f"     📝 EXAMPLE RESPONSE BODY (expect this format in test steps):")
+                        sections.append(f"        {api.response_example}")
+                    elif api.response_schema:
+                        sections.append(f"     Response Schema: {api.response_schema}")
+                    
+                    # Include DTO field definitions
+                    if api.dto_definitions:
                             sections.append(f"     📋 DTO FIELD DEFINITIONS:")
                             for dto_name, dto_fields in api.dto_definitions.items():
                                 sections.append(f"        {dto_name}:")
@@ -236,7 +236,7 @@ class PromptBuilder:
                                     required = "required" if field_info.get('required', False) else "optional"
                                     sections.append(f"          - {field_name}: {field_type} ({required})")
                         
-                        if api.authentication:
+                    if api.authentication:
                             sections.append(f"     Auth: {api.authentication}")
                     sections.append(f"\n⚠️ REMINDER: You must generate API tests for ALL {len(api_context.api_specifications)} endpoints above. Do not skip any!")
                     sections.append(f"⚠️ FINAL CHECK: Before returning, count your API tests. If you have fewer than {len(api_context.api_specifications)} API tests, you have FAILED!")
@@ -254,9 +254,9 @@ class PromptBuilder:
                             sections.append(f"     UI Elements: {', '.join(ui.ui_elements)}")
                         sections.append(f"     Source: {ui.source}")
             
-            if enriched_story.plainid_components:
-                sections.append("\n--- PLAINID COMPONENTS INVOLVED ---")
-                sections.append(", ".join(enriched_story.plainid_components))
+            if enriched_story.platform_components:
+                sections.append("\n--- PLATFORM COMPONENTS INVOLVED ---")
+                sections.append(", ".join(enriched_story.platform_components))
             
             if enriched_story.risk_areas:
                 sections.append("\n--- RISK AREAS & TESTING FOCUS ---")
@@ -277,7 +277,7 @@ class PromptBuilder:
             logger.debug(f"Acceptance Criteria: {len(enriched_story.acceptance_criteria)}")
             logger.debug(f"Confluence Docs: {len(enriched_story.confluence_docs)}")
             logger.debug(f"Functional Points: {len(enriched_story.functional_points)}")
-            logger.debug(f"PlainID Components: {len(enriched_story.plainid_components)}")
+            logger.debug(f"Platform Components: {len(enriched_story.platform_components)}")
             logger.debug(f"Risk Areas: {len(enriched_story.risk_areas)}")
             logger.debug(f"Related Stories: {len(enriched_story.related_stories)}")
             
@@ -429,7 +429,7 @@ Ensure all required fields are populated with realistic values.
         # Add existing tests
         tokens_remaining = self._add_existing_tests_section(sections, retrieved_context, tokens_remaining)
         
-        # Add external docs (PlainID API) - PRIORITY
+        # Add external docs (External API) - PRIORITY
         tokens_remaining = self._add_external_docs_section(sections, retrieved_context, tokens_remaining)
         
         # Add swagger docs (GitLab OpenAPI specs)
@@ -777,7 +777,7 @@ Ensure all required fields are populated with realistic values.
                             if api.code_examples.get("response"):
                                 sections.append(f"  Example response from codebase: {api.code_examples['response']}\n")
                         sections.append("\n")
-                sections.append("\n")
+            sections.append("\n")
         
         # Risk areas
         if enriched_story.risk_areas:
@@ -804,19 +804,19 @@ Ensure all required fields are populated with realistic values.
         sections.append("\n")
         
         # ============================================================================
-        # SECTION 5: COMPANY CONTEXT (conditional - only if PlainID detected)
+        # SECTION 5: COMPANY CONTEXT (conditional - only if platform components detected)
         # ============================================================================
-        # Check if PlainID context should be injected
+        # Check if platform context should be injected
         should_inject_plainid = (
-            enriched_story.plainid_components or
+            enriched_story.platform_components or
             (rag_context_formatted and any(term in rag_context_formatted.lower() for term in ['plainid', 'pap', 'pdp', 'pop', 'pbac']))
         )
         
         if should_inject_plainid:
-            # Inject PlainID architecture context from RAG or enriched story
-            sections.append("🏢 COMPANY CONTEXT (PlainID Platform)\n")
+            # Inject platform architecture context from RAG or enriched story
+            sections.append("🏢 COMPANY CONTEXT (Platform Architecture)\n")
             sections.append("=" * 80 + "\n")
-            sections.append("PlainID uses Policy-Based Access Control (PBAC). Key terms:\n")
+            sections.append("Platform uses Policy-Based Access Control (PBAC). Key terms:\n")
             sections.append("- PAP (Policy Administration Point): Web UI for policy authoring\n")
             sections.append("- PDP (Policy Decision Point): Runtime authorization engine\n")
             sections.append("- PEP (Policy Enforcement Point): Client-side enforcement\n")
@@ -828,7 +828,7 @@ Ensure all required fields are populated with realistic values.
             sections.append("- Identity Workspace: Identity sources, Dynamic Groups\n")
             sections.append("- Orchestration Workspace: POPs, Vendor integration\n")
             sections.append("- Administration Workspace: Audit, User management\n")
-            sections.append("\nPLAINID UI STRUCTURE (for writing UI test steps):\n")
+            sections.append("\nPLATFORM UI STRUCTURE (for writing UI test steps):\n")
             sections.append("\nWORKSPACES & UI NAVIGATION:\n")
             sections.append("- **Authorization Workspace** (Policy authoring, main workspace for policies/assets/applications):\n")
             sections.append("  - Policies menu → Policy list → Create/Edit policy → Policy 360° views\n")

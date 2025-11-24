@@ -4,7 +4,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: plainid/womba:latest
     container_name: womba-server
     restart: unless-stopped
     ports:

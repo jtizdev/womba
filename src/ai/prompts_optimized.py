@@ -156,7 +156,7 @@ FEW_SHOT_EXAMPLES = """
 These examples show TEST STRUCTURE ONLY (not scenarios to copy).
 Your tests must match the STORY above, not these examples.
 
-EXAMPLE 1 (PlainID Policy Retrieval - Backend API Test):
+EXAMPLE 1 (Policy Retrieval - Backend API Test):
 {
   "title": "Policy search API returns correct platform policies by application",
   "description": "When querying policies by application ID, API returns all linked policies with correct metadata and pagination",
@@ -364,9 +364,9 @@ BEFORE RETURNING, VERIFY:
   - Populated: Are ALL test_data fields JSON strings (no empty, no null)?
   - Concrete: Do test_data values use real IDs/names, not placeholders?
 
-□ PLAINID CONTEXT:
-  - Injected: If PlainID components detected, is context included?
-  - Terminology: Are PlainID terms (PAP, PDP, workspaces) used correctly?
+□ PLATFORM CONTEXT:
+  - Injected: If platform components detected, is context included?
+  - Terminology: Are platform-specific terms used correctly?
 
 🚨 FINAL SELF-CHECK BEFORE RETURNING (MANDATORY):
 1. ❌ NAMING CHECK: Scan EVERY test title - does ANY start with "Verify", "Validate", "Test", "Check", or "Ensure"?

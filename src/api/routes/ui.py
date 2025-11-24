@@ -226,9 +226,9 @@ async def get_config():
         project_key = None
         if config and config.project_key:
             project_key = config.project_key
-        elif settings.plainid_doc_project_key:
+        elif settings.external_doc_project_key:
             # Fall back to settings if config file doesn't have it
-            project_key = settings.plainid_doc_project_key
+            project_key = settings.external_doc_project_key
         
         if config:
             return ConfigResponse(

@@ -1358,7 +1358,7 @@ Focus on semantic meaning, not exact text matching."""
     def _infer_service_name(self, file_path: str, content: str) -> str:
         """
         Infer service name from file path and content.
-        Works for any service following PlainID conventions.
+        Works for any service following standard conventions.
         """
         file_path_lower = file_path.lower()
         
@@ -1425,7 +1425,7 @@ Focus on semantic meaning, not exact text matching."""
             
             # If no base path found in @RequestMapping, infer from service name
             if not base_path and service_name and service_name != 'unknown':
-                # Standard PlainID pattern: /service-name/1.0/resource
+                # Standard service pattern: /service-name/1.0/resource
                 # Resource name is typically the service without "-mgmt"
                 resource_name = service_name.replace('-mgmt', '')
                 full_path = f"/{service_name}/1.0/{resource_name}{full_path}"
@@ -1512,7 +1512,7 @@ Focus on semantic meaning, not exact text matching."""
         
         # JavaScript/TypeScript: Look for API endpoint URLs in strings/template literals
         # Pattern: "/policy-mgmt/1.0/application/${applicationID}/search" or any service endpoint
-        # Match common PlainID service patterns: /service-name/version/resource
+        # Match common service patterns: /service-name/version/resource
         js_url_patterns = [
             r'["\'](/(?:policy|app|env|identity|orchestrator|internal-assets|runtime)[^"\']+)["\']',  # String literals with service names
             r'`(/(?:policy|app|env|identity|orchestrator|internal-assets|runtime)[^`]+)`',  # Template literals

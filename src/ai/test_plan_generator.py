@@ -209,7 +209,7 @@ class TestPlanGenerator:
             logger.debug(f"Stories analyzed: {enriched.source_story_ids}")
             logger.debug(f"Acceptance Criteria count: {len(enriched.acceptance_criteria)}")
             logger.debug(f"Functional Points count: {len(enriched.functional_points)}")
-            logger.debug(f"PlainID Components: {enriched.plainid_components}")
+            logger.debug(f"Platform Components: {enriched.platform_components}")
             logger.debug(f"Risk Areas: {enriched.risk_areas}")
             logger.debug("=" * 80)
             

@@ -482,8 +482,9 @@ Examples:
             print(f"\n🔗 Test Case URLs:")
             for test_title, zephyr_key in upload_result.items():
                 if not zephyr_key.startswith('ERROR'):
-                    # Zephyr URL format: https://plainid.atlassian.net/projects/{PROJECT}?selectedItem=...#!/v2/testCase/{TEST_KEY}/testScript
-                    zephyr_url = f"https://plainid.atlassian.net/projects/{project_key}?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/{zephyr_key}/testScript"
+                    # Zephyr URL format: {atlassian_base_url}/projects/{PROJECT}?selectedItem=...#!/v2/testCase/{TEST_KEY}/testScript
+                    from src.config.settings import settings
+                    zephyr_url = f"{settings.atlassian_base_url}/projects/{project_key}?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/{zephyr_key}/testScript"
                     print(zephyr_url)
                 else:
                     print(f"ERROR: {test_title} - {zephyr_key}")

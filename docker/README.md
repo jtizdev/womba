@@ -628,7 +628,6 @@ services:
 ## Support
 
 For issues or questions:
-- GitHub Issues: https://github.com/plainid/womba/issues
-- Email: support@plainid.com
-- Documentation: https://github.com/plainid/womba/docs
+- GitHub Issues: See repository issues
+- Documentation: See docs/ directory
 

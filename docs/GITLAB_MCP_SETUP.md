@@ -45,7 +45,7 @@ Add to your `.env` file:
 ```bash
 # GitLab Configuration
 GITLAB_BASE_URL=https://gitlab.com
-GITLAB_GROUP_PATH=plainid/srv
+GITLAB_GROUP_PATH=your-company/services
 GITLAB_TOKEN=glpat-xxxxxxxxxxxxxxxx  # Your PAT from step 1
 
 # GitLab MCP Configuration (for fallback endpoint extraction)
@@ -216,7 +216,7 @@ asyncio.run(debug_search())
 |---|---|---|
 | `GITLAB_TOKEN` | None | GitLab PAT for REST API (OpenAPI fetching) |
 | `GITLAB_BASE_URL` | https://gitlab.com | GitLab instance URL |
-| `GITLAB_GROUP_PATH` | plainid/srv | Group path for service repositories |
+| `GITLAB_GROUP_PATH` | your-company/services | Group path for service repositories |
 | `GITLAB_FALLBACK_ENABLED` | true | Enable MCP fallback extraction |
 | `MCP_GITLAB_TOKEN` | None | GitLab PAT for MCP (same as GITLAB_TOKEN) |
 | `MCP_GITLAB_SERVER_COMMAND` | npx | MCP server command |

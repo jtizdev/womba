@@ -10,6 +10,7 @@ from typing import Optional
 from src.aggregator.jira_client import JiraClient
 from src.aggregator.story_collector import StoryCollector
 from src.models.story import JiraStory
+from src.config.settings import settings
 
 router = APIRouter()
 
@@ -273,7 +274,7 @@ async def search_stories(request: SearchRequest):
                     "title": metadata.get("summary", "No title"),
                     "summary": metadata.get("summary", "No title"),
                     "description": description,  # Truncated for UI
-                    "url": f"https://plainid.atlassian.net/browse/{metadata.get('story_key', '')}",
+                    "url": f"{settings.atlassian_base_url}/browse/{metadata.get('story_key', '')}",
                     "created": metadata.get("timestamp", ""),
                     "updated": updated_date,
                     "status": metadata.get("status", "Unknown"),

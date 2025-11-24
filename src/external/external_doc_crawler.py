@@ -1,4 +1,4 @@
-"""PlainID documentation crawler PRIORITIZING DIRECT GET REQUEST FOR CONTENT FETCHING."""
+"""External documentation crawler PRIORITIZING DIRECT GET REQUEST FOR CONTENT FETCHING."""
 
 from __future__ import annotations
 
@@ -22,15 +22,15 @@ except ImportError:  # pragma: no cover
 
 
 @dataclass
-class PlainIDDocument:
-    """Normalized PlainID documentation entry."""
+class ExternalDocument:
+    """Normalized external documentation entry."""
 
     url: str
     title: str
     html: str
 
 
-class PlainIDDocCrawler:
+class ExternalDocCrawler:
     """Efficient crawler with separate URL discovery and content fetching phases."""
 
     def __init__(
@@ -39,7 +39,7 @@ class PlainIDDocCrawler:
         max_pages: int = 200,
         delay: float = 0.5,
         max_depth: int = 10,
-        user_agent: str = "WombaPlainIDIndexer/1.0",
+        user_agent: str = "WombaExternalDocIndexer/1.0",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.max_pages = max_pages
@@ -113,7 +113,7 @@ class PlainIDDocCrawler:
         logger.info(f"✅ Discovered {len(discovered_urls)} URLs to fetch")
         return discovered_urls
 
-    def fetch_content(self, urls: Optional[List[str]] = None) -> List[PlainIDDocument]:
+    def fetch_content(self, urls: Optional[List[str]] = None) -> List[ExternalDocument]:
         """
         Phase 2: Fetch full content via DIRECT GET requests ONLY.
         
@@ -121,7 +121,7 @@ class PlainIDDocCrawler:
             urls: List of URLs to fetch. If None, will discover URLs first.
             
         Returns:
-            List of PlainIDDocument objects with full HTML content.
+            List of ExternalDocument objects with full HTML content.
         """
         if not self.is_available():
             return []
@@ -133,7 +133,7 @@ class PlainIDDocCrawler:
             logger.warning("No URLs to fetch content for")
             return []
 
-        documents: List[PlainIDDocument] = []
+        documents: List[ExternalDocument] = []
         total = len(urls)
 
         logger.info(f"🚀 Fetching content for {total} URLs via GET requests...")
@@ -157,7 +157,7 @@ class PlainIDDocCrawler:
             
             title = self._extract_title(soup, url)
 
-            documents.append(PlainIDDocument(url=url, title=title, html=content_html))
+            documents.append(ExternalDocument(url=url, title=title, html=content_html))
             logger.info(f"✅ [{i}/{total}] Fetched: {title}")
 
             if self.delay > 0:
@@ -166,7 +166,7 @@ class PlainIDDocCrawler:
         logger.info(f"✅ Content fetching complete: {len(documents)}/{total} pages successfully fetched")
         return documents
 
-    def crawl(self) -> List[PlainIDDocument]:
+    def crawl(self) -> List[ExternalDocument]:
         """
         Legacy method: Full crawl (discovery + fetching in one pass).
         Kept for backward compatibility but uses new two-phase approach internally.

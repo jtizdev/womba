@@ -8,7 +8,7 @@ from typing import List, Optional
 from loguru import logger
 
 from src.config.settings import settings
-from src.external.plainid_crawler import PlainIDDocCrawler, PlainIDDocument
+from src.external.external_doc_crawler import ExternalDocCrawler, ExternalDocument
 from src.external.gitlab_swagger_fetcher import GitLabSwaggerFetcher, SwaggerDocument
 
 
@@ -25,35 +25,35 @@ class DocumentFetcher:
         """Initialize document fetcher."""
         pass
 
-    async def fetch_plainid_docs(self) -> List[PlainIDDocument]:
+    async def fetch_external_docs(self) -> List[ExternalDocument]:
         """
-        Fetch PlainID documentation using configured settings.
+        Fetch external documentation using configured settings.
         
         Returns:
-            List of PlainIDDocument objects
+            List of ExternalDocument objects
         """
-        if not settings.plainid_doc_index_enabled:
+        if not settings.external_doc_index_enabled:
             logger.info("External documentation indexing disabled via settings")
             return []
 
-        urls_to_fetch = await self._discover_plainid_urls()
+        urls_to_fetch = await self._discover_external_urls()
         
         if not urls_to_fetch:
             logger.info("No external documentation URLs to fetch")
             return []
 
-        logger.info(f"Fetching content for {len(urls_to_fetch)} PlainID URLs")
+        logger.info(f"Fetching content for {len(urls_to_fetch)} external documentation URLs")
         
         # Create crawler for content fetching
-        fetch_crawler = PlainIDDocCrawler(
-            base_url=urls_to_fetch[0] if urls_to_fetch else "https://docs.plainid.io",
-            max_pages=settings.plainid_doc_max_pages,
-            delay=settings.plainid_doc_request_delay,
+        fetch_crawler = ExternalDocCrawler(
+            base_url=urls_to_fetch[0] if urls_to_fetch else "",
+            max_pages=settings.external_doc_max_pages,
+            delay=settings.external_doc_request_delay,
             max_depth=1  # Only fetch the given URLs, no further crawling
         )
         
         if not fetch_crawler.is_available():
-            logger.error("PlainID crawler dependencies not available (requests/beautifulsoup4)")
+            logger.error("External documentation crawler dependencies not available (requests/beautifulsoup4)")
             return []
 
         docs = await asyncio.to_thread(fetch_crawler.fetch_content, urls_to_fetch)
@@ -62,21 +62,21 @@ class DocumentFetcher:
             logger.warning("No external documentation content fetched (all requests failed)")
             return []
         
-        logger.info(f"Successfully fetched {len(docs)} PlainID documents")
+        logger.info(f"Successfully fetched {len(docs)} external documents")
         return docs
 
-    async def _discover_plainid_urls(self) -> List[str]:
+    async def _discover_external_urls(self) -> List[str]:
         """
-        Discover PlainID documentation URLs from configured entry points.
+        Discover external documentation URLs from configured entry points.
         
         Returns:
             List of URLs to fetch
         """
-        configured_urls = settings.plainid_doc_urls or []
+        configured_urls = settings.external_doc_urls or []
         
         if not configured_urls:
             # Try base_url if no configured URLs
-            base_url = settings.plainid_doc_base_url
+            base_url = settings.external_doc_base_url
             if base_url:
                 configured_urls = [base_url]
             else:
@@ -88,11 +88,11 @@ class DocumentFetcher:
         
         for entry_url in configured_urls:
             try:
-                temp_crawler = PlainIDDocCrawler(
+                temp_crawler = ExternalDocCrawler(
                     base_url=entry_url,
-                    max_pages=settings.plainid_doc_max_pages,
-                    delay=settings.plainid_doc_request_delay,
-                    max_depth=settings.plainid_doc_max_depth,
+                    max_pages=settings.external_doc_max_pages,
+                    delay=settings.external_doc_request_delay,
+                    max_depth=settings.external_doc_max_depth,
                 )
                 
                 if temp_crawler.is_available():

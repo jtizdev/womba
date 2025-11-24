@@ -85,12 +85,9 @@ ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 # CLI accessible via: docker exec -it womba-server womba <command>
 CMD ["uvicorn", "src.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]
 
-# Labels for Docker Hub
-LABEL maintainer="PlainID <support@plainid.com>"
+# Labels
 LABEL description="Womba - AI-Powered Test Generation with RAG (API + CLI)"
 LABEL version="2.0.0"
-LABEL org.opencontainers.image.source="https://github.com/plainid/womba"
-LABEL org.opencontainers.image.vendor="PlainID"
 LABEL org.opencontainers.image.title="Womba"
 LABEL org.opencontainers.image.description="AI-powered test generation from Jira stories with RAG support"
 

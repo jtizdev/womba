@@ -56,7 +56,7 @@ MCP_GITLAB_SERVER_COMMAND=npx
 MCP_GITLAB_SERVER_ARGS=["-y", "mcp-remote", "https://gitlab.com/api/v4/mcp"]
 
 # GitLab group to search
-GITLAB_GROUP_PATH=plainid/srv
+GITLAB_GROUP_PATH=your-company/services
 ```
 
 ### OAuth Authentication
@@ -85,7 +85,7 @@ MCP fallback **only** triggers when:
 1. Normal extraction: 0 endpoints
 2. AI filtering: N/A (nothing to filter)
 3. **MCP fallback triggers**:
-   - Searches `plainid/srv` group
+   - Searches configured GitLab group
    - Finds branches: `feature/PLAT-13541`, `PLAT-13541`
    - Searches for OpenAPI files and route definitions
    - Extracts endpoints from found code

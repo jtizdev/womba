@@ -137,11 +137,11 @@ def _display_enriched_story(enriched) -> None:
         if len(enriched.functional_points) > 20:
             print(f"   ... and {len(enriched.functional_points) - 20} more")
     
-    # PlainID components
-    if enriched.plainid_components:
-        print("\n🏗️  PLAINID COMPONENTS:")
+    # Platform components
+    if enriched.platform_components:
+        print("\n🏗️  PLATFORM COMPONENTS:")
         print("-" * 60)
-        for comp in enriched.plainid_components:
+        for comp in enriched.platform_components:
             print(f"   • {comp}")
     
     # API specifications
