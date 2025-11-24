@@ -39,16 +39,16 @@ spec:
             component: index-all
             job-type: scheduled
         spec:
-          serviceAccountName: womba-index-all
+          serviceAccountName: default
           restartPolicy: OnFailure
           
           containers:
           - name: womba-index-all
-            # Use kubectl to exec into main pod
-            image: bitnami/kubectl:latest
+            # Use curl to call API endpoint
+            image: curlimages/curl:latest
             imagePullPolicy: IfNotPresent
             
-            # Exec into main womba pod to run index-all CLI command
+            # Call index-all API endpoint
             command: ["/bin/sh", "-c"]
             args:
               - |
@@ -60,20 +60,20 @@ spec:
                 echo "=========================================="
                 echo ""
                 
-                # Get main pod name
-                POD_NAME=$(kubectl -n womba get pods -l app=womba-server -o jsonpath='{.items[0].metadata.name}')
+                # Get project key from config or use default
+                PROJECT_KEY="${PROJECT_KEY:-PLAT}"
+                SERVICE_URL="${WOMBA_SERVICE_URL:-http://womba-server.womba.svc.cluster.local:8000}"
                 
-                if [ -z "$POD_NAME" ]; then
-                  echo "❌ ERROR: No womba-server pod found!"
-                  exit 1
-                fi
-                
-                echo "📦 Found pod: $POD_NAME"
-                echo "🔄 Running: womba index-all --force-refresh"
+                echo "📦 Project: $PROJECT_KEY"
+                echo "🌐 Service: $SERVICE_URL"
                 echo ""
                 
-                # Exec into pod and run index-all CLI command
-                kubectl -n womba exec $POD_NAME -- womba index-all --force-refresh
+                # Call index-all API endpoint
+                echo "🔄 Calling: POST /api/v1/rag/index/all?project_key=${PROJECT_KEY}&force=true"
+                curl -f -X POST "${SERVICE_URL}/api/v1/rag/index/all?project_key=${PROJECT_KEY}&force=true" \
+                  -H "Content-Type: application/json" \
+                  --max-time 1800 \
+                  -w "\n\nHTTP Status: %{http_code}\n"
                 
                 echo ""
                 echo "=========================================="
@@ -81,10 +81,20 @@ spec:
                 echo "⏰ Finished at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
                 echo "=========================================="
             
+            env:
+            - name: PROJECT_KEY
+              valueFrom:
+                configMapKeyRef:
+                  name: womba-config
+                  key: project_key
+                  optional: true
+            - name: WOMBA_SERVICE_URL
+              value: "http://womba-server.womba.svc.cluster.local:8000"
+            
             resources:
               requests:
-                memory: "128Mi"
-                cpu: "100m"
+                memory: "64Mi"
+                cpu: "50m"
               limits:
-                memory: "512Mi"
-                cpu: "500m"
+                memory: "256Mi"
+                cpu: "200m"
