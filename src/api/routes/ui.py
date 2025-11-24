@@ -220,7 +220,7 @@ async def get_config():
         from src.config.config_manager import ConfigManager
         from src.config.settings import settings
         config_manager = ConfigManager()
-        config = config_manager.load_config()
+        config = config_manager.load()
         
         # Get project key from config file, or fall back to settings
         project_key = None
@@ -235,13 +235,13 @@ async def get_config():
                 atlassian_url=config.atlassian_url,
                 atlassian_email=config.atlassian_email,
                 project_key=project_key,
-                ai_model=config.model,
+                ai_model=getattr(config, 'model', 'gpt-4o'),
                 repo_path=config.repo_path,
                 git_provider=config.git_provider or "auto",
                 default_branch=config.default_branch or "master",
                 auto_upload=config.auto_upload,
                 auto_create_pr=config.auto_create_pr,
-                ai_tool=config.ai_tool
+                ai_tool=getattr(config, 'ai_tool', 'aider')
             )
         else:
             # Return config with project_key from settings if available
