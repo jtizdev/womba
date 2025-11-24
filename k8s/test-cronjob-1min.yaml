@@ -1,0 +1,105 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: womba-index-all-test
+  namespace: womba
+  labels:
+    app: womba
+    component: index-all
+    schedule: test
+spec:
+  # TEST: Run in 1 minute (for testing only!)
+  # Format: minute hour day-of-month month day-of-week
+  # This will run 1 minute from now
+  schedule: "* * * * *"  # Every minute (for testing)
+  
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 60
+  
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 1
+      
+      template:
+        metadata:
+          labels:
+            app: womba
+            component: index-all
+            job-type: test
+        spec:
+          serviceAccountName: default
+          restartPolicy: OnFailure
+          
+          containers:
+          - name: womba-index-all
+            image: docker.io/plainid/womba:latest-master
+            imagePullPolicy: IfNotPresent
+            
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                set -e
+                echo "=========================================="
+                echo "🧪 TEST: WOMBA INDEX-ALL JOB"
+                echo "=========================================="
+                echo "⏰ Started at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+                echo "📦 Pod: $(hostname)"
+                echo "=========================================="
+                echo ""
+                
+                echo "🔄 Running: womba index-all --force-refresh"
+                womba index-all --force-refresh
+                
+                echo ""
+                echo "=========================================="
+                echo "✅ INDEX-ALL COMPLETE"
+                echo "⏰ Finished at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+                echo "=========================================="
+            
+            volumeMounts:
+            - name: womba-data
+              mountPath: /app/data
+            - name: womba-config
+              mountPath: /app/.env
+              subPath: .env
+              readOnly: true
+            - name: womba-mcp-auth
+              mountPath: /home/womba/.mcp-auth
+              readOnly: false
+            
+            envFrom:
+            - secretRef:
+                name: womba-secrets
+            - configMapRef:
+                name: womba-config
+            
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "200m"
+              limits:
+                memory: "2Gi"
+                cpu: "1000m"
+            
+            env:
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          
+          volumes:
+          - name: womba-data
+            persistentVolumeClaim:
+              claimName: womba-chroma-data
+          - name: womba-config
+            secret:
+              secretName: womba-secrets
+              optional: true
+          - name: womba-mcp-auth
+            persistentVolumeClaim:
+              claimName: womba-mcp-auth
+              optional: true
+

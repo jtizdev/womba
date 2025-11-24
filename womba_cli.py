@@ -225,7 +225,7 @@ Examples:
                 return
 
             refresh_manager = RAGRefreshManager()
-            refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+            refresh_hours = args.refresh_hours if args.refresh_hours is not None else getattr(settings, 'rag_refresh_hours', None)
             if not args.force_refresh and refresh_hours is not None and not refresh_manager.should_refresh(project_key, 'index_all', refresh_hours):
                 last = refresh_manager.get_last_refresh(project_key, 'index_all')
                 hours_since = refresh_manager.hours_since_refresh(project_key, 'index_all') or 0.0
@@ -301,7 +301,7 @@ Examples:
             normalized_sources.append(key)
 
         refresh_manager = RAGRefreshManager()
-        refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+        refresh_hours = args.refresh_hours if args.refresh_hours is not None else getattr(settings, 'rag_refresh_hours', None)
         due_sources = normalized_sources
         if not args.force_refresh and refresh_hours is not None:
             due_sources = [s for s in normalized_sources if refresh_manager.should_refresh(project_key, canonical_map[s], refresh_hours)]
@@ -420,7 +420,7 @@ Examples:
 
         project_key = args.story_key.split('-')[0]
         refresh_manager = RAGRefreshManager()
-        refresh_hours = args.refresh_hours if args.refresh_hours is not None else settings.rag_refresh_hours
+        refresh_hours = args.refresh_hours if args.refresh_hours is not None else getattr(settings, 'rag_refresh_hours', None)
 
         if refresh_hours is not None and (args.force_refresh or refresh_manager.should_refresh(project_key, 'index_all', refresh_hours)):
             if args.force_refresh:
@@ -482,7 +482,7 @@ Examples:
             for test_title, zephyr_key in upload_result.items():
                 if not zephyr_key.startswith('ERROR'):
                     # Zephyr URL format: {atlassian_base_url}/projects/{PROJECT}?selectedItem=...#!/v2/testCase/{TEST_KEY}/testScript
-                    from src.config.settings import settings
+                    # Use global settings import (already imported at top)
                     zephyr_url = f"{settings.atlassian_base_url}/projects/{project_key}?selectedItem=com.atlassian.plugins.atlassian-connect-plugin:com.kanoah.test-manager__main-project-page#!/v2/testCase/{zephyr_key}/testScript"
                     print(zephyr_url)
                 else:

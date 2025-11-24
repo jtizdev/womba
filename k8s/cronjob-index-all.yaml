@@ -1,0 +1,90 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: womba-index-all
+  namespace: womba
+  labels:
+    app: womba
+    component: index-all
+    schedule: weekly
+spec:
+  # Schedule: Every Saturday at 3:00 AM UTC
+  # Format: minute hour day-of-month month day-of-week
+  # 0 = Sunday, 6 = Saturday
+  schedule: "0 3 * * 6"
+  
+  # Keep last 3 successful jobs for debugging
+  successfulJobsHistoryLimit: 3
+  # Keep last 3 failed jobs for troubleshooting
+  failedJobsHistoryLimit: 3
+  
+  # Don't start new job if previous one is still running
+  concurrencyPolicy: Forbid
+  
+  # Timeout for job (30 minutes should be enough for index-all)
+  startingDeadlineSeconds: 3600
+  
+  jobTemplate:
+    spec:
+      # Active deadline: kill job after 1 hour if still running
+      activeDeadlineSeconds: 3600
+      
+      # Backoff limit: retry up to 2 times on failure
+      backoffLimit: 2
+      
+      template:
+        metadata:
+          labels:
+            app: womba
+            component: index-all
+            job-type: scheduled
+        spec:
+          serviceAccountName: womba-index-all
+          restartPolicy: OnFailure
+          
+          containers:
+          - name: womba-index-all
+            # Use kubectl to exec into main pod
+            image: bitnami/kubectl:latest
+            imagePullPolicy: IfNotPresent
+            
+            # Exec into main womba pod to run index-all CLI command
+            command: ["/bin/sh", "-c"]
+            args:
+              - |
+                set -e
+                echo "=========================================="
+                echo "🚀 WOMBA INDEX-ALL SCHEDULED JOB"
+                echo "=========================================="
+                echo "⏰ Started at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+                echo "=========================================="
+                echo ""
+                
+                # Get main pod name
+                POD_NAME=$(kubectl -n womba get pods -l app=womba-server -o jsonpath='{.items[0].metadata.name}')
+                
+                if [ -z "$POD_NAME" ]; then
+                  echo "❌ ERROR: No womba-server pod found!"
+                  exit 1
+                fi
+                
+                echo "📦 Found pod: $POD_NAME"
+                echo "🔄 Running: womba index-all --force-refresh"
+                echo ""
+                
+                # Exec into pod and run index-all CLI command
+                kubectl -n womba exec $POD_NAME -- womba index-all --force-refresh
+                
+                echo ""
+                echo "=========================================="
+                echo "✅ INDEX-ALL COMPLETE"
+                echo "⏰ Finished at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+                echo "=========================================="
+            
+            resources:
+              requests:
+                memory: "128Mi"
+                cpu: "100m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"

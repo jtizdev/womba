@@ -11,6 +11,7 @@ from src.ai.rag_store import RAGVectorStore
 from src.ai.context_indexer import ContextIndexer
 from src.aggregator.story_collector import StoryCollector
 from src.integrations.zephyr_integration import ZephyrIntegration
+from src.cli.rag_commands import index_all_data
 
 
 router = APIRouter(prefix="/api/v1/rag", tags=["rag"])
@@ -115,6 +116,46 @@ async def index_all_tests(project_key: str, max_tests: int = 1000):
         
     except Exception as e:
         logger.error(f"Failed to batch index tests: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/index/all")
+async def index_all(project_key: str, force: bool = False):
+    """
+    Index ALL available data for a project (full index-all).
+    
+    This endpoint runs the complete index-all process:
+    - Zephyr tests
+    - Jira stories
+    - Confluence docs
+    - External docs
+    - GitLab Swagger docs
+    
+    Args:
+        project_key: Project key to index all data for
+        force: Force refresh even if recently indexed
+        
+    Returns:
+        Success message with indexing results
+    """
+    try:
+        logger.info(f"API: Running index-all for project {project_key} (force={force})")
+        
+        # Call the index_all_data function
+        results = await index_all_data(
+            project_key=project_key,
+            force=force
+        )
+        
+        return {
+            "status": "success",
+            "message": f"Successfully completed index-all for {project_key}",
+            "project_key": project_key,
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to run index-all: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
