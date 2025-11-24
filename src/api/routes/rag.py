@@ -187,16 +187,67 @@ async def search_rag(request: SearchRequest):
         if request.project_key:
             metadata_filter["project_key"] = request.project_key
         
-        # Note: We index all issue types for context, but don't filter by type in search
-        # to allow broader results. The user can see the issue_type in the metadata.
+        # Check if query looks like a Jira key (e.g., "PLAT-18104")
+        import re
+        jira_key_pattern = r'^[A-Z]+-\d+$'
+        exact_match = None
         
-        # Search
+        if re.match(jira_key_pattern, request.query.strip(), re.IGNORECASE):
+            # Try exact key match first (for jira_issues collection)
+            if request.collection == "jira_issues":
+                exact_key = request.query.strip().upper()
+                try:
+                    collection = store.client.get_collection(request.collection)
+                    doc_id = f"jira_{exact_key}"
+                    
+                    exact_results = collection.get(
+                        ids=[doc_id],
+                        include=['documents', 'metadatas']
+                    )
+                    if exact_results and exact_results['ids']:
+                        # Found exact match!
+                        exact_match = {
+                            'id': exact_results['ids'][0],
+                            'document': exact_results['documents'][0],
+                            'metadata': exact_results['metadatas'][0],
+                            'distance': 0.0,
+                            'similarity': 1.0  # Perfect match
+                        }
+                        logger.info(f"Found exact match for key: {exact_key}")
+                    else:
+                        # Also try searching by metadata story_key field
+                        logger.info(f"Exact ID lookup failed for {exact_key}, trying metadata search...")
+                        # Search with metadata filter for story_key
+                        metadata_results = await store.retrieve_similar(
+                            collection_name=request.collection,
+                            query_text=exact_key,  # Use the key itself as query
+                            top_k=50,  # Search more broadly
+                            metadata_filter={"story_key": exact_key},  # Filter by story_key metadata
+                            min_similarity_override=0.0
+                        )
+                        if metadata_results:
+                            # Found by metadata filter - use first result
+                            exact_match = metadata_results[0]
+                            exact_match['similarity'] = 1.0  # Mark as perfect match
+                            logger.info(f"Found {exact_key} via metadata filter")
+                except Exception as e:
+                    logger.warning(f"Exact lookup failed for {exact_key}: {e}")
+        
+        # Search with lower threshold for UI search (allow more results)
+        # Use 0.0 threshold for UI searches to show all results, let user filter visually
         results = await store.retrieve_similar(
             collection_name=request.collection,
             query_text=request.query,
             top_k=request.top_k,
-            metadata_filter=metadata_filter if metadata_filter else None
+            metadata_filter=metadata_filter if metadata_filter else None,
+            min_similarity_override=0.0  # No threshold for UI search - show all results
         )
+        
+        # If we found an exact match, put it first
+        if exact_match:
+            # Remove exact match from results if it's already there (avoid duplicates)
+            results = [r for r in results if r.get('id') != exact_match['id']]
+            results.insert(0, exact_match)
         
         # Apply similarity threshold if specified (for UI search)
         if request.min_similarity is not None:
