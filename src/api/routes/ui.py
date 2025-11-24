@@ -218,14 +218,23 @@ async def get_config():
     try:
         # Load from config file
         from src.config.config_manager import ConfigManager
+        from src.config.settings import settings
         config_manager = ConfigManager()
         config = config_manager.load_config()
+        
+        # Get project key from config file, or fall back to settings
+        project_key = None
+        if config and config.project_key:
+            project_key = config.project_key
+        elif settings.plainid_doc_project_key:
+            # Fall back to settings if config file doesn't have it
+            project_key = settings.plainid_doc_project_key
         
         if config:
             return ConfigResponse(
                 atlassian_url=config.atlassian_url,
                 atlassian_email=config.atlassian_email,
-                project_key=config.project_key,
+                project_key=project_key,
                 ai_model=config.model,
                 repo_path=config.repo_path,
                 git_provider=config.git_provider or "auto",
@@ -235,7 +244,8 @@ async def get_config():
                 ai_tool=config.ai_tool
             )
         else:
-            return ConfigResponse()
+            # Return config with project_key from settings if available
+            return ConfigResponse(project_key=project_key)
     except Exception as e:
         logger.error(f"Failed to get config: {e}")
         # Return empty config instead of error
