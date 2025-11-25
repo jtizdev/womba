@@ -367,6 +367,85 @@ class RAGVectorStore:
             logger.error(f"Failed to query {collection_name}: {e}")
             return []
     
+    async def get_test_plan_by_story_key(self, issue_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a test plan by story key (exact match).
+        
+        Args:
+            issue_key: Jira issue key (e.g., "PLAT-13541")
+            
+        Returns:
+            Dictionary with document data including metadata, or None if not found
+        """
+        logger.info(f"Retrieving test plan for {issue_key}")
+        
+        try:
+            collection = self.get_or_create_collection(self.TEST_PLANS_COLLECTION)
+            
+            # Query by metadata filter for exact match
+            results = collection.get(
+                where={"story_key": issue_key},
+                limit=1
+            )
+            
+            if not results or not results.get('ids') or len(results['ids']) == 0:
+                logger.info(f"Test plan not found for {issue_key}")
+                return None
+            
+            # Return first result
+            idx = 0
+            return {
+                'id': results['ids'][idx],
+                'document': results['documents'][idx] if results.get('documents') else '',
+                'metadata': results['metadatas'][idx] if results.get('metadatas') else {}
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve test plan for {issue_key}: {e}")
+            return None
+    
+    async def update_test_plan(self, issue_key: str, test_plan_json: str, doc_text: str, metadata: Dict[str, Any]) -> None:
+        """
+        Update an existing test plan in RAG storage.
+        
+        Uses upsert logic: deletes old document and adds new one.
+        
+        Args:
+            issue_key: Jira issue key
+            test_plan_json: Full TestPlan JSON as string
+            doc_text: Text representation for semantic search
+            metadata: Metadata dictionary (should include test_plan_json field)
+        """
+        logger.info(f"Updating test plan for {issue_key} in RAG")
+        
+        doc_id = f"testplan_{issue_key}"
+        
+        try:
+            collection = self.get_or_create_collection(self.TEST_PLANS_COLLECTION)
+            
+            # Delete existing document if it exists
+            try:
+                existing = collection.get(ids=[doc_id])
+                if existing and existing.get('ids') and len(existing['ids']) > 0:
+                    collection.delete(ids=[doc_id])
+                    logger.debug(f"Deleted existing test plan document {doc_id}")
+            except Exception as e:
+                logger.debug(f"No existing document to delete for {doc_id}: {e}")
+            
+            # Add updated document
+            await self.add_documents(
+                collection_name=self.TEST_PLANS_COLLECTION,
+                documents=[doc_text],
+                metadatas=[metadata],
+                ids=[doc_id]
+            )
+            
+            logger.info(f"Successfully updated test plan for {issue_key} in RAG")
+            
+        except Exception as e:
+            logger.error(f"Failed to update test plan for {issue_key}: {e}")
+            raise
+    
     def get_collection_stats(self, collection_name: str) -> Dict[str, Any]:
         """
         Get statistics for a collection.
