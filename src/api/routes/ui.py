@@ -155,7 +155,7 @@ async def get_history_details(history_id: str):
         if not item:
             raise HTTPException(status_code=404, detail="History item not found")
         
-        # If test_plan_file is stored, load the test plan JSON
+        # Try to load test plan from file first (for backward compatibility)
         if 'test_plan_file' in item and item['test_plan_file']:
             test_plan_path = Path(item['test_plan_file'])
             if test_plan_path.exists():
@@ -164,8 +164,26 @@ async def get_history_details(history_id: str):
                         test_plan_data = json.load(f)
                         item['test_plan'] = test_plan_data
                         logger.info(f"Loaded test plan from {test_plan_path}")
+                        return item
                 except Exception as e:
                     logger.error(f"Failed to load test plan from {test_plan_path}: {e}")
+        
+        # If file doesn't exist or failed, try to load from RAG
+        story_key = item.get('story_key')
+        if story_key:
+            try:
+                from src.ai.rag_store import RAGVectorStore
+                store = RAGVectorStore()
+                test_plan_data = await store.get_test_plan_by_story_key(story_key)
+                
+                if test_plan_data and 'metadata' in test_plan_data and 'test_plan_json' in test_plan_data['metadata']:
+                    from src.models.test_plan import TestPlan
+                    test_plan = TestPlan.model_validate_json(test_plan_data['metadata']['test_plan_json'])
+                    # Convert TestPlan to dict for JSON serialization
+                    item['test_plan'] = test_plan.model_dump(mode='json')
+                    logger.info(f"Loaded test plan from RAG for {story_key}")
+            except Exception as e:
+                logger.warning(f"Failed to load test plan from RAG for {story_key}: {e}")
         
         return item
     except HTTPException:
@@ -370,4 +388,57 @@ def track_test_generation(story_key: str, test_count: int, status: str,
     _save_stats(_stats_cache)  # Persist to disk
     
     logger.info(f"Tracked test generation: {story_key} ({test_count} tests, {status})")
+
+
+def update_history_test_count(story_key: str, new_test_count: int):
+    """
+    Update the test_count for an existing history entry.
+    Called when a test plan is updated (test cases added/deleted).
+    
+    Args:
+        story_key: Jira story key to find the history entry
+        new_test_count: New number of test cases
+    """
+    # Find the most recent history entry for this story_key
+    matching_items = [h for h in _history_store if h.get('story_key') == story_key]
+    if not matching_items:
+        logger.warning(f"No history entry found for story_key {story_key}, cannot update test_count")
+        return
+    
+    # Update the most recent entry (assuming it's the one we want to update)
+    # Sort by created_at descending to get the most recent
+    matching_items.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    item = matching_items[0]
+    
+    old_test_count = item.get('test_count', 0)
+    if old_test_count == new_test_count:
+        logger.debug(f"Test count unchanged for {story_key}: {new_test_count}")
+        return
+    
+    # Update the test_count
+    item['test_count'] = new_test_count
+    _save_history(_history_store)  # Persist to disk
+    
+    # Update stats: adjust total_tests by the difference
+    diff = new_test_count - old_test_count
+    if diff != 0:
+        _stats_cache['total_tests'] = max(0, _stats_cache.get('total_tests', 0) + diff)
+        
+        # Also update tests_this_week if the item was created this week
+        try:
+            item_date_str = item.get('created_at', '')
+            if item_date_str:
+                # Handle both ISO format with and without timezone
+                item_date_str = item_date_str.replace('Z', '+00:00')
+                item_date = datetime.fromisoformat(item_date_str)
+                week_ago = datetime.now() - timedelta(days=7)
+                if item_date > week_ago:
+                    _stats_cache['tests_this_week'] = max(0, _stats_cache.get('tests_this_week', 0) + diff)
+        except Exception as e:
+            logger.warning(f"Failed to check if history item is from this week: {e}")
+        
+        _save_stats(_stats_cache)  # Persist to disk
+        logger.info(f"Updated history test_count for {story_key}: {old_test_count} -> {new_test_count}")
+    else:
+        logger.debug(f"Test count unchanged for {story_key}: {new_test_count}")
 
