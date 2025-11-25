@@ -260,17 +260,19 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
         )
     
     try:
-        # Step 1: Load existing test plan
-        plan_path = _get_test_plan_path(issue_key)
+        # Step 1: Load existing test plan from RAG
+        from src.ai.rag_store import RAGVectorStore
+        store = RAGVectorStore()
+        test_plan_data = await store.get_test_plan_by_story_key(issue_key)
         
-        if not plan_path.exists():
+        if not test_plan_data:
             raise HTTPException(
                 status_code=404,
                 detail=f"Test plan not found for {issue_key}. Generate a test plan first."
             )
         
-        logger.info(f"Loading existing test plan from {plan_path}")
-        existing_plan = TestPlan.model_validate_json(plan_path.read_text())
+        logger.info(f"Loading existing test plan from RAG for {issue_key}")
+        existing_plan = TestPlan.model_validate_json(test_plan_data['metadata']['test_plan_json'])
         
         # Step 2: Validate and normalize test cases (handle incomplete data from UI)
         logger.info(f"Validating and normalizing {len(request.test_cases)} test cases")
@@ -340,8 +342,61 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
                 )
         
         # Step 3: Update test plan with normalized test cases
-        logger.info(f"Updating test plan with {len(normalized_test_cases)} validated test cases")
-        existing_plan.test_cases = normalized_test_cases
+        # Support both full replacement and partial updates
+        if len(normalized_test_cases) == len(existing_plan.test_cases):
+            # Full replacement: all test cases provided (backward compatible)
+            logger.info(f"Full update: Replacing all {len(normalized_test_cases)} test cases")
+            existing_plan.test_cases = normalized_test_cases
+        else:
+            # Partial update: merge updated test cases into existing list
+            logger.info(
+                f"Partial update: Merging {len(normalized_test_cases)} updated test cases "
+                f"into existing {len(existing_plan.test_cases)} test cases"
+            )
+            
+            # Create a map of existing test cases by ID and index
+            existing_by_id = {tc.id: idx for idx, tc in enumerate(existing_plan.test_cases) if tc.id}
+            existing_by_title = {tc.title: idx for idx, tc in enumerate(existing_plan.test_cases)}
+            
+            # Update existing test cases that match
+            updated_indices = set()
+            for updated_tc in normalized_test_cases:
+                matched_idx = None
+                
+                # Try to match by ID first
+                if updated_tc.id and updated_tc.id in existing_by_id:
+                    matched_idx = existing_by_id[updated_tc.id]
+                    logger.debug(f"Matched test case by ID: {updated_tc.id} -> index {matched_idx}")
+                
+                # Fallback to matching by title
+                elif updated_tc.title in existing_by_title:
+                    matched_idx = existing_by_title[updated_tc.title]
+                    logger.debug(f"Matched test case by title: {updated_tc.title} -> index {matched_idx}")
+                
+                # Fallback to matching by index if normalized_test_cases is in order
+                elif len(normalized_test_cases) <= len(existing_plan.test_cases):
+                    # Assume they're in the same order, use the position in normalized list
+                    potential_idx = len(updated_indices)
+                    if potential_idx < len(existing_plan.test_cases):
+                        matched_idx = potential_idx
+                        logger.debug(f"Matched test case by position: index {matched_idx}")
+                
+                if matched_idx is not None:
+                    existing_plan.test_cases[matched_idx] = updated_tc
+                    updated_indices.add(matched_idx)
+                    logger.info(f"Updated test case at index {matched_idx}: {updated_tc.title}")
+                else:
+                    logger.warning(
+                        f"Could not match test case '{updated_tc.title}' (id={updated_tc.id}). "
+                        f"Adding as new test case."
+                    )
+                    existing_plan.test_cases.append(updated_tc)
+            
+            if len(updated_indices) != len(normalized_test_cases):
+                logger.warning(
+                    f"Only updated {len(updated_indices)}/{len(normalized_test_cases)} test cases. "
+                    f"Some test cases could not be matched."
+                )
         
         # Update metadata
         existing_plan.metadata.total_test_cases = len(normalized_test_cases)
@@ -354,25 +409,24 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
             if tc.test_type.value == "integration"
         )
         
-        # Step 4: Save updated test plan to file IMMEDIATELY
-        logger.info(f"Saving updated test plan to {plan_path}")
-        plan_path.parent.mkdir(parents=True, exist_ok=True)
+        # Step 4: Save updated test plan to RAG
+        logger.info(f"Saving updated test plan to RAG for {issue_key}")
         try:
-            with open(plan_path, 'w') as f:
-                json.dump(existing_plan.dict(), f, indent=2, default=str)
-            logger.info(f"✅ Saved updated test plan to {plan_path} with {len(normalized_test_cases)} test cases")
+            from src.ai.indexing.document_processor import DocumentProcessor
+            from src.ai.indexing.document_indexer import DocumentIndexer
             
-            # Verify it was saved
-            if plan_path.exists():
-                logger.info(f"✅ Verified: Test plan file exists at {plan_path}")
-            else:
-                logger.error(f"❌ ERROR: Test plan file was not saved to {plan_path}")
-                raise Exception("Failed to save test plan file")
+            processor = DocumentProcessor()
+            doc_text = processor.build_test_plan_document(existing_plan)
+            
+            # Use DocumentIndexer to save (handles normalization and upsert logic)
+            indexer = DocumentIndexer()
+            await indexer.index_test_plan(existing_plan, doc_text)
+            logger.info(f"✅ Saved updated test plan to RAG with {len(existing_plan.test_cases)} test cases")
         except Exception as e:
-            logger.error(f"❌ Failed to save test plan: {e}", exc_info=True)
+            logger.error(f"❌ Failed to save test plan to RAG: {e}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to save test plan: {str(e)}"
+                detail=f"Failed to save test plan to RAG: {str(e)}"
             )
         
         # Step 4: Upload to Zephyr if requested
