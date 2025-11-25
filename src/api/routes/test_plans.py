@@ -189,13 +189,14 @@ def _get_test_plan_path(issue_key: str) -> Path:
     Get the absolute path to a test plan file.
     
     Works in both local and containerized environments:
-    - If APP_ROOT env var is set (Docker/K8s), uses that
-    - Otherwise uses current working directory (local development)
+    - In K8s/Docker: Uses /app/data/test_plans/ (persistent volume)
+    - Local development: Uses ./test_plans/ (current working directory)
     """
-    app_root_env = os.getenv("APP_ROOT")
-    if app_root_env:
-        # Containerized environment (Docker/K8s)
-        app_root = Path(app_root_env)
+    # Check if we're in a containerized environment (K8s/Docker)
+    # Use /app/data which is mounted as a persistent volume
+    if Path("/app/data").exists():
+        # Containerized environment - use persistent volume
+        app_root = Path("/app/data")
     else:
         # Local development - use current working directory
         app_root = Path.cwd()
