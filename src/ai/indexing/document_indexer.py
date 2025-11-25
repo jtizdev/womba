@@ -60,6 +60,9 @@ class DocumentIndexer:
         logger.info(f"Indexing test plan for story {test_plan.story.key}")
         
         try:
+            # Serialize full test plan to JSON for storage in metadata
+            test_plan_json = test_plan.model_dump_json()
+            
             metadata = {
                 "story_key": test_plan.story.key,
                 "project_key": test_plan.story.key.split('-')[0],
@@ -67,7 +70,8 @@ class DocumentIndexer:
                 "components": ','.join(test_plan.story.components) if test_plan.story.components else '',
                 "test_count": len(test_plan.test_cases),
                 "timestamp": datetime.now().isoformat(),
-                "ai_model": test_plan.metadata.ai_model
+                "ai_model": test_plan.metadata.ai_model,
+                "test_plan_json": test_plan_json  # Full JSON for exact retrieval
             }
             metadata = self._normalize_metadata(metadata)
             doc_id = self.create_stable_id("testplan", test_plan.story.key)
@@ -78,7 +82,7 @@ class DocumentIndexer:
                 ids=[doc_id]
             )
             
-            logger.info(f"Successfully indexed test plan {test_plan.story.key}")
+            logger.info(f"Successfully indexed test plan {test_plan.story.key} (with full JSON in metadata)")
             
         except Exception as e:
             logger.error(f"Failed to index test plan: {e}")
