@@ -82,11 +82,9 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         # Step 3: Save test plan to JSON file for history
         test_plan_file = None
         try:
-            from pathlib import Path
-            import json
-            test_plans_dir = Path("test_plans")
-            test_plans_dir.mkdir(exist_ok=True)
-            test_plan_file = test_plans_dir / f"test_plan_{request.issue_key}.json"
+            # Use the same path helper as other endpoints
+            test_plan_file = _get_test_plan_path(request.issue_key)
+            test_plan_file.parent.mkdir(parents=True, exist_ok=True)
             
             with open(test_plan_file, 'w') as f:
                 json.dump(test_plan.dict(), f, indent=2, default=str)
@@ -187,8 +185,21 @@ class UpdateTestPlanResponse(BaseModel):
 
 
 def _get_test_plan_path(issue_key: str) -> Path:
-    """Get the absolute path to a test plan file."""
-    app_root = Path(os.getenv("APP_ROOT", "/app"))
+    """
+    Get the absolute path to a test plan file.
+    
+    Works in both local and containerized environments:
+    - If APP_ROOT env var is set (Docker/K8s), uses that
+    - Otherwise uses current working directory (local development)
+    """
+    app_root_env = os.getenv("APP_ROOT")
+    if app_root_env:
+        # Containerized environment (Docker/K8s)
+        app_root = Path(app_root_env)
+    else:
+        # Local development - use current working directory
+        app_root = Path.cwd()
+    
     return app_root / "test_plans" / f"test_plan_{issue_key}.json"
 
 

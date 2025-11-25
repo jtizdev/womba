@@ -54,11 +54,9 @@ async def upload_test_cases(request: UploadTestCasesRequest):
         logger.info(f"Uploading test cases to Zephyr for {request.issue_key}")
         
         # Load saved test plan from file (like CLI upload-plan command)
-        # Use absolute path to avoid working directory issues
-        # In Docker, working dir is /app, so test_plans is at /app/test_plans
-        import os
-        app_root = Path(os.getenv("APP_ROOT", "/app"))  # Default to /app for Docker
-        plan_path = app_root / "test_plans" / f"test_plan_{request.issue_key}.json"
+        # Use the same path helper as test_plans endpoints
+        from src.api.routes.test_plans import _get_test_plan_path
+        plan_path = _get_test_plan_path(request.issue_key)
         
         logger.debug(f"Looking for test plan at: {plan_path.absolute()}")
         if not plan_path.exists():

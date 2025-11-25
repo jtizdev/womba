@@ -32,6 +32,7 @@ from src.ai.prompts_optimized import (
     TEST_PLAN_JSON_SCHEMA as OPTIMIZED_SCHEMA,
     VALIDATION_RULES,
 )
+from src.ai.prompts_rewritten import REWRITTEN_PROMPT
 
 # Path for prompt overrides
 PROMPT_OVERRIDES_FILE = Path("data/prompt_overrides.json")
@@ -693,9 +694,9 @@ Ensure all required fields are populated with realistic values.
         sections = []
         
         # ============================================================================
-        # SECTION 1: CORE INSTRUCTIONS (1500 tokens)
+        # SECTION 1: REWRITTEN PROMPT (MODULAR DESIGN)
         # ============================================================================
-        sections.append(OPTIMIZED_CORE_INSTRUCTIONS)
+        sections.append(REWRITTEN_PROMPT)
         sections.append("\n" + "=" * 80 + "\n")
         
         # ============================================================================
@@ -705,6 +706,19 @@ Ensure all required fields are populated with realistic values.
         sections.append("=" * 80 + "\n")
         
         sections.append(f"**Story**: {enriched_story.story_key} - {enriched_story.feature_narrative.split('.')[0]}\n")
+        
+        # FIRST: PRD/Confluence docs (explains WHAT things ARE)
+        if enriched_story.confluence_docs:
+            sections.append("**PRD / REQUIREMENTS DOCUMENTATION** (READ THIS FIRST - explains what the feature IS):\n")
+            for ref in enriched_story.confluence_docs:
+                sections.append(f"\n📄 Document: {ref.title}")
+                sections.append(f"🔗 URL: {ref.url}\n")
+                if ref.qa_summary:
+                    sections.append(ref.qa_summary)
+                elif ref.summary:
+                    sections.append(ref.summary)
+                sections.append("\n")
+            sections.append("\n")
         
         # Feature narrative
         sections.append("**What This Feature Does**:\n")
@@ -798,9 +812,9 @@ Ensure all required fields are populated with realistic values.
             sections.append("\n" + "=" * 80 + "\n\n")
         
         # ============================================================================
-        # SECTION 4: EXAMPLES (10% of budget - concise, cross-domain)
+        # SECTION 4: EXAMPLES (already included in REWRITTEN_PROMPT)
         # ============================================================================
-        sections.append(OPTIMIZED_EXAMPLES)
+        # Examples are included in Module 6 of REWRITTEN_PROMPT
         sections.append("\n")
         
         # ============================================================================
@@ -813,69 +827,25 @@ Ensure all required fields are populated with realistic values.
         )
         
         if should_inject_plainid:
-            # Inject platform architecture context from RAG or enriched story
+            # Use COMPANY_OVERVIEW from prompts_qa_focused instead of hardcoding
+            from src.ai.prompts_qa_focused import COMPANY_OVERVIEW
             sections.append("🏢 COMPANY CONTEXT (Platform Architecture)\n")
             sections.append("=" * 80 + "\n")
-            sections.append("Platform uses Policy-Based Access Control (PBAC). Key terms:\n")
-            sections.append("- PAP (Policy Administration Point): Web UI for policy authoring\n")
-            sections.append("- PDP (Policy Decision Point): Runtime authorization engine\n")
-            sections.append("- PEP (Policy Enforcement Point): Client-side enforcement\n")
-            sections.append("- POP (Policy Object Point): Deployed policy storage\n")
-            sections.append("- PIPs (Policy Information Points): Data sources that enrich policy evaluation context\n")
-            sections.append("- Authorizers: Data connectors (IDP, Database, API, File-based) that feed PIPs\n")
-            sections.append("\nWorkspaces:\n")
-            sections.append("- Authorization Workspace: Policies, Applications, Assets\n")
-            sections.append("- Identity Workspace: Identity sources, Dynamic Groups\n")
-            sections.append("- Orchestration Workspace: POPs, Vendor integration\n")
-            sections.append("- Administration Workspace: Audit, User management\n")
-            sections.append("\nPLATFORM UI STRUCTURE (for writing UI test steps):\n")
-            sections.append("\nWORKSPACES & UI NAVIGATION:\n")
-            sections.append("- **Authorization Workspace** (Policy authoring, main workspace for policies/assets/applications):\n")
-            sections.append("  - Policies menu → Policy list → Create/Edit policy → Policy 360° views\n")
-            sections.append("  - Applications menu → Application list → Application details → (tabs: General, Policies, API Mappers)\n")
-            sections.append("  - Assets menu → Asset Types → Assets\n")
-            sections.append("  - Scopes menu\n")
-            sections.append("\n- **Identity Workspace** (Identity management):\n")
-            sections.append("  - Identity Sources menu → IDP configuration\n")
-            sections.append("  - Dynamic Groups menu → Group definitions\n")
-            sections.append("  - Attributes menu\n")
-            sections.append("  - Token Enrichment\n")
-            sections.append("\n- **Orchestration Workspace** (Vendor integration, POPs):\n")
-            sections.append("  - POPs menu → POP details → Discovery, Policies tabs\n")
-            sections.append("  - Discovery menu → Vendor discovery status\n")
-            sections.append("  - Reconciliation → Deployment/Override actions\n")
-            sections.append("\n- **Administration Workspace** (System admin):\n")
-            sections.append("  - Audit Events → Activity logs\n")
-            sections.append("  - User Management → Roles, permissions\n")
-            sections.append("  - Environment settings\n")
-            sections.append("\nUI TEST STEP REQUIREMENTS (CRITICAL):\n")
-            sections.append("- For UI tests, use UI navigation language: \"Navigate to...\", \"Click...\", \"Select...\", \"Verify displays...\"\n")
-            sections.append("- Always specify workspace: \"In Authorization Workspace, navigate to Applications\"\n")
-            sections.append("- Always specify menu/tab path: \"Applications → Select app-123 → Click Policies tab\"\n")
-            sections.append("- Verify UI elements: \"Verify policy list displays with search bar and paging controls\"\n")
-            sections.append("- NO API endpoints in UI test steps! (API calls go in separate backend/API tests)\n")
+            sections.append(COMPANY_OVERVIEW)
             sections.append("\nFor detailed architecture, see retrieved context above.\n")
             sections.append("=" * 80 + "\n\n")
         
         # ============================================================================
-        # SECTION 5b: MANDATORY VALIDATION RULES (Self-check)
+        # SECTION 5b: VALIDATION RULES (already included in REWRITTEN_PROMPT Module 7)
         # ============================================================================
-        sections.append(VALIDATION_RULES)
+        # Validation checklist is included in Module 7 of REWRITTEN_PROMPT
         sections.append("\n")
         
         # ============================================================================
-        # SECTION 6: OUTPUT FORMAT (10% of budget)
+        # SECTION 6: OUTPUT FORMAT (already included in REWRITTEN_PROMPT)
         # ============================================================================
-        sections.append("📤 OUTPUT FORMAT\n")
-        sections.append("=" * 80 + "\n")
-        sections.append("Return JSON matching this schema exactly:\n")
-        sections.append("- reasoning: Your analysis (2-4 sentences)\n")
-        sections.append("- summary: Story info + test count justification\n")
-        sections.append("- test_cases: Array of test objects\n")
-        sections.append("- suggested_folder: Best folder from structure\n")
-        sections.append("- validation_check: Self-validation flags\n")
-        sections.append("\nEach test must have: title, description, preconditions, steps (with test_data), expected_result, priority, test_type, tags, automation_candidate, risk_level\n")
-        sections.append("=" * 80 + "\n")
+        # OUTPUT FORMAT is already included at the end of REWRITTEN_PROMPT (Module 7)
+        # No need to add it again here
         
         prompt = "\n".join(sections)
         
