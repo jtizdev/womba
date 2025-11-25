@@ -32,7 +32,8 @@ from src.ai.prompts_optimized import (
     TEST_PLAN_JSON_SCHEMA as OPTIMIZED_SCHEMA,
     VALIDATION_RULES,
 )
-from src.ai.prompts_rewritten import REWRITTEN_PROMPT
+# TODO: Uncomment when prompts_rewritten.py is ready for production
+# from src.ai.prompts_rewritten import REWRITTEN_PROMPT
 
 # Path for prompt overrides
 PROMPT_OVERRIDES_FILE = Path("data/prompt_overrides.json")
@@ -694,9 +695,9 @@ Ensure all required fields are populated with realistic values.
         sections = []
         
         # ============================================================================
-        # SECTION 1: REWRITTEN PROMPT (MODULAR DESIGN)
+        # SECTION 1: CORE INSTRUCTIONS (1500 tokens)
         # ============================================================================
-        sections.append(REWRITTEN_PROMPT)
+        sections.append(OPTIMIZED_CORE_INSTRUCTIONS)
         sections.append("\n" + "=" * 80 + "\n")
         
         # ============================================================================
@@ -836,16 +837,24 @@ Ensure all required fields are populated with realistic values.
             sections.append("=" * 80 + "\n\n")
         
         # ============================================================================
-        # SECTION 5b: VALIDATION RULES (already included in REWRITTEN_PROMPT Module 7)
+        # SECTION 5b: MANDATORY VALIDATION RULES (Self-check)
         # ============================================================================
-        # Validation checklist is included in Module 7 of REWRITTEN_PROMPT
+        sections.append(VALIDATION_RULES)
         sections.append("\n")
         
         # ============================================================================
-        # SECTION 6: OUTPUT FORMAT (already included in REWRITTEN_PROMPT)
+        # SECTION 6: OUTPUT FORMAT (10% of budget)
         # ============================================================================
-        # OUTPUT FORMAT is already included at the end of REWRITTEN_PROMPT (Module 7)
-        # No need to add it again here
+        sections.append("📤 OUTPUT FORMAT\n")
+        sections.append("=" * 80 + "\n")
+        sections.append("Return JSON matching this schema exactly:\n")
+        sections.append("- reasoning: Your analysis (2-4 sentences)\n")
+        sections.append("- summary: Story info + test count justification\n")
+        sections.append("- test_cases: Array of test objects\n")
+        sections.append("- suggested_folder: Best folder from structure\n")
+        sections.append("- validation_check: Self-validation flags\n")
+        sections.append("\nEach test must have: title, description, preconditions, steps (with test_data), expected_result, priority, test_type, tags, automation_candidate, risk_level\n")
+        sections.append("=" * 80 + "\n")
         
         prompt = "\n".join(sections)
         
