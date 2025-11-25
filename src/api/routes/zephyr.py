@@ -53,20 +53,19 @@ async def upload_test_cases(request: UploadTestCasesRequest):
     try:
         logger.info(f"Uploading test cases to Zephyr for {request.issue_key}")
         
-        # Load saved test plan from file (like CLI upload-plan command)
-        # Use the same path helper as test_plans endpoints
-        from src.api.routes.test_plans import _get_test_plan_path
-        plan_path = _get_test_plan_path(request.issue_key)
+        # Load saved test plan from RAG
+        from src.ai.rag_store import RAGVectorStore
+        store = RAGVectorStore()
+        test_plan_data = await store.get_test_plan_by_story_key(request.issue_key)
         
-        logger.debug(f"Looking for test plan at: {plan_path.absolute()}")
-        if not plan_path.exists():
+        if not test_plan_data:
             raise HTTPException(
                 status_code=404, 
-                detail=f"Saved test plan not found: {plan_path.absolute()}. Generate a test plan first."
+                detail=f"Test plan not found for {request.issue_key}. Generate a test plan first."
             )
         
-        logger.info(f"Loading saved test plan from {plan_path}")
-        test_plan = TestPlan.model_validate_json(plan_path.read_text())
+        logger.info(f"Loading saved test plan from RAG for {request.issue_key}")
+        test_plan = TestPlan.model_validate_json(test_plan_data['metadata']['test_plan_json'])
         
         # If specific test cases are provided, filter to only those
         if request.test_cases:

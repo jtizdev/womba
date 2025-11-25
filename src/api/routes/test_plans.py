@@ -79,18 +79,14 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             f"Generated {len(test_plan.test_cases)} test cases for {request.issue_key}"
         )
 
-        # Step 3: Save test plan to JSON file for history
-        test_plan_file = None
+        # Step 3: Save test plan to RAG
         try:
-            # Use the same path helper as other endpoints
-            test_plan_file = _get_test_plan_path(request.issue_key)
-            test_plan_file.parent.mkdir(parents=True, exist_ok=True)
-            
-            with open(test_plan_file, 'w') as f:
-                json.dump(test_plan.dict(), f, indent=2, default=str)
-            logger.info(f"Saved test plan to {test_plan_file}")
+            from src.ai.context_indexer import ContextIndexer
+            indexer = ContextIndexer()
+            await indexer.index_test_plan(test_plan, context)
+            logger.info(f"Saved test plan to RAG for {request.issue_key}")
         except Exception as e:
-            logger.error(f"Failed to save test plan to file: {e}")
+            logger.error(f"Failed to save test plan to RAG: {e}")
 
         # Step 4: Upload to Zephyr if requested
         zephyr_results = None
@@ -110,7 +106,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             if zephyr_results and 'test_case_ids' in zephyr_results:
                 zephyr_ids = zephyr_results['test_case_ids']
         
-        # Track in history with test plan file path
+        # Track in history (test plan stored in RAG)
         duration = int(time.time() - start_time)
         from .ui import track_test_generation
         track_test_generation(
@@ -119,7 +115,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
             status='success',
             duration=duration,
             zephyr_ids=zephyr_ids if zephyr_ids else None,
-            test_plan_file=str(test_plan_file) if test_plan_file else None
+            test_plan_file=f"rag:{request.issue_key}"  # Reference RAG storage
         )
 
         return GenerateTestPlanResponse(
@@ -218,16 +214,19 @@ async def get_test_plan(issue_key: str):
     Raises:
         HTTPException: 404 if test plan not found
     """
-    plan_path = _get_test_plan_path(issue_key)
+    # Load test plan from RAG
+    from src.ai.rag_store import RAGVectorStore
+    store = RAGVectorStore()
+    test_plan_data = await store.get_test_plan_by_story_key(issue_key)
     
-    if not plan_path.exists():
+    if not test_plan_data:
         raise HTTPException(
             status_code=404,
             detail=f"Test plan not found for {issue_key}. Generate a test plan first."
         )
     
-    logger.info(f"Loading test plan from {plan_path}")
-    test_plan = TestPlan.model_validate_json(plan_path.read_text())
+    logger.info(f"Loading test plan from RAG for {issue_key}")
+    test_plan = TestPlan.model_validate_json(test_plan_data['metadata']['test_plan_json'])
     
     return {"test_plan": test_plan}
 
