@@ -108,7 +108,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         
         # Track in history (test plan stored in RAG)
         duration = int(time.time() - start_time)
-        from .ui import track_test_generation
+        from .ui import track_test_generation, update_history_test_count
         track_test_generation(
             story_key=request.issue_key,
             test_count=len(test_plan.test_cases),
@@ -129,7 +129,7 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         
         # Track failure
         duration = int(time.time() - start_time)
-        from .ui import track_test_generation
+        from .ui import track_test_generation, update_history_test_count
         track_test_generation(
             story_key=request.issue_key,
             test_count=0,
@@ -346,8 +346,15 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
             # Full replacement: all test cases provided (backward compatible)
             logger.info(f"Full update: Replacing all {len(normalized_test_cases)} test cases")
             existing_plan.test_cases = normalized_test_cases
+        elif len(normalized_test_cases) < len(existing_plan.test_cases):
+            # Fewer test cases sent - likely a deletion, replace entire list
+            logger.info(
+                f"Deletion detected: Replacing {len(existing_plan.test_cases)} test cases "
+                f"with {len(normalized_test_cases)} test cases (deleted {len(existing_plan.test_cases) - len(normalized_test_cases)})"
+            )
+            existing_plan.test_cases = normalized_test_cases
         else:
-            # Partial update: merge updated test cases into existing list
+            # More test cases sent - partial update: merge updated test cases into existing list
             logger.info(
                 f"Partial update: Merging {len(normalized_test_cases)} updated test cases "
                 f"into existing {len(existing_plan.test_cases)} test cases"
@@ -397,14 +404,14 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
                     f"Some test cases could not be matched."
                 )
         
-        # Update metadata
-        existing_plan.metadata.total_test_cases = len(normalized_test_cases)
+        # Update metadata based on the final test plan (after merge)
+        existing_plan.metadata.total_test_cases = len(existing_plan.test_cases)
         existing_plan.metadata.edge_case_count = sum(
-            1 for tc in normalized_test_cases 
+            1 for tc in existing_plan.test_cases 
             if tc.test_type.value == "edge_case" or "edge" in (tc.tags or [])
         )
         existing_plan.metadata.integration_test_count = sum(
-            1 for tc in normalized_test_cases 
+            1 for tc in existing_plan.test_cases 
             if tc.test_type.value == "integration"
         )
         
@@ -421,6 +428,10 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
             indexer = DocumentIndexer()
             await indexer.index_test_plan(existing_plan, doc_text)
             logger.info(f"✅ Saved updated test plan to RAG with {len(existing_plan.test_cases)} test cases")
+            
+            # Update history entry with new test count
+            from .ui import update_history_test_count
+            update_history_test_count(issue_key, len(existing_plan.test_cases))
         except Exception as e:
             logger.error(f"❌ Failed to save test plan to RAG: {e}", exc_info=True)
             raise HTTPException(
