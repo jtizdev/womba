@@ -482,3 +482,73 @@ async def update_test_plan(issue_key: str, request: UpdateTestPlanRequest):
         logger.error(f"Failed to update test plan for {issue_key}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
+
+class DeleteTestPlanResponse(BaseModel):
+    """Response model for test plan deletion."""
+    success: bool
+    message: str
+
+
+@router.delete("/{issue_key}", response_model=DeleteTestPlanResponse)
+async def delete_test_plan(issue_key: str):
+    """
+    Delete a test plan from RAG storage.
+    
+    This endpoint completely removes the test plan for the given issue key
+    from the RAG database.
+    
+    Args:
+        issue_key: Jira issue key
+        
+    Returns:
+        Success message
+        
+    Raises:
+        HTTPException: 404 if test plan not found
+    """
+    logger.info(f"API: Deleting test plan for {issue_key}")
+    
+    try:
+        # Check if test plan exists first
+        from src.ai.rag_store import RAGVectorStore
+        store = RAGVectorStore()
+        test_plan_data = await store.get_test_plan_by_story_key(issue_key)
+        
+        if not test_plan_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Test plan not found for {issue_key}."
+            )
+        
+        # Delete from RAG
+        doc_id = f"testplan_{issue_key}"
+        collection = store.get_or_create_collection(store.TEST_PLANS_COLLECTION)
+        
+        try:
+            collection.delete(ids=[doc_id])
+            logger.info(f"Successfully deleted test plan {doc_id} from RAG")
+        except Exception as e:
+            logger.error(f"Failed to delete test plan from RAG: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to delete test plan from RAG: {str(e)}"
+            )
+        
+        # Also remove from history if tracked
+        try:
+            from .ui import remove_from_history
+            remove_from_history(issue_key)
+        except Exception as e:
+            logger.warning(f"Could not remove from history (may not exist): {e}")
+        
+        return DeleteTestPlanResponse(
+            success=True,
+            message=f"Test plan for {issue_key} has been deleted."
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete test plan for {issue_key}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+

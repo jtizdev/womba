@@ -442,3 +442,40 @@ def update_history_test_count(story_key: str, new_test_count: int):
     else:
         logger.debug(f"Test count unchanged for {story_key}: {new_test_count}")
 
+
+def remove_from_history(story_key: str):
+    """
+    Remove all history entries for a given story_key.
+    Called when a test plan is deleted.
+    
+    Args:
+        story_key: Jira story key to remove from history
+    """
+    global _history_store
+    
+    # Find all entries for this story_key
+    matching_items = [h for h in _history_store if h.get('story_key') == story_key]
+    if not matching_items:
+        logger.debug(f"No history entry found for story_key {story_key}")
+        return
+    
+    # Calculate stats to subtract
+    total_tests_to_remove = sum(h.get('test_count', 0) for h in matching_items if h.get('status') == 'success')
+    stories_to_remove = sum(1 for h in matching_items if h.get('status') == 'success')
+    
+    # Remove entries from history
+    _history_store = [h for h in _history_store if h.get('story_key') != story_key]
+    _save_history(_history_store)
+    
+    # Update stats
+    _stats_cache['total_tests'] = max(0, _stats_cache.get('total_tests', 0) - total_tests_to_remove)
+    _stats_cache['total_stories'] = max(0, _stats_cache.get('total_stories', 0) - stories_to_remove)
+    
+    # Recalculate success rate
+    total = len(_history_store)
+    success = sum(1 for h in _history_store if h.get('status') == 'success')
+    _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
+    
+    _save_stats(_stats_cache)
+    logger.info(f"Removed {len(matching_items)} history entries for {story_key}")
+
