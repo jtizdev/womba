@@ -404,6 +404,43 @@ class RAGVectorStore:
             logger.error(f"Failed to retrieve test plan for {issue_key}: {e}")
             return None
     
+    async def get_jira_story_by_key(self, issue_key: str) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve a Jira story by key (exact match) from RAG.
+        
+        Args:
+            issue_key: Jira issue key (e.g., "PLAT-13541")
+            
+        Returns:
+            Dictionary with document data including metadata (with fix_versions), or None if not found
+        """
+        logger.debug(f"Retrieving Jira story from RAG for {issue_key}")
+        
+        try:
+            collection = self.get_or_create_collection(self.JIRA_ISSUES_COLLECTION)
+            
+            # Query by metadata filter for exact match
+            results = collection.get(
+                where={"story_key": issue_key},
+                limit=1
+            )
+            
+            if not results or not results.get('ids') or len(results['ids']) == 0:
+                logger.debug(f"Jira story not found in RAG for {issue_key}")
+                return None
+            
+            # Return first result
+            idx = 0
+            return {
+                'id': results['ids'][idx],
+                'document': results['documents'][idx] if results.get('documents') else '',
+                'metadata': results['metadatas'][idx] if results.get('metadatas') else {}
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to retrieve Jira story from RAG for {issue_key}: {e}")
+            return None
+
     async def update_test_plan(self, issue_key: str, test_plan_json: str, doc_text: str, metadata: Dict[str, Any]) -> None:
         """
         Update an existing test plan in RAG storage.

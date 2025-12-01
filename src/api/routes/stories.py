@@ -348,3 +348,47 @@ async def get_story_context(issue_key: str):
         logger.error(f"Failed to fetch context for {issue_key}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+
+@router.get("/{issue_key}/fix-versions")
+async def get_story_fix_versions(issue_key: str):
+    """
+    Get fix versions for a Jira story.
+    
+    Tries RAG first (fast, local) then falls back to Jira API if not found.
+
+    Args:
+        issue_key: Jira issue key (e.g., PROJ-123)
+
+    Returns:
+        List of fix version strings
+    """
+    logger.info(f"API: Fetching fix versions for {issue_key}")
+
+    try:
+        # Try RAG first (fast, local)
+        from src.ai.rag_store import RAGVectorStore
+        store = RAGVectorStore()
+        
+        rag_story = await store.get_jira_story_by_key(issue_key)
+        if rag_story and rag_story.get('metadata', {}).get('fix_versions'):
+            fix_versions_str = rag_story['metadata']['fix_versions']
+            if fix_versions_str:
+                versions = [v.strip() for v in fix_versions_str.split(',') if v.strip()]
+                if versions:
+                    logger.info(f"✅ Found fix versions in RAG for {issue_key}: {versions}")
+                    return {"fix_versions": versions, "source": "rag"}
+        
+        # Fallback to Jira API
+        logger.info(f"Fix versions not in RAG for {issue_key}, falling back to Jira API")
+        jira_client = JiraClient()
+        story = await jira_client.get_issue(issue_key)
+        
+        versions = story.fix_versions if hasattr(story, 'fix_versions') else []
+        logger.info(f"✅ Got fix versions from Jira for {issue_key}: {versions}")
+        return {"fix_versions": versions, "source": "jira"}
+        
+    except Exception as e:
+        logger.error(f"Failed to fetch fix versions for {issue_key}: {e}")
+        # Return empty list instead of error - fix versions are optional
+        return {"fix_versions": [], "source": "error", "error": str(e)}

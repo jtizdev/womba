@@ -1032,6 +1032,7 @@ class ZephyrIntegration:
         project_key: str,
         cycle_name: str,
         test_case_folder_path: Optional[str] = None,
+        cycle_folder_id: Optional[str] = None,
         cycle_folder_path: Optional[str] = None,
         story_key: Optional[str] = None
     ) -> Dict:
@@ -1044,7 +1045,8 @@ class ZephyrIntegration:
             project_key: Jira project key
             cycle_name: Name for the test cycle
             test_case_folder_path: Optional folder path for test cases
-            cycle_folder_path: Optional folder path for the test cycle
+            cycle_folder_id: Optional folder ID for the test cycle (preferred - avoids duplicate name issues)
+            cycle_folder_path: Optional folder path for the test cycle (fallback if ID not provided)
             story_key: Story key to link the cycle to
             
         Returns:
@@ -1054,8 +1056,10 @@ class ZephyrIntegration:
         logger.info(f"   Cycle name: {cycle_name}")
         if test_case_folder_path:
             logger.info(f"   Test case folder (folderType=TEST_CASE): {test_case_folder_path}")
-        if cycle_folder_path:
-            logger.info(f"   Cycle folder (folderType=TEST_CYCLE): {cycle_folder_path}")
+        if cycle_folder_id:
+            logger.info(f"   Cycle folder ID (folderType=TEST_CYCLE): {cycle_folder_id}")
+        elif cycle_folder_path:
+            logger.info(f"   Cycle folder path (folderType=TEST_CYCLE): {cycle_folder_path}")
         logger.info(f"   Story to link: {story_key or 'None'}")
         
         result = {
@@ -1107,13 +1111,18 @@ class ZephyrIntegration:
             logger.error("No test cases were created successfully, aborting cycle creation")
             return result
         
-        # Step 3: Resolve/create TEST_CYCLE folder if specified
-        cycle_folder_id = None
-        if cycle_folder_path:
+        # Step 3: Resolve TEST_CYCLE folder - prefer ID over path to avoid duplicate name issues
+        resolved_cycle_folder_id = None
+        if cycle_folder_id:
+            # Use provided folder ID directly (preferred - avoids duplicate name issues)
+            resolved_cycle_folder_id = cycle_folder_id
+            logger.info(f"✅ Using provided TEST_CYCLE folder ID: {resolved_cycle_folder_id}")
+        elif cycle_folder_path:
+            # Fallback: resolve by path (may have issues with duplicate folder names)
             try:
-                logger.info(f"Resolving TEST_CYCLE folder: {cycle_folder_path}")
-                cycle_folder_id = await self.ensure_cycle_folder(project_key, cycle_folder_path)
-                logger.info(f"✅ Using TEST_CYCLE folder ID: {cycle_folder_id} (path: {cycle_folder_path})")
+                logger.info(f"Resolving TEST_CYCLE folder by path: {cycle_folder_path}")
+                resolved_cycle_folder_id = await self.ensure_cycle_folder(project_key, cycle_folder_path)
+                logger.info(f"✅ Resolved TEST_CYCLE folder ID: {resolved_cycle_folder_id} (path: {cycle_folder_path})")
             except Exception as e:
                 logger.error(f"Failed to resolve TEST_CYCLE folder: {e}")
                 result['errors'].append(f"Cycle folder error: {str(e)}")
@@ -1125,7 +1134,7 @@ class ZephyrIntegration:
                 project_key=project_key,
                 name=cycle_name,
                 description=f"Test cycle for {story_key or 'test cases'}. Created by Womba.",
-                folder_id=cycle_folder_id
+                folder_id=resolved_cycle_folder_id
             )
             result['cycle_key'] = cycle_key
             logger.info(f"✅ Created test cycle: {cycle_key}")

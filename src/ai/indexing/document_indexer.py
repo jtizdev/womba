@@ -299,6 +299,9 @@ class DocumentIndexer:
         """
         last_modified = story.updated.isoformat() if hasattr(story, 'updated') and story.updated else datetime.now().isoformat()
         
+        # Get fix_versions if available
+        fix_versions = ','.join(story.fix_versions) if hasattr(story, 'fix_versions') and story.fix_versions else ''
+        
         return {
             "story_key": story.key,
             "project_key": project_key or story.key.split('-')[0],
@@ -306,6 +309,7 @@ class DocumentIndexer:
             "issue_type": story.issue_type,
             "status": story.status,
             "components": ','.join(story.components) if story.components else '',
+            "fix_versions": fix_versions,
             "timestamp": datetime.now().isoformat(),
             "last_modified": last_modified
         }

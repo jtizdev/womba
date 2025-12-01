@@ -220,7 +220,8 @@ class UploadToCycleRequest(BaseModel):
     project_key: str = Field(..., description="Jira project key (e.g., PLAT)")
     cycle_name: str = Field(..., description="Name for the test cycle")
     test_case_folder_path: Optional[str] = Field(None, description="(Deprecated) Folder path for test cases - use TEST_CASE folders")
-    cycle_folder_path: Optional[str] = Field(None, description="Folder path for the test cycle (uses TEST_CYCLE folders)")
+    cycle_folder_path: Optional[str] = Field(None, description="(Deprecated) Folder path - use cycle_folder_id instead")
+    cycle_folder_id: Optional[str] = Field(None, description="Folder ID for the test cycle (preferred - avoids duplicate name issues)")
     test_cases: Optional[List[dict]] = Field(None, description="Specific test cases to upload")
 
 
@@ -334,7 +335,8 @@ async def upload_to_cycle(request: UploadToCycleRequest):
             project_key=request.project_key,
             cycle_name=request.cycle_name,
             test_case_folder_path=request.test_case_folder_path,
-            cycle_folder_path=request.cycle_folder_path,
+            cycle_folder_id=request.cycle_folder_id,  # Preferred: use ID directly
+            cycle_folder_path=request.cycle_folder_path,  # Fallback: resolve by path
             story_key=request.issue_key
         )
         
