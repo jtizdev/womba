@@ -47,6 +47,7 @@ class JiraStory(BaseModel):
     updated: datetime = Field(description="Last update timestamp")
     labels: List[str] = Field(default_factory=list, description="Labels")
     components: List[str] = Field(default_factory=list, description="Components")
+    fix_versions: List[str] = Field(default_factory=list, description="Fix versions (release versions)")
     acceptance_criteria: Optional[str] = Field(
         default=None, description="Acceptance criteria"
     )

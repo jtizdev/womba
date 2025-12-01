@@ -276,6 +276,11 @@ class JiraClient(AtlassianClient):
         # Try to find acceptance criteria
         acceptance_criteria = self._extract_acceptance_criteria_from_sdk(issue.fields, description)
         
+        # Extract fix versions
+        fix_versions = []
+        if hasattr(issue.fields, 'fixVersions') and issue.fields.fixVersions:
+            fix_versions = [v.name for v in issue.fields.fixVersions if hasattr(v, 'name')]
+        
         return JiraStory(
             key=key,
             summary=summary,
@@ -289,6 +294,7 @@ class JiraClient(AtlassianClient):
             updated=updated,
             labels=labels,
             components=components,
+            fix_versions=fix_versions,
             acceptance_criteria=acceptance_criteria,
             linked_issues=linked_issues,
             attachments=attachments,
@@ -668,6 +674,9 @@ class JiraClient(AtlassianClient):
 
         # Try to find acceptance criteria in common custom field names or description
         acceptance_criteria = self._extract_acceptance_criteria(fields, description)
+        
+        # Extract fix versions
+        fix_versions = [v.get("name", "") for v in fields.get("fixVersions", []) if v.get("name")]
 
         return JiraStory(
             key=key,
@@ -682,6 +691,7 @@ class JiraClient(AtlassianClient):
             updated=updated,
             labels=labels,
             components=components,
+            fix_versions=fix_versions,
             acceptance_criteria=acceptance_criteria,
             linked_issues=linked_issues,
             attachments=attachments,

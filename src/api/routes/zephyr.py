@@ -78,6 +78,139 @@ async def get_folders(
 
 
 # ============================================================================
+# Suggest Folder Endpoint (AI-based)
+# ============================================================================
+
+class SuggestFolderRequest(BaseModel):
+    """Request model for folder suggestion."""
+    project_key: str = Field(..., description="Jira project key (e.g., PLAT)")
+    fix_version: str = Field(..., description="Fix version from Jira story (e.g., 'Platform MNG - Dec-7th (5.2550.X)')")
+    folder_type: str = Field("TEST_CYCLE", description="Folder type: TEST_CASE or TEST_CYCLE")
+
+
+class SuggestFolderResponse(BaseModel):
+    """Response model for folder suggestion."""
+    suggested_folder_id: Optional[str] = None
+    suggested_folder_path: Optional[str] = None
+    confidence: str = "high"  # high, medium, low
+    reason: str = ""
+    available_folders: List[ZephyrFolder] = []
+
+
+@router.post("/suggest-folder", response_model=SuggestFolderResponse)
+async def suggest_folder(request: SuggestFolderRequest):
+    """
+    Use AI to suggest the best folder for a test cycle based on the story's fix version.
+    
+    This endpoint:
+    1. Fetches available folders from Zephyr
+    2. Uses AI to match the fix version to the most appropriate folder
+    
+    Args:
+        request: Request with project_key and fix_version
+        
+    Returns:
+        Suggested folder with confidence level and reasoning
+    """
+    try:
+        logger.info(f"🤖 Suggesting folder for fix version: {request.fix_version}")
+        
+        # Fetch available folders
+        zephyr = ZephyrIntegration()
+        folders = await zephyr.get_folders(request.project_key, request.folder_type)
+        
+        if not folders:
+            return SuggestFolderResponse(
+                suggested_folder_id=None,
+                suggested_folder_path=None,
+                confidence="low",
+                reason="No folders available in Zephyr",
+                available_folders=[]
+            )
+        
+        folder_paths = [f['path'] for f in folders]
+        
+        # Use AI to find the best match
+        from src.ai.generation.ai_client_factory import AIClientFactory
+        client, model = AIClientFactory.create_openai_client()
+        
+        prompt = f"""Given the Jira fix version and available Zephyr test cycle folders, suggest the best folder to place test cycles for this version.
+
+Fix Version: {request.fix_version}
+
+Available Folders:
+{chr(10).join(f"- {path}" for path in folder_paths)}
+
+Instructions:
+1. Look for date patterns in both the fix version and folder names (e.g., "Dec-7th", "Nov-16th", dates like "5.2550.X")
+2. Match based on release timing - if the fix version is for Dec 7th, look for the closest preceding release folder
+3. Consider version numbers like "5.2550.X" which indicate release sequences
+4. If no good match is found, suggest the most recent/relevant folder
+
+Respond with ONLY a JSON object (no markdown, no code blocks):
+{{"folder_path": "exact folder path from the list", "confidence": "high|medium|low", "reason": "brief explanation"}}
+
+If you cannot find a good match, set folder_path to null and confidence to "low"."""
+
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1,
+            max_tokens=200
+        )
+        response = completion.choices[0].message.content
+        
+        # Parse AI response
+        import json
+        try:
+            # Clean the response - remove markdown code blocks if present
+            response_text = response.strip()
+            if response_text.startswith("```"):
+                # Remove markdown code block
+                lines = response_text.split("\n")
+                response_text = "\n".join(lines[1:-1] if lines[-1] == "```" else lines[1:])
+            
+            ai_result = json.loads(response_text)
+            suggested_path = ai_result.get("folder_path")
+            confidence = ai_result.get("confidence", "medium")
+            reason = ai_result.get("reason", "AI-based suggestion")
+            
+            # Find the folder ID for the suggested path
+            suggested_id = None
+            if suggested_path:
+                for f in folders:
+                    if f['path'] == suggested_path:
+                        suggested_id = f['id']
+                        break
+            
+            logger.info(f"✅ AI suggested folder: {suggested_path} (confidence: {confidence})")
+            
+            return SuggestFolderResponse(
+                suggested_folder_id=suggested_id,
+                suggested_folder_path=suggested_path,
+                confidence=confidence,
+                reason=reason,
+                available_folders=[ZephyrFolder(**f) for f in folders]
+            )
+            
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse AI response: {e}. Response: {response}")
+            # Fallback to the last folder (most recently created)
+            last_folder = folders[-1] if folders else None
+            return SuggestFolderResponse(
+                suggested_folder_id=last_folder['id'] if last_folder else None,
+                suggested_folder_path=last_folder['path'] if last_folder else None,
+                confidence="low",
+                reason="Could not parse AI response, using most recent folder",
+                available_folders=[ZephyrFolder(**f) for f in folders]
+            )
+        
+    except Exception as e:
+        logger.error(f"Failed to suggest folder: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
 # Upload to Cycle Endpoint
 # ============================================================================
 
