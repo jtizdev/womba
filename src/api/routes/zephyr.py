@@ -3,17 +3,231 @@ API routes for direct Zephyr Scale uploads.
 Uses the existing robust ZephyrIntegration from Womba CLI.
 """
 
-from typing import List, Optional
+from typing import List, Optional, Any
 from pathlib import Path
 import re
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 from loguru import logger
 
 from src.integrations.zephyr_integration import ZephyrIntegration
 from src.models.test_plan import TestPlan
 
 router = APIRouter(prefix="/api/v1/zephyr", tags=["zephyr"])
+
+
+# ============================================================================
+# Folder Endpoints
+# ============================================================================
+
+class ZephyrFolder(BaseModel):
+    """Zephyr folder model."""
+    id: str
+    name: str
+    parentId: Optional[str] = None
+    path: str
+
+
+class FoldersResponse(BaseModel):
+    """Response model for folder list."""
+    folders: List[ZephyrFolder]
+    folder_type: str
+    project_key: str
+
+
+@router.get("/folders", response_model=FoldersResponse)
+async def get_folders(
+    project_key: str = Query(..., description="Jira project key"),
+    folder_type: str = Query("TEST_CASE", description="Folder type: TEST_CASE or TEST_CYCLE")
+):
+    """
+    Get folders from Zephyr Scale for a project.
+    
+    Args:
+        project_key: Jira project key (e.g., "PLAT")
+        folder_type: Either "TEST_CASE" or "TEST_CYCLE"
+        
+    Returns:
+        List of folders with their full paths
+    """
+    try:
+        logger.info(f"Fetching {folder_type} folders for project {project_key}")
+        
+        if folder_type not in ["TEST_CASE", "TEST_CYCLE"]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid folder_type: {folder_type}. Must be TEST_CASE or TEST_CYCLE"
+            )
+        
+        zephyr = ZephyrIntegration()
+        folders = await zephyr.get_folders(project_key, folder_type)
+        
+        logger.info(f"Found {len(folders)} {folder_type} folders")
+        
+        return FoldersResponse(
+            folders=[ZephyrFolder(**f) for f in folders],
+            folder_type=folder_type,
+            project_key=project_key
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to fetch folders: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Upload to Cycle Endpoint
+# ============================================================================
+
+class UploadToCycleRequest(BaseModel):
+    """Request model for uploading test cases to a test cycle."""
+    issue_key: str = Field(..., description="Jira issue key (e.g., PLAT-12345)")
+    project_key: str = Field(..., description="Jira project key (e.g., PLAT)")
+    cycle_name: str = Field(..., description="Name for the test cycle")
+    test_case_folder_path: Optional[str] = Field(None, description="(Deprecated) Folder path for test cases - use TEST_CASE folders")
+    cycle_folder_path: Optional[str] = Field(None, description="Folder path for the test cycle (uses TEST_CYCLE folders)")
+    test_cases: Optional[List[dict]] = Field(None, description="Specific test cases to upload")
+
+
+class UploadToCycleResponse(BaseModel):
+    """Response model for upload to cycle."""
+    success: bool
+    cycle_key: Optional[str] = None
+    cycle_name: str
+    test_case_count: int
+    test_case_ids: List[str]
+    execution_count: int
+    linked_to_story: bool
+    story_key: Optional[str] = None
+    errors: List[str] = []
+    test_case_results: dict = {}
+
+
+@router.post("/upload-to-cycle", response_model=UploadToCycleResponse)
+async def upload_to_cycle(request: UploadToCycleRequest):
+    """
+    Upload test cases to Zephyr Scale and add them to a new test cycle.
+    
+    This endpoint:
+    1. Creates test cases in the specified folder
+    2. Creates a new test cycle
+    3. Adds all test cases to the cycle
+    4. Links the cycle to the story (not individual tests)
+    
+    Args:
+        request: Upload request with cycle name, folder paths, and test cases
+        
+    Returns:
+        Upload results with cycle key and test case IDs
+    """
+    try:
+        logger.info(f"📦 Upload to cycle request for {request.issue_key}")
+        logger.info(f"   Cycle name: {request.cycle_name}")
+        if request.test_case_folder_path:
+            logger.info(f"   Test case folder (TEST_CASE type): {request.test_case_folder_path}")
+        if request.cycle_folder_path:
+            logger.info(f"   Cycle folder (TEST_CYCLE type): {request.cycle_folder_path}")
+        
+        # Load saved test plan from RAG
+        from src.ai.rag_store import RAGVectorStore
+        store = RAGVectorStore()
+        test_plan_data = await store.get_test_plan_by_story_key(request.issue_key)
+        
+        if not test_plan_data:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Test plan not found for {request.issue_key}. Generate a test plan first."
+            )
+        
+        logger.info(f"Loading saved test plan from RAG for {request.issue_key}")
+        test_plan = TestPlan.model_validate_json(test_plan_data['metadata']['test_plan_json'])
+        
+        # If specific test cases are provided, filter to only those
+        if request.test_cases:
+            logger.info(f"Selective upload: {len(request.test_cases)} selected test cases")
+            
+            selected_identifiers = set()
+            selected_indices = set()
+            
+            for tc in request.test_cases:
+                tc_id = tc.get('id')
+                tc_title = tc.get('title')
+                
+                if tc_id:
+                    selected_identifiers.add(tc_id)
+                    match = re.search(r'-(\d+)$', tc_id)
+                    if match:
+                        index = int(match.group(1)) - 1
+                        if 0 <= index < len(test_plan.test_cases):
+                            selected_indices.add(index)
+                
+                if tc_title:
+                    selected_identifiers.add(tc_title)
+            
+            filtered_cases = []
+            for idx, tc in enumerate(test_plan.test_cases):
+                if (tc.id and tc.id in selected_identifiers) or \
+                   tc.title in selected_identifiers or \
+                   idx in selected_indices:
+                    # Ensure manual test cases have valid steps
+                    if tc.id and tc.id.startswith('TC-MANUAL-'):
+                        valid_steps = [s for s in tc.steps if s.action and s.action.strip()]
+                        if not valid_steps:
+                            from src.models.test_case import TestStep
+                            tc.steps = [TestStep(
+                                step_number=1,
+                                action="Manual test case - steps to be defined",
+                                expected_result="Verify expected behavior"
+                            )]
+                        else:
+                            tc.steps = valid_steps
+                    filtered_cases.append(tc)
+            
+            test_plan.test_cases = filtered_cases
+            logger.info(f"Filtered to {len(test_plan.test_cases)} matching test cases")
+        
+        if not test_plan.test_cases:
+            raise HTTPException(
+                status_code=400,
+                detail="No test cases to upload"
+            )
+        
+        # Use the new upload_to_cycle method
+        zephyr = ZephyrIntegration()
+        result = await zephyr.upload_to_cycle(
+            test_plan=test_plan,
+            project_key=request.project_key,
+            cycle_name=request.cycle_name,
+            test_case_folder_path=request.test_case_folder_path,
+            cycle_folder_path=request.cycle_folder_path,
+            story_key=request.issue_key
+        )
+        
+        return UploadToCycleResponse(
+            success=result['cycle_key'] is not None and len(result['test_case_keys']) > 0,
+            cycle_key=result['cycle_key'],
+            cycle_name=result['cycle_name'],
+            test_case_count=len(result['test_case_keys']),
+            test_case_ids=result['test_case_keys'],
+            execution_count=len(result['executions']),
+            linked_to_story=result['linked_to_story'],
+            story_key=result['story_key'],
+            errors=result['errors'],
+            test_case_results=result['test_case_results']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to upload to cycle: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Original Upload Endpoint (for backwards compatibility)
+# ============================================================================
 
 
 class UploadTestCasesRequest(BaseModel):

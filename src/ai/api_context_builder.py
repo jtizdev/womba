@@ -34,7 +34,8 @@ class APIContextBuilder:
         self,
         main_story: JiraStory,
         story_context: StoryContext,
-        combined_text: str = None
+        combined_text: str = None,
+        swagger_rag_docs: list = None  # NEW: Accept swagger docs from RAGRetriever
     ) -> APIContext:
         """
         Build API and UI context using fallback flow.
@@ -43,6 +44,7 @@ class APIContextBuilder:
             main_story: Primary story
             story_context: Story context with subtasks, linked stories
             combined_text: Combined text from main story + linked stories (optional, will be built if not provided)
+            swagger_rag_docs: Swagger docs already retrieved by RAGRetriever (avoids duplicate query)
             
         Returns:
             APIContext with api_specifications, ui_specifications, and extraction_flow
@@ -98,30 +100,19 @@ class APIContextBuilder:
             api_specs.extend(api_specs_from_story)
             extraction_flow_parts.append("story")
         
-        # Step 2: Fall back to Swagger RAG if incomplete
-        if not api_specs:
-            logger.info("Step 2: No endpoints from story, querying Swagger RAG")
-            try:
-                rag_results = await self.rag_store.retrieve_similar(
-                    collection_name="swagger_docs",
-                    query_text=f"{main_story.summary} API endpoints",
-                    top_k=5
-                )
-                logger.debug(f"  Retrieved {len(rag_results)} Swagger docs from RAG")
-                
-                # Parse endpoints from Swagger RAG results
-                for result in rag_results:
-                    content = result.get("content", "")
-                    # Extract endpoints from swagger content
-                    specs = self._parse_swagger_content(content)
-                    if specs:
-                        api_specs.extend(specs)
-                        logger.debug(f"  Extracted {len(specs)} endpoints from Swagger")
-                
-                if api_specs:
-                    extraction_flow_parts.append("swagger")
-            except Exception as e:
-                logger.warning(f"Swagger RAG fallback failed: {e}")
+        # Step 2: Use Swagger RAG docs if provided (from RAGRetriever - NO DUPLICATE QUERY)
+        if not api_specs and swagger_rag_docs:
+            logger.info(f"Step 2: Using {len(swagger_rag_docs)} Swagger docs from RAGRetriever (no duplicate query)")
+            for result in swagger_rag_docs:
+                content = result.get("document", "") or result.get("content", "")
+                # Extract endpoints from swagger content
+                specs = self._parse_swagger_content(content)
+                if specs:
+                    api_specs.extend(specs)
+                    logger.debug(f"  Extracted {len(specs)} endpoints from Swagger RAG")
+            
+            if api_specs:
+                extraction_flow_parts.append("swagger_rag")
         
         # Step 3: Fall back to GitLab MCP if still nothing
         if not api_specs:

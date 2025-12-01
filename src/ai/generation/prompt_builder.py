@@ -8,9 +8,12 @@ Refactored to support:
 - Optimized section ordering
 - Token-efficient construction
 - Dynamic prompt overrides from configuration
+- COMPACT mode for reduced token usage (~4K words target)
+- Comprehensive logging for debugging
 """
 
 import json
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from loguru import logger
@@ -33,6 +36,11 @@ from src.ai.prompts_optimized import (
     VALIDATION_RULES,
 )
 from src.ai.prompts_rewritten import REWRITTEN_PROMPT
+from src.ai.prompts_compact import (
+    build_compact_prompt,
+    COMPACT_JSON_SCHEMA,
+    COMPACT_SYSTEM_INSTRUCTION,
+)
 
 # Path for prompt overrides
 PROMPT_OVERRIDES_FILE = Path("data/prompt_overrides.json")
@@ -58,23 +66,39 @@ def _get_prompt_section(section_name: str, default_content: str) -> str:
 class PromptBuilder:
     """
     Builds AI prompts from various context sources.
+    
     Features:
     - RAG context integration with token budgeting
     - Existing tests context
     - Engineering tasks context
     - Folder structure context
+    - COMPACT mode for reduced token usage (~4K words)
+    - Comprehensive logging at every step
+    
+    Modes:
+    - use_optimized=True, use_compact=False: Original optimized prompts (~12K words)
+    - use_optimized=True, use_compact=True: New compact prompts (~4K words)
     """
 
-    def __init__(self, model: str = "gpt-4o", use_optimized: bool = True):
+    # Token budgets
+    MAX_PROMPT_TOKENS = 16000  # Target max for compact mode
+    MAX_RAG_TOKENS = 4000     # Max tokens for RAG context
+    
+    def __init__(self, model: str = "gpt-4o", use_optimized: bool = True, use_compact: bool = False):
         """
         Initialize prompt builder.
         
         Args:
             model: Model name for token budget calculation
             use_optimized: Use optimized prompt structure (default True)
+            use_compact: Use compact prompts for reduced token usage (default False)
         """
         self.model = model.lower() if model else "gpt-4o"
         self.use_optimized = use_optimized
+        self.use_compact = use_compact
+        
+        logger.info(f"[PROMPT] Initialized PromptBuilder: model={self.model}, "
+                   f"optimized={use_optimized}, compact={use_compact}")
     
     def get_json_schema(self) -> Dict[str, Any]:
         """
@@ -83,7 +107,15 @@ class PromptBuilder:
         Returns:
             JSON schema dict for test plan generation
         """
+        if self.use_compact:
+            return COMPACT_JSON_SCHEMA
         return OPTIMIZED_SCHEMA if self.use_optimized else TEST_PLAN_JSON_SCHEMA
+    
+    def get_system_instruction(self) -> str:
+        """Get the system instruction for the AI model."""
+        if self.use_compact:
+            return COMPACT_SYSTEM_INSTRUCTION
+        return SYSTEM_INSTRUCTION
 
     def build_generation_prompt(
         self,
@@ -93,6 +125,7 @@ class PromptBuilder:
         folder_structure: Optional[list] = None,
         enriched_story: Optional[EnrichedStory] = None,
         api_context: Optional[APIContext] = None,
+        retrieved_context: Optional[Any] = None,  # NEW: Raw RetrievedContext for compact prompt
     ) -> str:
         """
         Build complete prompt for test generation with optimized structure.
@@ -113,19 +146,35 @@ class PromptBuilder:
         
         Args:
             context: Story context
-            rag_context: Optional RAG context section
+            rag_context: Optional RAG context section (formatted string)
             existing_tests: Optional list of existing tests
             folder_structure: Optional Zephyr folder structure
             enriched_story: Optional preprocessed EnrichedStory (Jira-native data only)
             api_context: Optional APIContext with API/UI specs (built via fallback flow)
+            retrieved_context: Optional raw RetrievedContext for compact prompt (gives access to all RAG data)
             
         Returns:
             Complete prompt string
         """
+        # Log prompt builder state
+        start_time = time.time()
+        logger.info(f"[PROMPT] Building prompt: use_optimized={self.use_optimized}, use_compact={self.use_compact}, "
+                   f"has_enriched_story={enriched_story is not None}, has_api_context={api_context is not None}, "
+                   f"has_retrieved_context={retrieved_context is not None}")
+        
+        # Route to COMPACT prompt if enabled (new efficient mode)
+        if self.use_compact and enriched_story:
+            logger.info("[PROMPT] 🚀 Using COMPACT prompt structure (~4K words target)")
+            return self.build_compact_generation_prompt(
+                enriched_story=enriched_story,
+                rag_context=rag_context,
+                api_context=api_context,
+                retrieved_context=retrieved_context  # Pass raw context for full data access
+            )
+        
         # Route to optimized prompt if enabled
-        logger.info(f"Prompt builder state: use_optimized={self.use_optimized}, has_enriched_story={enriched_story is not None}, has_api_context={api_context is not None}")
         if self.use_optimized and enriched_story:
-            logger.info("🚀 Using OPTIMIZED prompt structure (new strategy)")
+            logger.info("[PROMPT] 🚀 Using OPTIMIZED prompt structure")
             return self.build_optimized_prompt(
                 enriched_story=enriched_story,
                 rag_context_formatted=rag_context or "",
@@ -853,9 +902,138 @@ Ensure all required fields are populated with realistic values.
         
         # Log token estimate
         estimated_tokens = self._estimate_tokens(prompt)
-        logger.info(f"✅ Built OPTIMIZED prompt: ~{estimated_tokens} tokens ({len(prompt)} chars)")
-        logger.info(f"   Story section: ~{self._estimate_tokens(enriched_story.feature_narrative)} tokens")
-        logger.info(f"   RAG context: ~{self._estimate_tokens(rag_context_formatted) if rag_context_formatted else 0} tokens")
+        logger.info(f"[PROMPT] ✅ Built OPTIMIZED prompt: ~{estimated_tokens} tokens ({len(prompt)} chars)")
+        logger.info(f"[PROMPT]    Story section: ~{self._estimate_tokens(enriched_story.feature_narrative)} tokens")
+        logger.info(f"[PROMPT]    RAG context: ~{self._estimate_tokens(rag_context_formatted) if rag_context_formatted else 0} tokens")
+        
+        return prompt
+    
+    def build_compact_generation_prompt(
+        self,
+        enriched_story: EnrichedStory,
+        rag_context: Optional[str] = None,
+        api_context: Optional[APIContext] = None,
+        retrieved_context: Optional[Any] = None,  # NEW: Raw RetrievedContext for full data access
+    ) -> str:
+        """
+        Build COMPACT prompt for test generation (~4K words target).
+        
+        This is the new efficient prompt structure that:
+        - Reduces instructions from 7 modules to 3 sections
+        - Limits RAG context to 4K tokens
+        - Uses single inline example
+        - Prioritizes story content over boilerplate
+        - Includes swagger_docs and existing_tests from RAG (v3)
+        
+        Args:
+            enriched_story: Preprocessed story with Jira-native data
+            rag_context: Optional pre-formatted RAG context
+            api_context: Optional API specifications
+            retrieved_context: Optional raw RetrievedContext for swagger_docs, existing_tests, etc.
+            
+        Returns:
+            Compact prompt string (~4K words)
+        """
+        start_time = time.time()
+        
+        # Extract acceptance criteria
+        acceptance_criteria = enriched_story.acceptance_criteria or []
+        
+        # Extract API specifications from api_context
+        api_specs = None
+        if api_context and api_context.api_specifications:
+            api_specs = [
+                {
+                    'http_methods': spec.http_methods,
+                    'endpoint_path': spec.endpoint_path,
+                    'parameters': spec.parameters,
+                    'request_example': spec.request_example,
+                    'response_example': spec.response_example,
+                }
+                for spec in api_context.api_specifications
+            ]
+        
+        # Extract subtasks from enriched story
+        subtasks = None
+        if enriched_story.functional_points:
+            subtasks = [{'summary': fp} for fp in enriched_story.functional_points[:10]]
+        
+        # Determine if we should include example
+        # Skip example if RAG has similar test plans (to save tokens)
+        include_example = True
+        if rag_context and 'test plan' in rag_context.lower():
+            include_example = False
+            logger.debug("[PROMPT] Skipping example (RAG has similar test plans)")
+        
+        # Build compact prompt - pass ALL enriched data
+        confluence_docs_data = None
+        if enriched_story.confluence_docs:
+            confluence_docs_data = [
+                {
+                    'title': doc.title,
+                    'url': doc.url,
+                    'qa_summary': doc.qa_summary,
+                    'summary': doc.summary,
+                }
+                for doc in enriched_story.confluence_docs
+            ]
+        
+        # NEW: Extract swagger_docs and existing_tests from retrieved_context
+        swagger_docs_data = None
+        existing_tests_data = None
+        if retrieved_context:
+            # Swagger docs (for API reference)
+            if retrieved_context.similar_swagger_docs:
+                swagger_docs_data = [
+                    {
+                        'content': doc.get('document', ''),
+                        'service': doc.get('metadata', {}).get('service_name', 'Unknown'),
+                        'similarity': doc.get('similarity', 0),
+                    }
+                    for doc in retrieved_context.similar_swagger_docs[:3]
+                ]
+                logger.info(f"[PROMPT] Including {len(swagger_docs_data)} swagger docs from RAG")
+            
+            # Existing tests (for duplicate detection)
+            if retrieved_context.similar_existing_tests:
+                existing_tests_data = [
+                    {
+                        'name': doc.get('metadata', {}).get('test_name', 'Unknown'),
+                        'content': doc.get('document', '')[:500],  # Truncate for space
+                    }
+                    for doc in retrieved_context.similar_existing_tests[:5]
+                ]
+                logger.info(f"[PROMPT] Including {len(existing_tests_data)} existing tests for duplicate detection")
+        
+        prompt = build_compact_prompt(
+            story_key=enriched_story.story_key,
+            story_title=enriched_story.feature_narrative.split('.')[0] if enriched_story.feature_narrative else "Unknown",
+            story_description=enriched_story.feature_narrative,
+            acceptance_criteria=acceptance_criteria,
+            api_specifications=api_specs,
+            subtasks=subtasks,
+            confluence_docs=confluence_docs_data,
+            swagger_docs=swagger_docs_data,  # NEW: Pass swagger docs
+            existing_tests=existing_tests_data,  # NEW: Pass existing tests
+            rag_context=rag_context,
+            include_example=include_example,
+            max_rag_tokens=self.MAX_RAG_TOKENS
+        )
+        
+        # Log stats
+        elapsed = time.time() - start_time
+        estimated_tokens = self._estimate_tokens(prompt)
+        word_count = len(prompt.split())
+        
+        logger.info(f"[PROMPT] ✅ Built COMPACT prompt in {elapsed:.2f}s")
+        logger.info(f"[PROMPT]    Size: ~{estimated_tokens} tokens, {word_count} words, {len(prompt)} chars")
+        logger.info(f"[PROMPT]    ACs: {len(acceptance_criteria)}, APIs: {len(api_specs) if api_specs else 0}")
+        logger.info(f"[PROMPT]    Swagger docs: {len(swagger_docs_data) if swagger_docs_data else 0}, "
+                   f"Existing tests: {len(existing_tests_data) if existing_tests_data else 0}")
+        
+        # Warn if over budget
+        if estimated_tokens > self.MAX_PROMPT_TOKENS:
+            logger.warning(f"[PROMPT] ⚠️ Prompt exceeds {self.MAX_PROMPT_TOKENS} token budget!")
         
         return prompt
 

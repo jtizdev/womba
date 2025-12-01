@@ -144,18 +144,9 @@ def _display_enriched_story(enriched) -> None:
         for comp in enriched.platform_components:
             print(f"   • {comp}")
     
-    # API specifications
-    if enriched.api_specifications:
-        print(f"\n🔌 API SPECIFICATIONS ({len(enriched.api_specifications)} endpoints):")
-        print("-" * 60)
-        for i, api in enumerate(enriched.api_specifications, 1):
-            print(f"   {i}. {' '.join(api.http_methods)} {api.endpoint_path}")
-            if api.service_name:
-                print(f"      Service: {api.service_name}")
-            if api.parameters:
-                print(f"      Parameters: {', '.join(api.parameters[:3])}")
-            if api.authentication:
-                print(f"      Auth: {api.authentication[:50]}...")
+    # NOTE: API specifications are now built separately via APIContext during prompt construction
+    # They use a fallback flow: story → swagger RAG → GitLab MCP
+    # Use the 'generate' command to see API specs in the final prompt
     
     # Risk areas
     if enriched.risk_areas:

@@ -1,10 +1,16 @@
 """
 RAG retriever for intelligent context retrieval.
 Retrieves similar test plans, docs, stories, and tests for grounded generation.
+
+V3 Updates:
+- Query-focused extraction applied to ALL retrieved docs
+- Source-specific extraction configurations
+- Swagger endpoint filtering by story keywords
 """
 
 from typing import List, Dict, Optional, Any
 from dataclasses import dataclass
+import asyncio
 
 from loguru import logger
 
@@ -58,16 +64,18 @@ class RAGRetriever:
     Intelligent retriever for RAG-based test generation.
     Uses semantic search to find relevant company-specific context.
     
-    Optimizations:
-    - Relevance threshold filtering (min similarity 0.65)
-    - Keyword-based re-ranking
-    - Document type prioritization
-    - Deduplication of similar docs
-    - Smart summarization of long docs
+    Optimizations (v2 - improved):
+    - Relevance threshold filtering (min similarity 0.75 - increased from 0.65)
+    - Keyword-based re-ranking with story-specific terms
+    - Document type prioritization (Swagger > Tests > Stories > Confluence)
+    - Aggressive deduplication of similar docs
+    - AI-based summarization for long documents
+    - Token budget enforcement
+    - Comprehensive logging at every step
     """
     
     def __init__(self):
-        """Initialize RAG retriever."""
+        """Initialize RAG retriever with optimized settings."""
         self.store = RAGVectorStore()
         self.top_k_tests = settings.rag_top_k_tests
         self.top_k_docs = settings.rag_top_k_docs
@@ -75,12 +83,15 @@ class RAGRetriever:
         self.top_k_existing = settings.rag_top_k_existing
         self.top_k_swagger = settings.rag_top_k_swagger
         
-        # Optimization settings
-        self.min_similarity = 0.65  # Only include high-quality matches
-        # NO TOKEN LIMIT - include full documents without truncation
-        self.dedup_threshold = 0.85  # Remove near-duplicates
+        # OPTIMIZED settings (v2)
+        self.min_similarity = 0.75  # Increased from 0.65 - only high-quality matches
+        self.dedup_threshold = 0.80  # Lowered from 0.85 - more aggressive dedup
+        self.max_doc_chars = 3000  # Max chars per document (for summarization)
+        self.max_total_rag_tokens = 4000  # Token budget for all RAG content
         
-        logger.info("Initialized RAG retriever with optimization filters")
+        logger.info("[RAG] Initialized RAG retriever v2 with optimized settings")
+        logger.info(f"[RAG] Settings: min_similarity={self.min_similarity}, dedup_threshold={self.dedup_threshold}, "
+                   f"max_doc_chars={self.max_doc_chars}, max_total_tokens={self.max_total_rag_tokens}")
     
     async def retrieve_for_story(
         self,
@@ -157,7 +168,12 @@ class RAGRetriever:
             similar_swagger_docs=similar_swagger
         )
         
-        logger.info(context.get_summary())
+        # Log detailed retrieval stats
+        logger.info(f"[RAG] Retrieval complete for {story.key}")
+        logger.info(f"[RAG] Raw counts: test_plans={len(similar_test_plans)}, confluence={len(similar_docs)}, "
+                   f"stories={len(similar_stories)}, tests={len(similar_tests)}, "
+                   f"external={len(similar_external)}, swagger={len(similar_swagger)}")
+        logger.info(f"[RAG] {context.get_summary()}")
         return context
     
     def _build_query(self, story: JiraStory, story_context: Optional[Any] = None) -> str:
@@ -542,7 +558,7 @@ class RAGRetriever:
         - Re-ranks by keywords
         - Prioritizes by document type
         - Deduplicates similar docs
-        - Truncates long docs
+        - Applies query-focused extraction (v3)
         - Returns top N per type
         
         Args:
@@ -562,47 +578,69 @@ class RAGRetriever:
         # Step 2: Extract keywords for re-ranking
         keywords = self.extract_keywords(story, story_context)
         
-        # Step 3: Optimize each collection
+        # Step 2.5: Extract story ACs and summary for query-focused extraction
+        story_acs = []
+        if story.acceptance_criteria:
+            story_acs = [
+                line.strip() 
+                for line in story.acceptance_criteria.split('\n') 
+                if line.strip() and len(line.strip()) > 10
+            ]
+        story_summary = story.summary or ""
+        
+        # Step 3: Optimize each collection (now with query-focused extraction)
         optimized_test_plans = self._optimize_docs(
             raw_context.similar_test_plans,
             keywords,
             max_docs_per_type,
-            "test_plans"
+            "test_plans",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_confluence = self._optimize_docs(
             raw_context.similar_confluence_docs,
             keywords,
             max_docs_per_type,
-            "confluence"
+            "confluence",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_stories = self._optimize_docs(
             raw_context.similar_jira_stories,
             keywords,
             max_docs_per_type,
-            "jira_stories"
+            "jira_stories",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_tests = self._optimize_docs(
             raw_context.similar_existing_tests,
             keywords,
             max_docs_per_type,
-            "existing_tests"
+            "existing_tests",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_external = self._optimize_docs(
             raw_context.similar_external_docs,
             keywords,
             max_docs_per_type,
-            "external_docs"
+            "external_docs",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_swagger = self._optimize_docs(
             raw_context.similar_swagger_docs,
             keywords,
             max_docs_per_type + 2,  # Allow more swagger docs (important for APIs)
-            "swagger"
+            "swagger",
+            story_acs=story_acs,
+            story_summary=story_summary
         )
         
         optimized_context = RetrievedContext(
@@ -622,19 +660,33 @@ class RAGRetriever:
         docs: List[Dict[str, Any]],
         keywords: List[str],
         max_docs: int,
-        collection_name: str
+        collection_name: str,
+        story_acs: Optional[List[str]] = None,
+        story_summary: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Apply all optimization steps to a document collection."""
+        """
+        Apply all optimization steps to a document collection.
+        
+        Pipeline:
+        1. Filter by similarity threshold (0.75)
+        2. Re-rank by keyword overlap
+        3. Prioritize by document type
+        4. Deduplicate similar documents
+        5. Apply query-focused extraction (NEW - v3)
+        6. Take top N within token budget
+        """
         if not docs:
+            logger.debug(f"[RAG] {collection_name}: no docs to optimize")
             return []
         
-        logger.debug(f"Optimizing {collection_name}: {len(docs)} docs")
+        logger.info(f"[RAG] Optimizing {collection_name}: {len(docs)} raw docs")
         
-        # Step 1: Filter by similarity
+        # Step 1: Filter by similarity (stricter threshold)
         filtered = self.filter_by_similarity(docs)
         if not filtered:
-            logger.debug(f"  No docs passed similarity threshold for {collection_name}")
+            logger.info(f"[RAG] {collection_name}: 0 docs passed similarity threshold ({self.min_similarity})")
             return []
+        logger.debug(f"[RAG] {collection_name}: {len(filtered)}/{len(docs)} passed similarity filter")
         
         # Step 2: Re-rank by keywords
         reranked = self.rerank_by_keywords(filtered, keywords)
@@ -644,10 +696,111 @@ class RAGRetriever:
         
         # Step 4: Deduplicate
         unique = self.deduplicate_docs(prioritized)
+        logger.debug(f"[RAG] {collection_name}: {len(unique)} unique docs after dedup")
         
-        # Step 5: Take top N (NO TRUNCATION - keep full documents)
-        top_docs = unique[:max_docs]
+        # Step 5: Apply query-focused extraction (NEW)
+        extracted = self._apply_query_focused_extraction(
+            docs=unique,
+            collection_name=collection_name,
+            keywords=keywords,
+            story_acs=story_acs or [],
+            story_summary=story_summary or ""
+        )
         
-        logger.debug(f"  {collection_name}: {len(docs)} → {len(top_docs)} docs (optimized, FULL documents)")
+        # Step 6: Take top N
+        top_docs = extracted[:max_docs]
+        
+        # Log final stats
+        total_chars = sum(len(doc.get('document', '')) for doc in top_docs)
+        avg_similarity = sum(doc.get('similarity', 0) for doc in top_docs) / len(top_docs) if top_docs else 0
+        
+        logger.info(f"[RAG] {collection_name}: {len(docs)} → {len(top_docs)} docs "
+                   f"(avg_sim={avg_similarity:.2f}, total_chars={total_chars})")
+        
         return top_docs
+    
+    def _apply_query_focused_extraction(
+        self,
+        docs: List[Dict[str, Any]],
+        collection_name: str,
+        keywords: List[str],
+        story_acs: List[str],
+        story_summary: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Apply query-focused extraction to each document.
+        
+        Maps collection names to source types for extraction config.
+        """
+        # Map collection names to source types
+        source_type_map = {
+            'test_plans': 'test_plan',
+            'confluence': 'confluence',
+            'confluence_docs': 'confluence',
+            'jira_stories': 'jira_story',
+            'jira_issues': 'jira_story',
+            'existing_tests': 'existing_test',
+            'external_docs': 'external',
+            'swagger': 'swagger',
+            'swagger_docs': 'swagger',
+        }
+        
+        source_type = source_type_map.get(collection_name, 'confluence')
+        
+        # Import here to avoid circular imports
+        from src.ai.context_extractor import extract_relevant_from_any_source, extract_swagger_endpoints
+        
+        extracted_docs = []
+        
+        for doc in docs:
+            doc_text = doc.get('document', '')
+            
+            if not doc_text or len(doc_text) < 50:
+                extracted_docs.append(doc)
+                continue
+            
+            try:
+                # Special handling for Swagger docs
+                if source_type == 'swagger':
+                    extracted_text = extract_swagger_endpoints(doc_text, keywords)
+                else:
+                    # Use async extraction in sync context
+                    extracted_text = asyncio.get_event_loop().run_until_complete(
+                        extract_relevant_from_any_source(
+                            content=doc_text,
+                            source_type=source_type,
+                            story_keywords=keywords,
+                            acceptance_criteria=story_acs,
+                            story_summary=story_summary
+                        )
+                    )
+                
+                # Update doc with extracted content
+                doc = doc.copy()
+                doc['document'] = extracted_text
+                doc['was_extracted'] = True
+                doc['original_length'] = len(doc_text)
+                
+            except Exception as e:
+                logger.warning(f"[RAG] Extraction failed for {collection_name} doc: {e}")
+                # Fall back to truncation
+                doc = doc.copy()
+                doc['document'] = self._truncate_text(doc_text, 2000)
+            
+            extracted_docs.append(doc)
+        
+        return extracted_docs
+    
+    def _truncate_text(self, text: str, max_chars: int) -> str:
+        """Simple truncation with sentence boundary detection."""
+        if len(text) <= max_chars:
+            return text
+        
+        truncated = text[:max_chars]
+        last_period = truncated.rfind('.')
+        if last_period > max_chars * 0.7:
+            truncated = truncated[:last_period + 1]
+        
+        return truncated + "\n... [truncated]"
+    
 

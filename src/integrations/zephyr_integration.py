@@ -714,7 +714,7 @@ class ZephyrIntegration:
         }
 
         if folder_id:
-            payload["folderId"] = folder_id
+            payload["folderId"] = int(folder_id) if str(folder_id).isdigit() else folder_id
 
         url = f"{self.base_url}/testcycles"
 
@@ -725,7 +725,453 @@ class ZephyrIntegration:
             response.raise_for_status()
             data = response.json()
 
-        return data.get("key")
+        cycle_key = data.get("key")
+        logger.info(f"✅ Created test cycle: {cycle_key}")
+        return cycle_key
+
+    async def get_test_cycle_folders(self, project_key: str) -> List[Dict]:
+        """
+        Get test cycle folder structure for a project.
+        
+        This is different from test case folders - test cycles have their own folder hierarchy.
+
+        Args:
+            project_key: Jira project key
+
+        Returns:
+            List of folders with hierarchy
+
+        Raises:
+            httpx.HTTPError: If the request fails
+        """
+        logger.info(f"Fetching test cycle folder structure for project: {project_key}")
+
+        url = f"{self.base_url}/folders"
+        params = {"projectKey": project_key, "folderType": "TEST_CYCLE"}
+
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=self.headers, params=params, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+
+        folders = data.get("values", [])
+        logger.info(f"Found {len(folders)} test cycle folders")
+        return folders
+
+    async def get_folders(self, project_key: str, folder_type: str = "TEST_CASE") -> List[Dict]:
+        """
+        Get folder structure for a project by folder type.
+
+        Args:
+            project_key: Jira project key
+            folder_type: Either "TEST_CASE" or "TEST_CYCLE"
+
+        Returns:
+            List of folders with hierarchy and full paths
+
+        Raises:
+            httpx.HTTPError: If the request fails
+        """
+        logger.info(f"Fetching {folder_type} folders for project: {project_key}")
+
+        url = f"{self.base_url}/folders"
+        all_folders = []
+        start_at = 0
+        max_results = 100  # Zephyr default page size
+        
+        async with httpx.AsyncClient() as client:
+            while True:
+                params = {
+                    "projectKey": project_key, 
+                    "folderType": folder_type,
+                    "startAt": start_at,
+                    "maxResults": max_results
+                }
+                response = await client.get(url, headers=self.headers, params=params, timeout=30.0)
+                response.raise_for_status()
+                data = response.json()
+                
+                page_folders = data.get("values", [])
+                all_folders.extend(page_folders)
+                
+                # Check if there are more pages
+                is_last = data.get("isLast", True)
+                if is_last or len(page_folders) == 0:
+                    break
+                    
+                start_at += len(page_folders)
+                logger.debug(f"Fetched {len(all_folders)} folders so far, getting next page...")
+
+        folders = all_folders
+        
+        # Flatten and build full paths
+        flat_folders = self._flatten_folders(folders)
+        result = []
+        
+        for folder in flat_folders:
+            folder_id = folder.get('id')
+            name = folder.get('name', '').strip()
+            parent_id = folder.get('parentId')
+            
+            # Build full path
+            path_parts = [name]
+            current_parent = parent_id
+            while current_parent:
+                parent = next((f for f in flat_folders if f.get('id') == current_parent), None)
+                if parent:
+                    path_parts.insert(0, parent.get('name', ''))
+                    current_parent = parent.get('parentId')
+                else:
+                    break
+            
+            full_path = '/'.join(path_parts)
+            result.append({
+                'id': str(folder_id),
+                'name': name,
+                'parentId': str(parent_id) if parent_id else None,
+                'path': full_path
+            })
+        
+        logger.info(f"Found {len(result)} {folder_type} folders")
+        return result
+
+    async def add_test_cases_to_cycle(
+        self, 
+        cycle_key: str, 
+        test_case_keys: List[str],
+        project_key: str
+    ) -> Dict:
+        """
+        Add test cases to a test cycle by creating test executions.
+        
+        Zephyr Scale API v2 uses POST /testexecutions to add a test case to a cycle.
+
+        Args:
+            cycle_key: The test cycle key (e.g., 'PROJ-R1')
+            test_case_keys: List of test case keys to add (e.g., ['PROJ-T1', 'PROJ-T2'])
+            project_key: Jira project key
+
+        Returns:
+            Dictionary with execution results
+            
+        Raises:
+            httpx.HTTPError: If the request fails
+        """
+        logger.info(f"Adding {len(test_case_keys)} test cases to cycle {cycle_key}")
+        
+        results = {
+            'successful': [],
+            'failed': [],
+            'cycle_key': cycle_key
+        }
+        
+        url = f"{self.base_url}/testexecutions"
+        
+        async with httpx.AsyncClient() as client:
+            for test_case_key in test_case_keys:
+                try:
+                    payload = {
+                        "projectKey": project_key,
+                        "testCaseKey": test_case_key,
+                        "testCycleKey": cycle_key,
+                        "statusName": "Not Executed"  # Default status
+                    }
+                    
+                    response = await client.post(
+                        url, headers=self.headers, json=payload, timeout=30.0
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    execution_key = data.get("key")
+                    results['successful'].append({
+                        'test_case_key': test_case_key,
+                        'execution_key': execution_key
+                    })
+                    logger.debug(f"Added {test_case_key} to cycle {cycle_key} (execution: {execution_key})")
+                    
+                except httpx.HTTPStatusError as e:
+                    error_msg = e.response.text if hasattr(e, 'response') else str(e)
+                    logger.error(f"Failed to add {test_case_key} to cycle: {error_msg}")
+                    results['failed'].append({
+                        'test_case_key': test_case_key,
+                        'error': error_msg
+                    })
+                except Exception as e:
+                    logger.error(f"Failed to add {test_case_key} to cycle: {e}")
+                    results['failed'].append({
+                        'test_case_key': test_case_key,
+                        'error': str(e)
+                    })
+        
+        logger.info(f"✅ Added {len(results['successful'])}/{len(test_case_keys)} test cases to cycle {cycle_key}")
+        return results
+
+    async def link_cycle_to_issue(self, cycle_key: str, issue_key: str) -> None:
+        """
+        Link a test cycle to a Jira issue.
+        
+        Uses POST /testcycles/{key}/links/issues endpoint.
+
+        Args:
+            cycle_key: Zephyr test cycle key (e.g., PROJ-R1)
+            issue_key: Jira issue key (e.g., PROJ-456)
+
+        Raises:
+            httpx.HTTPError: If the request fails
+        """
+        logger.info(f"Linking test cycle {cycle_key} to issue {issue_key}")
+
+        # Zephyr Scale v2 API uses issueId (Jira internal ID), not issueKey
+        # We need to get the Jira issue ID first
+        from src.config.settings import settings
+        import base64
+        
+        # Get Jira issue to extract its ID
+        jira_auth = base64.b64encode(f"{settings.atlassian_email}:{settings.atlassian_api_token}".encode()).decode()
+        
+        async with httpx.AsyncClient() as client:
+            # Get Jira issue details
+            jira_response = await client.get(
+                f"{settings.atlassian_base_url}/rest/api/2/issue/{issue_key}",
+                headers={
+                    'Authorization': f'Basic {jira_auth}',
+                    'Content-Type': 'application/json'
+                },
+                timeout=30.0
+            )
+            
+            if jira_response.status_code == 200:
+                issue_data = jira_response.json()
+                issue_id = issue_data.get('id')
+                
+                # Now link in Zephyr
+                url = f"{self.base_url}/testcycles/{cycle_key}/links/issues"
+                payload = {"issueId": int(issue_id)}
+                
+                response = await client.post(
+                    url, headers=self.headers, json=payload, timeout=30.0
+                )
+                response.raise_for_status()
+                logger.info(f"✅ Linked cycle {cycle_key} to issue {issue_key}")
+            else:
+                raise Exception(f"Could not fetch Jira issue {issue_key}: {jira_response.status_code}")
+
+    async def ensure_cycle_folder(self, project_key: str, folder_path: str) -> Optional[str]:
+        """
+        Ensure the full folder path exists for test cycles and return the final folder ID.
+        
+        Similar to ensure_folder but for TEST_CYCLE folder type.
+        """
+        if not folder_path:
+            return None
+        
+        segments = [seg.strip() for seg in folder_path.split('/') if seg.strip()]
+        if not segments:
+            return None
+        
+        existing = await self.get_test_cycle_folders(project_key)
+        flat_folders = self._flatten_folders(existing)
+        by_parent: Dict[Optional[str], List[Dict]] = defaultdict(list)
+        for folder in flat_folders:
+            fid = folder.get('id')
+            pid = folder.get('parentId') if folder.get('parentId') is not None else None
+            key = str(pid) if pid is not None else None
+            by_parent[key].append(folder)
+
+        parent_id: Optional[str] = None
+        for segment in segments:
+            normalized = segment.lower()
+            siblings = by_parent[str(parent_id) if parent_id is not None else None]
+            match = None
+            for folder in siblings:
+                name = folder.get('name', '').strip().lower()
+                if name == normalized:
+                    match = folder
+                    break
+            if match:
+                parent_id = match.get('id')
+                continue
+
+            parent_before = parent_id
+            created_id = await self._create_cycle_folder(project_key, segment, parent_before)
+            new_folder = {
+                'id': created_id,
+                'name': segment,
+                'parentId': parent_before,
+                'children': []
+            }
+            by_parent[str(parent_before) if parent_before is not None else None].append(new_folder)
+            by_parent[str(created_id)].extend([])
+            parent_id = created_id
+
+        return str(parent_id) if parent_id is not None else None
+
+    async def _create_cycle_folder(self, project_key: str, name: str, parent_id: Optional[str] = None) -> str:
+        """Create a test cycle folder and return its ID."""
+        payload: Dict[str, object] = {
+            "projectKey": project_key,
+            "name": name,
+            "folderType": "TEST_CYCLE",
+        }
+        if parent_id is not None:
+            payload["parentId"] = int(parent_id) if str(parent_id).isdigit() else parent_id
+
+        url = f"{self.base_url}/folders"
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, headers=self.headers, json=payload, timeout=30.0)
+            response.raise_for_status()
+            data = response.json()
+        folder_id = data.get("id") or data.get("folderId")
+        logger.info(f"Created test cycle folder '{name}' (ID: {folder_id})")
+        return str(folder_id)
+
+    async def upload_to_cycle(
+        self,
+        test_plan: TestPlan,
+        project_key: str,
+        cycle_name: str,
+        test_case_folder_path: Optional[str] = None,
+        cycle_folder_path: Optional[str] = None,
+        story_key: Optional[str] = None
+    ) -> Dict:
+        """
+        Complete workflow: create test cases, create a test cycle, add tests to cycle, 
+        and link cycle to story.
+        
+        Args:
+            test_plan: TestPlan object with test cases
+            project_key: Jira project key
+            cycle_name: Name for the test cycle
+            test_case_folder_path: Optional folder path for test cases
+            cycle_folder_path: Optional folder path for the test cycle
+            story_key: Story key to link the cycle to
+            
+        Returns:
+            Dictionary with results including cycle_key, test_case_keys, and execution info
+        """
+        logger.info(f"📦 Starting upload to cycle workflow for {len(test_plan.test_cases)} test cases")
+        logger.info(f"   Cycle name: {cycle_name}")
+        if test_case_folder_path:
+            logger.info(f"   Test case folder (folderType=TEST_CASE): {test_case_folder_path}")
+        if cycle_folder_path:
+            logger.info(f"   Cycle folder (folderType=TEST_CYCLE): {cycle_folder_path}")
+        logger.info(f"   Story to link: {story_key or 'None'}")
+        
+        result = {
+            'cycle_key': None,
+            'cycle_name': cycle_name,
+            'test_case_keys': [],
+            'test_case_results': {},
+            'executions': [],
+            'linked_to_story': False,
+            'story_key': story_key,
+            'errors': []
+        }
+        
+        # Step 1: Resolve/create test case folder if specified
+        test_case_folder_id = None
+        if test_case_folder_path:
+            try:
+                match = await self.find_best_matching_folder(project_key, test_case_folder_path)
+                if match:
+                    test_case_folder_id, matched_path = match
+                    logger.info(f"Using existing test case folder: '{matched_path}' (ID: {test_case_folder_id})")
+                else:
+                    test_case_folder_id = await self.ensure_folder(project_key, test_case_folder_path)
+                    logger.info(f"Created test case folder '{test_case_folder_path}' with ID {test_case_folder_id}")
+            except Exception as e:
+                logger.error(f"Failed to resolve test case folder: {e}")
+                result['errors'].append(f"Test case folder error: {str(e)}")
+        
+        # Step 2: Create test cases
+        logger.info("Step 1/4: Creating test cases...")
+        for test_case in test_plan.test_cases:
+            try:
+                # Don't link test cases to story individually - the cycle will be linked instead
+                zephyr_key = await self.create_test_case(
+                    test_case=test_case,
+                    project_key=project_key,
+                    folder_id=test_case_folder_id,
+                    story_key=None  # Don't link individual tests to story
+                )
+                result['test_case_keys'].append(zephyr_key)
+                result['test_case_results'][test_case.title] = zephyr_key
+                logger.info(f"Created test case: {zephyr_key}")
+            except Exception as e:
+                logger.error(f"Failed to create test case '{test_case.title}': {e}")
+                result['test_case_results'][test_case.title] = f"ERROR: {str(e)}"
+                result['errors'].append(f"Test case '{test_case.title}': {str(e)}")
+        
+        if not result['test_case_keys']:
+            logger.error("No test cases were created successfully, aborting cycle creation")
+            return result
+        
+        # Step 3: Resolve/create TEST_CYCLE folder if specified
+        cycle_folder_id = None
+        if cycle_folder_path:
+            try:
+                logger.info(f"Resolving TEST_CYCLE folder: {cycle_folder_path}")
+                cycle_folder_id = await self.ensure_cycle_folder(project_key, cycle_folder_path)
+                logger.info(f"✅ Using TEST_CYCLE folder ID: {cycle_folder_id} (path: {cycle_folder_path})")
+            except Exception as e:
+                logger.error(f"Failed to resolve TEST_CYCLE folder: {e}")
+                result['errors'].append(f"Cycle folder error: {str(e)}")
+        
+        # Step 4: Create test cycle
+        logger.info("Step 2/4: Creating test cycle...")
+        try:
+            cycle_key = await self.create_test_cycle(
+                project_key=project_key,
+                name=cycle_name,
+                description=f"Test cycle for {story_key or 'test cases'}. Created by Womba.",
+                folder_id=cycle_folder_id
+            )
+            result['cycle_key'] = cycle_key
+            logger.info(f"✅ Created test cycle: {cycle_key}")
+        except Exception as e:
+            logger.error(f"Failed to create test cycle: {e}")
+            result['errors'].append(f"Cycle creation error: {str(e)}")
+            return result
+        
+        # Step 5: Add test cases to cycle
+        logger.info("Step 3/4: Adding test cases to cycle...")
+        try:
+            execution_results = await self.add_test_cases_to_cycle(
+                cycle_key=cycle_key,
+                test_case_keys=result['test_case_keys'],
+                project_key=project_key
+            )
+            result['executions'] = execution_results.get('successful', [])
+            if execution_results.get('failed'):
+                for failed in execution_results['failed']:
+                    result['errors'].append(f"Execution failed for {failed['test_case_key']}: {failed['error']}")
+        except Exception as e:
+            logger.error(f"Failed to add test cases to cycle: {e}")
+            result['errors'].append(f"Execution error: {str(e)}")
+        
+        # Step 6: Link cycle to story
+        if story_key:
+            logger.info("Step 4/4: Linking cycle to story...")
+            try:
+                await self.link_cycle_to_issue(cycle_key, story_key)
+                result['linked_to_story'] = True
+                logger.info(f"✅ Linked cycle {cycle_key} to story {story_key}")
+            except Exception as e:
+                logger.warning(f"Failed to link cycle to story: {e}")
+                result['errors'].append(f"Link error: {str(e)}")
+        else:
+            logger.info("Step 4/4: Skipping story link (no story key provided)")
+        
+        logger.info(f"📦 Upload to cycle complete!")
+        logger.info(f"   Cycle: {result['cycle_key']}")
+        logger.info(f"   Test cases: {len(result['test_case_keys'])}")
+        logger.info(f"   Executions: {len(result['executions'])}")
+        logger.info(f"   Linked to story: {result['linked_to_story']}")
+        if result['errors']:
+            logger.warning(f"   Errors: {len(result['errors'])}")
+        
+        return result
 
     def _map_priority(self, priority: str) -> str:
         """

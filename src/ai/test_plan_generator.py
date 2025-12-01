@@ -59,7 +59,13 @@ class TestPlanGenerator:
         self.max_tokens = settings.max_tokens
         
         # Services (dependency injection)
-        self.prompt_builder = prompt_builder or PromptBuilder(model=self.model, use_optimized=True)
+        # Use compact mode for reduced token usage (~4K words instead of ~12K)
+        use_compact = getattr(settings, 'use_compact_prompts', False)
+        self.prompt_builder = prompt_builder or PromptBuilder(
+            model=self.model, 
+            use_optimized=True,
+            use_compact=use_compact
+        )
         self.response_parser = response_parser or ResponseParser()
         
         # Story enrichment services
@@ -70,7 +76,7 @@ class TestPlanGenerator:
         from src.ai.api_context_builder import APIContextBuilder
         self.api_context_builder = APIContextBuilder()
         
-        logger.info(f"TestPlanGenerator initialized with model: {self.model} (optimized prompts: {self.prompt_builder.use_optimized})")
+        logger.info(f"[GENERATOR] Initialized with model={self.model}, optimized={self.prompt_builder.use_optimized}, compact={self.prompt_builder.use_compact}")
 
     async def generate_test_plan(
         self,
@@ -104,28 +110,38 @@ class TestPlanGenerator:
         # Step 0: Enrich story (preprocess and compress) if enabled
         enriched_story = await self._enrich_story(main_story, context) if settings.enable_story_enrichment else None
         
-        # Step 0.5: Build API context using fallback flow (story → swagger → MCP)
+        # Step 1: Retrieve RAG context FIRST (so we can pass swagger_docs to API context builder)
+        rag_context_str = None
+        retrieved_context = None
+        if use_rag:
+            retrieved_context = await self._retrieve_rag_context_raw(main_story, context)
+            if retrieved_context and retrieved_context.has_context():
+                rag_context_str = self.prompt_builder.build_rag_context(retrieved_context)
+                logger.info(f"✅ RAG context retrieved: {retrieved_context.get_summary()}")
+        
+        # Step 1.5: Build API context using fallback flow (story → swagger_rag → MCP)
+        # NOW we can pass swagger_rag_docs from retrieved_context (no duplicate query!)
         api_context = None
         if enriched_story:
             combined_text = self.story_enricher._build_combined_text(main_story, [])
+            swagger_rag_docs = retrieved_context.similar_swagger_docs if retrieved_context else None
             api_context = await self.api_context_builder.build_api_context(
                 main_story=main_story,
                 story_context=context,
-                combined_text=combined_text
+                combined_text=combined_text,
+                swagger_rag_docs=swagger_rag_docs  # Pass swagger docs from RAG (no duplicate query)
             )
             logger.info(f"API context built: {len(api_context.api_specifications)} endpoints, flow={api_context.extraction_flow}")
         
-        # Step 1: Retrieve RAG context if enabled (pass full context for better matching)
-        rag_context = await self._retrieve_rag_context(main_story, context, use_rag)
-        
-        # Step 2: Build prompt (with enriched story + API context if available)
+        # Step 2: Build prompt (with enriched story + API context + RAG context)
         prompt = self.prompt_builder.build_generation_prompt(
             context=context,
-            rag_context=rag_context,
+            rag_context=rag_context_str,
             existing_tests=existing_tests,
             folder_structure=folder_structure,
             enriched_story=enriched_story,
             api_context=api_context,
+            retrieved_context=retrieved_context,  # Pass raw context for compact prompt
         )
         
         # DEBUG: Save prompt to file for inspection
@@ -225,9 +241,48 @@ class TestPlanGenerator:
             logger.warning(f"Story enrichment failed (will use raw context): {e}")
             return None
 
+    async def _retrieve_rag_context_raw(self, main_story, story_context):
+        """
+        Retrieve RAG context as raw RetrievedContext object.
+        
+        This is the new method that returns the raw object so we can:
+        1. Pass swagger_docs to APIContextBuilder (no duplicate query)
+        2. Pass existing_tests to prompt for duplicate detection
+        3. Have full control over what goes into the prompt
+        
+        Args:
+            main_story: Jira story
+            story_context: Full StoryContext with subtasks, linked issues, etc.
+            
+        Returns:
+            RetrievedContext object or None
+        """
+        try:
+            from src.ai.rag_retriever import RAGRetriever
+            
+            logger.info("Retrieving OPTIMIZED RAG context (raw)...")
+            rag_retriever = RAGRetriever()
+            project_key = main_story.key.split('-')[0]
+            
+            # Use optimized retrieval with filtering, re-ranking, deduplication, extraction
+            retrieved_context = await rag_retriever.retrieve_optimized(
+                story=main_story,
+                project_key=project_key,
+                story_context=story_context,
+                max_docs_per_type=3  # Top 3 per collection
+            )
+            
+            return retrieved_context
+            
+        except Exception as e:
+            logger.warning(f"RAG retrieval failed (will continue without RAG): {e}")
+            return None
+    
     async def _retrieve_rag_context(self, main_story, story_context, use_rag: bool) -> Optional[str]:
         """
-        Retrieve RAG context for the story.
+        Retrieve RAG context for the story (legacy method - returns formatted string).
+        
+        DEPRECATED: Use _retrieve_rag_context_raw instead for more control.
         
         Args:
             main_story: Jira story
@@ -240,30 +295,14 @@ class TestPlanGenerator:
         if not use_rag:
             return None
         
-        try:
-            from src.ai.rag_retriever import RAGRetriever
-            
-            logger.info("Retrieving OPTIMIZED RAG context...")
-            rag_retriever = RAGRetriever()
-            project_key = main_story.key.split('-')[0]
-            
-            # Use optimized retrieval with filtering, re-ranking, deduplication
-            retrieved_context = await rag_retriever.retrieve_optimized(
-                story=main_story,
-                project_key=project_key,
-                story_context=story_context,
-                max_docs_per_type=3  # Top 3 per collection
-            )
-            
-            if retrieved_context.has_context():
-                rag_context = self.prompt_builder.build_rag_context(retrieved_context)
-                logger.info(f"✅ Optimized RAG context: {retrieved_context.get_summary()}")
-                return rag_context
-            else:
-                logger.info("No RAG context found (database may be empty)")
-                return None
-        except Exception as e:
-            logger.warning(f"RAG retrieval failed (will continue without RAG): {e}")
+        retrieved_context = await self._retrieve_rag_context_raw(main_story, story_context)
+        
+        if retrieved_context and retrieved_context.has_context():
+            rag_context = self.prompt_builder.build_rag_context(retrieved_context)
+            logger.info(f"✅ Optimized RAG context: {retrieved_context.get_summary()}")
+            return rag_context
+        else:
+            logger.info("No RAG context found (database may be empty)")
             return None
 
     async def _call_ai_api(self, prompt: str) -> str:

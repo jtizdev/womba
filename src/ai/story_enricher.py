@@ -529,17 +529,57 @@ class StoryEnricher:
     async def _collect_confluence_docs(self, context: StoryContext) -> List[ConfluenceDocRef]:
         """
         Collect Confluence/PRD documents from story context with RAG fallback.
+        
+        Uses query-focused extraction to include only QA-relevant content
+        based on the story's keywords and acceptance criteria.
 
         Args:
             context: StoryContext containing any fetched Confluence docs
 
         Returns:
-            List of ConfluenceDocRef with title, url, and full content (no truncation)
+            List of ConfluenceDocRef with title, url, and focused content
         """
+        from src.ai.context_extractor import QueryFocusedExtractor, extract_story_keywords
+        from src.config.settings import settings
+        
         refs: List[ConfluenceDocRef] = []
         try:
             docs = context.get("confluence_docs", []) or []
             main_story = context.get("main_story")
+            
+            # Extract story keywords and ACs for query-focused extraction
+            story_keywords = []
+            story_acs = []
+            story_summary = ""
+            
+            if main_story:
+                story_keywords = extract_story_keywords(
+                    story_summary=main_story.summary or "",
+                    story_description=main_story.description or "",
+                    components=main_story.components or [],
+                    labels=main_story.labels or []
+                )
+                story_summary = main_story.summary or ""
+                
+                # Extract ACs from story
+                if main_story.acceptance_criteria:
+                    story_acs = [
+                        line.strip() 
+                        for line in main_story.acceptance_criteria.split('\n') 
+                        if line.strip() and len(line.strip()) > 10
+                    ]
+            
+            # Initialize extractor with settings
+            use_extraction = getattr(settings, 'enable_query_focused_extraction', True)
+            extractor = QueryFocusedExtractor(
+                min_relevance_score=getattr(settings, 'extraction_min_relevance_score', 0.3),
+                use_ai_summarization=getattr(settings, 'extraction_use_ai_summarization', True),
+                ai_model=getattr(settings, 'extraction_ai_model', 'gpt-4o-mini')
+            )
+            max_chars = getattr(settings, 'extraction_max_chars_per_doc', 2000)
+            
+            logger.info(f"[ENRICHER] Processing {len(docs)} Confluence docs with query-focused extraction "
+                       f"(keywords={len(story_keywords)}, ACs={len(story_acs)}, enabled={use_extraction})")
             
             for doc in docs[:5]:  # limit to 5
                 title = doc.get("title")
@@ -569,19 +609,35 @@ class StoryEnricher:
                     logger.warning(f"No content for Confluence doc '{title}', skipping")
                     continue
                 
-                # NO TRUNCATION - use full content
-                summary = content
-                structured = process_confluence_content(content)
+                original_len = len(content)
+                
+                # Apply query-focused extraction if enabled
+                if use_extraction and len(content) > max_chars:
+                    logger.info(f"[ENRICHER] Extracting relevant content from '{title}' ({original_len} chars)")
+                    focused_content = await extractor.extract_relevant_content(
+                        document=content,
+                        story_keywords=story_keywords,
+                        acceptance_criteria=story_acs,
+                        story_summary=story_summary,
+                        max_output_chars=max_chars
+                    )
+                    logger.info(f"[ENRICHER] Extracted: {original_len} -> {len(focused_content)} chars "
+                               f"({(1 - len(focused_content)/original_len)*100:.1f}% reduction)")
+                else:
+                    focused_content = content
+                
+                # Process the focused content for structured extraction
+                structured = process_confluence_content(focused_content)
                 qa_summary = summarize_for_qa(
                     story_summary=None,  # Don't repeat story summary in PRD section
-                    content=content,
-                    max_chars=None  # NO LIMIT
+                    content=focused_content,
+                    max_chars=max_chars
                 )
                 
                 refs.append(ConfluenceDocRef(
                     title=title,
                     url=url,
-                    summary=summary,
+                    summary=focused_content,  # Use focused content as summary
                     headings=structured.get('headings', []),
                     functional_requirements=structured.get('functional_requirements', []),
                     use_cases=structured.get('use_cases', []),

@@ -154,6 +154,39 @@ class Settings(BaseSettings):
     enrichment_cache_ttl_days: int = Field(default=7, description="Cache TTL in days - invalidate if story updated or cache older than this")
     enrichment_max_apis: int = Field(default=5, description="Maximum number of API endpoints to extract from Swagger")
     enrichment_cache_dir: str = Field(default="./data/enrichment_cache", description="Directory for enrichment cache storage")
+    
+    # Prompt Optimization Configuration
+    use_compact_prompts: bool = Field(
+        default=True, 
+        description="Use compact prompts (~4K words) instead of full prompts (~12K words). "
+                    "Compact mode reduces token usage and improves LLM focus on story requirements."
+    )
+    
+    # Context Extraction Configuration (Query-Focused Summarization)
+    enable_query_focused_extraction: bool = Field(
+        default=True,
+        description="Enable query-focused extraction of Confluence docs. "
+                    "Extracts only QA-relevant content based on story context."
+    )
+    extraction_min_relevance_score: float = Field(
+        default=0.3,
+        description="Minimum relevance score (0.0-1.0) for a document chunk to be included. "
+                    "Higher values = stricter filtering, less content."
+    )
+    extraction_max_chars_per_doc: int = Field(
+        default=2000,
+        description="Maximum characters to extract per Confluence document. "
+                    "Limits token usage while preserving key requirements."
+    )
+    extraction_use_ai_summarization: bool = Field(
+        default=True,
+        description="Use AI (gpt-4o-mini) to summarize long document chunks. "
+                    "Extracts only QA-testable requirements from verbose content."
+    )
+    extraction_ai_model: str = Field(
+        default="gpt-4o-mini",
+        description="Model to use for AI-based chunk summarization."
+    )
 
 
 # Global settings instance
