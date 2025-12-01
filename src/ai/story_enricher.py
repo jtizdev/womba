@@ -839,7 +839,7 @@ If uncertain, mark as is_example:true (better to filter out than test wrong endp
             if use_openai:
                 # Request JSON array format
                 filter_prompt_with_format = filter_prompt + "\n\nReturn ONLY a valid JSON array, no other text."
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "You are an expert at analyzing software requirements and distinguishing examples from actual requirements. Always return valid JSON arrays."},

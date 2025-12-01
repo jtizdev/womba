@@ -648,7 +648,7 @@ Return ONLY a JSON array of query strings:
 
 Be extremely specific and technical. These queries will search actual code."""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,  # Lower temperature for more focused queries
@@ -794,7 +794,7 @@ Return ONLY a JSON array of query strings, no other text:
 Focus on semantic meaning, not exact text matching."""
 
             if use_openai:
-                response = client.chat.completions.create(
+                response = await client.chat.completions.create(
                     model=model,
                     messages=[
                         {"role": "system", "content": "You generate semantic search queries for code search. Return only JSON arrays."},
@@ -1756,7 +1756,7 @@ Return ONLY a JSON array of query strings:
   ...
 ]"""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
@@ -1853,7 +1853,7 @@ Return ONLY a JSON object:
 
 Focus on scenarios that would be useful for testing similar endpoints. Be specific and avoid generic/redundant scenarios."""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,

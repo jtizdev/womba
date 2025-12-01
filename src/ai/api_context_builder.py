@@ -221,7 +221,7 @@ Respond with ONLY a JSON array, one entry per endpoint:
 
 Be strict: If endpoints are listed together with phrases like "for X we use" or "similar to" or "idea: maybe", they are likely EXAMPLES."""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
@@ -326,7 +326,7 @@ Respond with ONLY a JSON array:
 
 Be strict: Only mark endpoints as RELEVANT if they directly implement the story feature."""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,
@@ -546,7 +546,7 @@ Return ONLY a JSON object:
 
 If not confident, return: {{"confident": false}}"""
 
-            response = client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.2,

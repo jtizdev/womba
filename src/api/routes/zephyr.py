@@ -152,7 +152,7 @@ Respond with ONLY a JSON object (no markdown, no code blocks):
 
 If you cannot find a good match, set folder_path to null and confidence to "low"."""
 
-        completion = client.chat.completions.create(
+        completion = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,

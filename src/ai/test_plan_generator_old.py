@@ -199,7 +199,7 @@ class TestPlanGenerator:
             # Call AI API
             if self.use_openai:
                 logger.info(f"Calling OpenAI API with model: {self.model}")
-                response = self.client.chat.completions.create(
+                response = await self.client.chat.completions.create(
                     model=self.model,
                     max_tokens=self.max_tokens,
                     temperature=self.temperature,

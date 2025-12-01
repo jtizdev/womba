@@ -44,19 +44,32 @@ Think through:
 
 === STEP 3: GENERATE TESTS BASED ON YOUR ANALYSIS ===
 
-COVERAGE PRINCIPLES:
-- Every AC needs test coverage (sometimes 1 test, sometimes 5 - depends on complexity)
-- ACs that interact need tests covering the interaction
-- Include realistic negative cases (what users actually do wrong)
-- Include edge cases that are LIKELY to occur in production
-- Skip theoretical edge cases that would never happen
-- The right number of tests = the number that covers real scenarios
+THINK ABOUT WHAT COULD ACTUALLY BREAK:
+- What if the API returns wrong data or wrong status code?
+- What if the UI doesn't update after an action?
+- What if filters don't work with certain combinations?
+- What would make a customer file a support ticket?
+- What edge cases are LIKELY to happen in production?
 
-CRITICAL - Read each AC literally:
-- If an AC says "test X with Y" → you MUST have a test that specifically tests X with Y
-- If an AC says "different X" → you MUST test with at least 2 different X values
-- If an AC says "validate behavior for Z" → you MUST have a test specifically for Z
-- Every single AC must map to at least one test - no exceptions
+TEST EFFICIENCY (CRITICAL):
+- DON'T create separate tests for trivial things that are implicitly covered
+  Bad: "Admin can access audit logs" (trivial - all tests require admin access)
+  Bad: "Login requirements are met" (duplicate of successful login test)
+- DO combine related scenarios into comprehensive tests
+- A good test covers MULTIPLE assertions, not just one
+- Ask yourself: "Would a real QA create a separate test for this, or just add an assertion?"
+
+CHECK THE PRD/CONFLUENCE DOCUMENTATION FOR:
+- UI requirements (fields that should be hidden, buttons that should be visible)
+- Behavior requirements (input behavior, filter values, etc.)
+- These are often missed if you only focus on ACs!
+- If PRD says "Parent Name field hidden" → verify it's hidden in a test
+- If PRD mentions "compare changes" → test the compare changes feature
+
+AC COVERAGE:
+- If an AC says "different X" → test with at least 2 different X values
+- If an AC says "validate behavior for Z" → have a test for Z
+- But DON'T create redundant tests - combine where it makes sense
 
 WRITING STYLE:
 - Test titles describe WHAT HAPPENS, not what you're testing
@@ -91,7 +104,7 @@ COMPACT_OUTPUT_FORMAT = """
 OUTPUT FORMAT (JSON):
 
 {
-  "reasoning": "Your analysis: (1) What is this feature doing? (2) List each AC and what test(s) will cover it. (3) Which ACs interact with each other?",
+  "reasoning": "Your analysis: (1) What is this feature doing? (2) Which PATTERN RULES apply? (e.g., 'AC #7 says different IDP → need 2+ IDPs', 'AC #8 mentions root → need root test') (3) What tests will cover each AC?",
   "summary": {
     "story_key": "STORY-123",
     "story_title": "Feature title",
@@ -130,17 +143,20 @@ OUTPUT FORMAT (JSON):
 
 === SELF-REVIEW BEFORE SUBMITTING ===
 
-MANDATORY - Go through each AC one by one:
-□ AC #1 - do I have a test for this? If not, add one.
-□ AC #2 - do I have a test for this? If not, add one.
-□ ... continue for ALL ACs listed above
-□ If any AC mentions something specific, is that specific thing tested?
+PATTERN CHECK (go through each AC):
+□ For each AC that says "different/multiple/various X" → did I test 2+ X values?
+□ For each AC that mentions a specific user type → did I test with that user?
+□ For each AC that mentions a named feature → did I test that feature?
+□ For each PRD requirement about hidden/visible elements → did I verify it?
 
-FORMAT CHECKS:
-□ No test titles start with "Verify/Validate/Check/Ensure/Test"
-□ Test data uses concrete values, not placeholders
+QUALITY CHECK:
+□ Are there redundant tests? → REMOVE them, add as assertions instead
+□ Are there trivial standalone tests? → FOLD into other tests
+□ Did I think about what could BREAK, not just "cover ACs"?
 
-If you're missing coverage for ANY AC, go back and add tests before submitting."""
+FORMAT CHECK:
+□ No titles start with "Verify/Validate/Check/Ensure/Test"
+□ Test data uses concrete values, not placeholders"""
 
 
 # ============================================================================
@@ -374,9 +390,31 @@ def _build_story_section(
     # Acceptance Criteria (CRITICAL - must map to tests)
     if acceptance_criteria:
         parts.append(f"\n--- ACCEPTANCE CRITERIA ({len(acceptance_criteria)} items) ---")
-        parts.append("⚠️ MANDATORY: You MUST create at least one test for EACH AC listed below.")
-        parts.append("⚠️ Read each AC literally - if it mentions something specific, test that specific thing.")
-        parts.append("⚠️ After generating, verify: Does every AC have a corresponding test? If not, add more tests.")
+        parts.append("")
+        parts.append("⚠️ PATTERN RULES - Scan each AC and apply these rules:")
+        parts.append("")
+        parts.append("1. DIFFERENT/MULTIPLE PATTERN:")
+        parts.append("   If AC contains 'different', 'multiple', or 'various' followed by a noun")
+        parts.append("   → You MUST test with at least 2 different values of that noun")
+        parts.append("   Example: 'different IDP' → test with Keycloak AND SAML/Okta")
+        parts.append("")
+        parts.append("2. SPECIFIC USER PATTERN:")
+        parts.append("   If AC mentions a specific user type (root, admin, guest, etc.)")
+        parts.append("   → You MUST have a test that uses that specific user type")
+        parts.append("   Example: 'root account' → test login with root user")
+        parts.append("")
+        parts.append("3. NAMED FEATURE PATTERN:")
+        parts.append("   If AC mentions a feature name (compare, filter, sort, export, etc.)")
+        parts.append("   → You MUST test that specific feature")
+        parts.append("   Example: 'compare changes' → test the compare changes functionality")
+        parts.append("")
+        parts.append("4. HIDDEN/VISIBLE PATTERN:")
+        parts.append("   If PRD says something should be hidden or visible")
+        parts.append("   → You MUST verify that UI state in a test")
+        parts.append("")
+        parts.append("EFFICIENCY RULES:")
+        parts.append("- DON'T create separate tests for trivial permission checks")
+        parts.append("- DO combine related scenarios into comprehensive tests")
         parts.append("")
         for i, ac in enumerate(acceptance_criteria, 1):
             parts.append(f"AC #{i}: {ac}")

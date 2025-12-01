@@ -341,7 +341,7 @@ class TestPlanGenerator:
                     json_schema = self.prompt_builder.get_json_schema()
                     
                     # Use structured output for reliable JSON parsing
-                    response = self.client.chat.completions.create(
+                    response = await self.client.chat.completions.create(
                         model=self.model,
                         max_tokens=self.max_tokens,
                         temperature=self.temperature,
@@ -390,7 +390,7 @@ Return your response as valid JSON matching this exact structure:
 }
 """
                     
-                    response = self.client.chat.completions.create(
+                    response = await self.client.chat.completions.create(
                         model=self.model,
                         max_tokens=self.max_tokens,
                         temperature=self.temperature,
