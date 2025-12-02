@@ -1,50 +1,69 @@
 """
 Git provider abstraction for PR/MR creation
-Supports GitLab and GitHub
+Supports GitLab and GitHub - ASYNC version
 """
 
-import subprocess
+import asyncio
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Optional
 from loguru import logger
 
 
+async def _run_git_command(cmd: list, cwd: Path, check: bool = True) -> tuple:
+    """
+    Run a git command asynchronously.
+    
+    Returns:
+        Tuple of (returncode, stdout, stderr)
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    
+    stdout_text = stdout.decode() if stdout else ""
+    stderr_text = stderr.decode() if stderr else ""
+    
+    if check and proc.returncode != 0:
+        raise RuntimeError(f"Command {' '.join(cmd)} failed: {stderr_text}")
+    
+    return proc.returncode, stdout_text, stderr_text
+
+
 class GitProvider(ABC):
     """Base class for git providers"""
     
-    def __init__(self, repo_path: Path):
+    def __init__(self, repo_path: Path, remote_url: str = ""):
         self.repo_path = repo_path
-        self.remote_url = self._get_remote_url()
+        self.remote_url = remote_url
     
     @abstractmethod
-    def create_pr(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
+    async def create_pr_async(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
         """Create pull/merge request. Returns URL."""
         pass
     
-    def _get_remote_url(self) -> str:
-        """Get git remote URL"""
-        result = subprocess.run(
+    @staticmethod
+    async def get_remote_url_async(repo_path: Path) -> str:
+        """Get git remote URL (async)"""
+        _, stdout, _ = await _run_git_command(
             ["git", "remote", "get-url", "origin"],
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=True
+            cwd=repo_path
         )
-        return result.stdout.strip()
+        return stdout.strip()
     
     @staticmethod
-    def detect_provider(repo_path: Path) -> str:
-        """Detect git provider from remote URL"""
+    async def detect_provider_async(repo_path: Path) -> str:
+        """Detect git provider from remote URL (async)"""
         try:
-            result = subprocess.run(
+            _, stdout, _ = await _run_git_command(
                 ["git", "remote", "get-url", "origin"],
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                check=True
+                cwd=repo_path
             )
-            remote_url = result.stdout.strip().lower()
+            remote_url = stdout.strip().lower()
             
             if "github.com" in remote_url:
                 return "github"
@@ -60,18 +79,17 @@ class GitProvider(ABC):
 class GitLabProvider(GitProvider):
     """GitLab MR creation"""
     
-    def create_pr(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
-        """Create GitLab merge request"""
+    async def create_pr_async(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
+        """Create GitLab merge request (async)"""
         # Push will show MR URL in output
-        result = subprocess.run(
+        _, _, stderr = await _run_git_command(
             ["git", "push", "-u", "origin", branch_name],
             cwd=self.repo_path,
-            capture_output=True,
-            text=True
+            check=False
         )
         
         # Extract MR URL from output
-        for line in result.stderr.split('\n'):
+        for line in stderr.split('\n'):
             if "merge_requests/new" in line:
                 # Extract URL
                 if "http" in line:
@@ -80,7 +98,6 @@ class GitLabProvider(GitProvider):
                     return url
         
         # Fallback: construct URL manually
-        # Extract project path from remote URL
         # gitlab.com/company/services/automation.git -> company/services/automation
         remote_url = self.remote_url.replace(".git", "")
         if "gitlab.com/" in remote_url:
@@ -96,31 +113,28 @@ class GitLabProvider(GitProvider):
 class GitHubProvider(GitProvider):
     """GitHub PR creation"""
     
-    def create_pr(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
-        """Create GitHub pull request using gh CLI"""
+    async def create_pr_async(self, branch_name: str, title: str, description: str, base_branch: str = "master") -> str:
+        """Create GitHub pull request using gh CLI (async)"""
         try:
             # Try using GitHub CLI
-            result = subprocess.run(
+            _, stdout, _ = await _run_git_command(
                 ["gh", "pr", "create", 
                  "--title", title,
                  "--body", description,
                  "--base", base_branch,
                  "--head", branch_name],
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-                check=True
+                cwd=self.repo_path
             )
             
             # gh CLI returns PR URL
-            pr_url = result.stdout.strip()
+            pr_url = stdout.strip()
             return pr_url
             
         except FileNotFoundError:
             logger.warning("GitHub CLI (gh) not found. Install with: brew install gh")
             # Fallback: construct URL
             return self._create_pr_url_fallback(branch_name, base_branch)
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.warning(f"GitHub CLI failed: {e}")
             return self._create_pr_url_fallback(branch_name, base_branch)
     
@@ -140,7 +154,7 @@ class GitHubProvider(GitProvider):
         return f"https://github.com/{repo_path}/compare/{base_branch}...{branch_name}?expand=1"
 
 
-def create_pr_for_repo(
+async def create_pr_for_repo_async(
     repo_path: Path,
     branch_name: str,
     title: str,
@@ -149,7 +163,7 @@ def create_pr_for_repo(
     provider: Optional[str] = None
 ) -> str:
     """
-    Create PR/MR for repository
+    Create PR/MR for repository (async)
     
     Args:
         repo_path: Path to repository
@@ -163,15 +177,32 @@ def create_pr_for_repo(
         str: PR/MR URL
     """
     if provider is None:
-        provider = GitProvider.detect_provider(repo_path)
+        provider = await GitProvider.detect_provider_async(repo_path)
+    
+    # Get remote URL
+    remote_url = await GitProvider.get_remote_url_async(repo_path)
     
     if provider == "github":
-        git_provider = GitHubProvider(repo_path)
+        git_provider = GitHubProvider(repo_path, remote_url)
     elif provider == "gitlab":
-        git_provider = GitLabProvider(repo_path)
+        git_provider = GitLabProvider(repo_path, remote_url)
     else:
         logger.warning(f"Unknown git provider: {provider}, using GitLab as default")
-        git_provider = GitLabProvider(repo_path)
+        git_provider = GitLabProvider(repo_path, remote_url)
     
-    return git_provider.create_pr(branch_name, title, description, base_branch)
+    return await git_provider.create_pr_async(branch_name, title, description, base_branch)
 
+
+# Sync wrapper for backward compatibility
+def create_pr_for_repo(
+    repo_path: Path,
+    branch_name: str,
+    title: str,
+    description: str,
+    base_branch: str = "master",
+    provider: Optional[str] = None
+) -> str:
+    """Sync wrapper for create_pr_for_repo_async."""
+    return asyncio.get_event_loop().run_until_complete(
+        create_pr_for_repo_async(repo_path, branch_name, title, description, base_branch, provider)
+    )

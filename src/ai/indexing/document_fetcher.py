@@ -56,7 +56,7 @@ class DocumentFetcher:
             logger.error("External documentation crawler dependencies not available (requests/beautifulsoup4)")
             return []
 
-        docs = await asyncio.to_thread(fetch_crawler.fetch_content, urls_to_fetch)
+        docs = await fetch_crawler.fetch_content(urls_to_fetch)
         
         if not docs:
             logger.warning("No external documentation content fetched (all requests failed)")
@@ -97,7 +97,7 @@ class DocumentFetcher:
                 
                 if temp_crawler.is_available():
                     logger.info(f"Crawling from: {entry_url}")
-                    discovered = await asyncio.to_thread(temp_crawler.discover_urls)
+                    discovered = await temp_crawler.discover_urls()
                     all_discovered.update(discovered)
                     logger.info(f"  → Found {len(discovered)} URLs from this entry point")
             except Exception as e:

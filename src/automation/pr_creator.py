@@ -2,14 +2,36 @@
 PR creation for automated test code.
 """
 
-import subprocess
+import asyncio
 from pathlib import Path
 from typing import List, Optional
 from loguru import logger
 
 from src.models.test_plan import TestPlan
 from src.models.story import JiraStory
-from src.automation.git_provider import create_pr_for_repo
+from src.automation.git_provider import create_pr_for_repo, create_pr_for_repo_async
+
+
+async def _run_git_command(cmd: list, cwd: Path, check: bool = True) -> tuple:
+    """
+    Run a git command asynchronously.
+    
+    Returns:
+        Tuple of (returncode, stdout, stderr)
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+    
+    if check and proc.returncode != 0:
+        stderr_text = stderr.decode() if stderr else ""
+        raise RuntimeError(f"Command {' '.join(cmd)} failed: {stderr_text}")
+    
+    return proc.returncode, stdout, stderr
 
 
 class PRCreator:
@@ -26,9 +48,9 @@ class PRCreator:
         if not self.repo_path.exists():
             raise ValueError(f"Repository path does not exist: {repo_path}")
 
-    def create_branch(self, branch_name: str) -> bool:
+    async def create_branch_async(self, branch_name: str) -> bool:
         """
-        Create a new git branch.
+        Create a new git branch (async).
 
         Args:
             branch_name: Name of the branch to create
@@ -38,38 +60,35 @@ class PRCreator:
         """
         try:
             # Check if branch already exists
-            result = subprocess.run(
+            returncode, _, _ = await _run_git_command(
                 ["git", "rev-parse", "--verify", branch_name],
                 cwd=self.repo_path,
-                capture_output=True,
-                text=True
+                check=False
             )
 
-            if result.returncode == 0:
+            if returncode == 0:
                 logger.warning(f"Branch {branch_name} already exists, switching to it")
-                subprocess.run(
+                await _run_git_command(
                     ["git", "checkout", branch_name],
-                    cwd=self.repo_path,
-                    check=True
+                    cwd=self.repo_path
                 )
             else:
                 # Create new branch
-                subprocess.run(
+                await _run_git_command(
                     ["git", "checkout", "-b", branch_name],
-                    cwd=self.repo_path,
-                    check=True
+                    cwd=self.repo_path
                 )
 
             logger.info(f"Created/switched to branch: {branch_name}")
             return True
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.error(f"Failed to create branch: {e}")
             return False
 
-    def commit_files(self, files: List[str], commit_message: str) -> bool:
+    async def commit_files_async(self, files: List[str], commit_message: str) -> bool:
         """
-        Commit files to the current branch.
+        Commit files to the current branch (async).
 
         Args:
             files: List of file paths to commit
@@ -80,29 +99,27 @@ class PRCreator:
         """
         try:
             # Add files
-            subprocess.run(
+            await _run_git_command(
                 ["git", "add"] + files,
-                cwd=self.repo_path,
-                check=True
+                cwd=self.repo_path
             )
 
             # Commit
-            subprocess.run(
+            await _run_git_command(
                 ["git", "commit", "-m", commit_message],
-                cwd=self.repo_path,
-                check=True
+                cwd=self.repo_path
             )
 
             logger.info(f"Committed {len(files)} files")
             return True
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.error(f"Failed to commit files: {e}")
             return False
 
-    def push_branch(self, branch_name: str) -> bool:
+    async def push_branch_async(self, branch_name: str) -> bool:
         """
-        Push branch to remote.
+        Push branch to remote (async).
 
         Args:
             branch_name: Name of the branch to push
@@ -111,27 +128,26 @@ class PRCreator:
             True if successful, False otherwise
         """
         try:
-            subprocess.run(
+            await _run_git_command(
                 ["git", "push", "-u", "origin", branch_name],
-                cwd=self.repo_path,
-                check=True
+                cwd=self.repo_path
             )
 
             logger.info(f"Pushed branch: {branch_name}")
             return True
 
-        except subprocess.CalledProcessError as e:
+        except Exception as e:
             logger.error(f"Failed to push branch: {e}")
             return False
 
-    def create_pr(
+    async def create_pr_async(
         self,
         test_plan: TestPlan,
         branch_name: str,
         base_branch: str = "main"
     ) -> Optional[str]:
         """
-        Create a pull request using GitHub CLI.
+        Create a pull request using GitHub CLI (async).
 
         Args:
             test_plan: Test plan that was implemented
@@ -146,8 +162,8 @@ class PRCreator:
             pr_title = f"feat({story_key}): Add AI-generated test cases"
             pr_body = self._build_pr_description(test_plan)
 
-            # Use new git provider abstraction
-            pr_url = create_pr_for_repo(
+            # Use new git provider abstraction (async)
+            pr_url = await create_pr_for_repo_async(
                 repo_path=self.repo_path,
                 branch_name=branch_name,
                 title=pr_title,
@@ -161,6 +177,36 @@ class PRCreator:
         except Exception as e:
             logger.error(f"Failed to create PR: {e}")
             return None
+
+    # Sync wrappers for backward compatibility
+    def create_branch(self, branch_name: str) -> bool:
+        """Sync wrapper for create_branch_async."""
+        return asyncio.get_event_loop().run_until_complete(
+            self.create_branch_async(branch_name)
+        )
+
+    def commit_files(self, files: List[str], commit_message: str) -> bool:
+        """Sync wrapper for commit_files_async."""
+        return asyncio.get_event_loop().run_until_complete(
+            self.commit_files_async(files, commit_message)
+        )
+
+    def push_branch(self, branch_name: str) -> bool:
+        """Sync wrapper for push_branch_async."""
+        return asyncio.get_event_loop().run_until_complete(
+            self.push_branch_async(branch_name)
+        )
+
+    def create_pr(
+        self,
+        test_plan: TestPlan,
+        branch_name: str,
+        base_branch: str = "main"
+    ) -> Optional[str]:
+        """Sync wrapper for create_pr_async."""
+        return asyncio.get_event_loop().run_until_complete(
+            self.create_pr_async(test_plan, branch_name, base_branch)
+        )
 
     def _build_pr_description(self, test_plan: TestPlan) -> str:
         """Build detailed PR description."""
@@ -215,4 +261,3 @@ This PR was automatically generated by Womba AI based on the Jira story requirem
 """
 
         return description
-

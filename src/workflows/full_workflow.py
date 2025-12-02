@@ -4,7 +4,6 @@ Handles: generate → upload → branch → code → commit → PR
 """
 
 import asyncio
-import subprocess
 from pathlib import Path
 from typing import Optional
 from loguru import logger
@@ -17,6 +16,34 @@ from src.ai.test_plan_generator import TestPlanGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
 from src.automation.code_generator import TestCodeGenerator
 from src.automation.pr_creator import PRCreator
+
+
+async def _run_git_command(cmd: list, cwd: Path, check: bool = True, capture_output: bool = True) -> tuple:
+    """
+    Run a git command asynchronously.
+    
+    Args:
+        cmd: Command list (e.g., ["git", "status"])
+        cwd: Working directory
+        check: If True, raise on non-zero exit
+        capture_output: If True, capture stdout/stderr
+        
+    Returns:
+        Tuple of (returncode, stdout, stderr)
+    """
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE if capture_output else None,
+        stderr=asyncio.subprocess.PIPE if capture_output else None
+    )
+    stdout, stderr = await proc.communicate()
+    
+    if check and proc.returncode != 0:
+        stderr_text = stderr.decode() if stderr else ""
+        raise RuntimeError(f"Command {' '.join(cmd)} failed with code {proc.returncode}: {stderr_text}")
+    
+    return proc.returncode, stdout, stderr
 
 
 class FullWorkflowOrchestrator:
@@ -72,7 +99,7 @@ class FullWorkflowOrchestrator:
             
             # Step 3: Create feature branch
             logger.info("Step 3/7: Creating feature branch...")
-            self._create_feature_branch(repo_path)
+            await self._create_feature_branch(repo_path)
             
             # Step 4: Generate test code
             logger.info("Step 4/7: Generating test code...")
@@ -80,15 +107,15 @@ class FullWorkflowOrchestrator:
             
             # Step 5: Compile tests (optional validation)
             logger.info("Step 5/7: Validating tests...")
-            self._validate_tests(repo_path)
+            await self._validate_tests(repo_path)
             
             # Step 6: Commit & push
             logger.info("Step 6/7: Committing and pushing...")
-            self._commit_and_push(repo_path)
+            await self._commit_and_push(repo_path)
             
             # Step 7: Create MR/PR
             logger.info("Step 7/7: Creating merge request...")
-            self._create_pr(repo_path)
+            await self._create_pr(repo_path)
             
             # Return summary
             return self._get_summary()
@@ -155,8 +182,8 @@ class FullWorkflowOrchestrator:
         logger.info(f"Uploaded {len(results)} test cases to Zephyr (success: {len(self.zephyr_ids)})")
         return results
     
-    def _create_feature_branch(self, repo_path: Path):
-        """Step 3: Create feature branch"""
+    async def _create_feature_branch(self, repo_path: Path):
+        """Step 3: Create feature branch (async)"""
         # Extract feature name from story summary (simplified)
         feature_name = self.story_data.main_story.summary.lower()
         feature_name = feature_name.replace(' ', '-')[:50]
@@ -165,13 +192,13 @@ class FullWorkflowOrchestrator:
         base_branch_name = f"feature/{self.story_key}-{feature_name}"
         
         # Check if branch already exists
-        result = subprocess.run(
+        returncode, _, _ = await _run_git_command(
             ["git", "rev-parse", "--verify", base_branch_name],
             cwd=repo_path,
-            capture_output=True
+            check=False
         )
         
-        if result.returncode == 0:
+        if returncode == 0:
             # Branch exists, add timestamp to make it unique
             import time
             timestamp = int(time.time())
@@ -181,10 +208,9 @@ class FullWorkflowOrchestrator:
             self.branch_name = base_branch_name
         
         # Create and checkout branch
-        subprocess.run(
+        await _run_git_command(
             ["git", "checkout", "-b", self.branch_name],
-            cwd=repo_path,
-            check=True
+            cwd=repo_path
         )
         
         logger.info(f"Created branch: {self.branch_name}")
@@ -202,41 +228,38 @@ class FullWorkflowOrchestrator:
             self.generated_files = []
         logger.info(f"Generated {len(self.generated_files)} test files")
     
-    def _validate_tests(self, repo_path: Path):
-        """Step 5: Validate tests compile (framework-specific)"""
+    async def _validate_tests(self, repo_path: Path):
+        """Step 5: Validate tests compile (framework-specific) - async"""
         # Try to detect and run compilation/validation
         if (repo_path / "pom.xml").exists():
             logger.info("Detected Maven project, running test-compile...")
             try:
-                subprocess.run(
+                await _run_git_command(
                     ["mvn", "test-compile", "-DskipTests"],
                     cwd=repo_path,
-                    check=False,  # Don't fail if compilation has warnings
-                    capture_output=True
+                    check=False
                 )
             except Exception as e:
                 logger.warning(f"Test compilation check failed: {e}")
         elif (repo_path / "package.json").exists():
             logger.info("Detected Node project, running tsc check...")
             try:
-                subprocess.run(
+                await _run_git_command(
                     ["npm", "run", "build"],
                     cwd=repo_path,
-                    check=False,
-                    capture_output=True
+                    check=False
                 )
             except Exception as e:
                 logger.warning(f"Build check failed: {e}")
         else:
             logger.info("No specific validation for this project type")
     
-    def _commit_and_push(self, repo_path: Path):
-        """Step 6: Commit and push changes"""
+    async def _commit_and_push(self, repo_path: Path):
+        """Step 6: Commit and push changes (async)"""
         # Add files
-        subprocess.run(
+        await _run_git_command(
             ["git", "add", "."],
-            cwd=repo_path,
-            check=True
+            cwd=repo_path
         )
         
         # Commit
@@ -249,23 +272,21 @@ class FullWorkflowOrchestrator:
 Generated by Womba AI Test Generator
 """
         
-        subprocess.run(
+        await _run_git_command(
             ["git", "commit", "-m", commit_message],
-            cwd=repo_path,
-            check=True
+            cwd=repo_path
         )
         
         # Push
-        subprocess.run(
+        await _run_git_command(
             ["git", "push", "-u", "origin", self.branch_name],
-            cwd=repo_path,
-            check=True
+            cwd=repo_path
         )
         
         logger.info(f"Committed and pushed to {self.branch_name}")
     
-    def _create_pr(self, repo_path: Path):
-        """Step 7: Create pull/merge request"""
+    async def _create_pr(self, repo_path: Path):
+        """Step 7: Create pull/merge request (async)"""
         if not self.config.auto_create_pr:
             logger.info("Auto-create PR disabled, skipping")
             return
@@ -275,7 +296,7 @@ Generated by Womba AI Test Generator
             story=self.story_data
         )
         
-        self.pr_url = pr_creator.create_pr(
+        self.pr_url = await pr_creator.create_pr_async(
             branch_name=self.branch_name,
             test_plan=self.test_plan
         )
@@ -312,4 +333,3 @@ async def run_full_workflow(story_key: str, config: WombaConfig, repo_path: Opti
     orchestrator = FullWorkflowOrchestrator(config)
     orchestrator.folder_path = folder_path
     return await orchestrator.run(story_key, repo_path)
-

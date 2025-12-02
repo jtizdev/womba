@@ -1,19 +1,17 @@
-"""External documentation crawler PRIORITIZING DIRECT GET REQUEST FOR CONTENT FETCHING."""
+"""External documentation crawler - ASYNC version using httpx."""
 
 from __future__ import annotations
 
-import time
+import asyncio
+import json as json_module
+import re
 from collections import deque
 from dataclasses import dataclass
 from typing import List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
+import httpx
 from loguru import logger
-
-try:  # pragma: no cover - optional dependency
-    import requests
-except ImportError:  # pragma: no cover
-    requests = None
 
 try:  # pragma: no cover - optional dependency
     from bs4 import BeautifulSoup  # type: ignore
@@ -31,7 +29,7 @@ class ExternalDocument:
 
 
 class ExternalDocCrawler:
-    """Efficient crawler with separate URL discovery and content fetching phases."""
+    """Async crawler with separate URL discovery and content fetching phases."""
 
     def __init__(
         self,
@@ -53,12 +51,12 @@ class ExternalDocCrawler:
 
     def is_available(self) -> bool:
         """Check if required dependencies are available."""
-        if requests is None or BeautifulSoup is None:
-            logger.warning("External doc crawler unavailable: install requests and beautifulsoup4")
+        if BeautifulSoup is None:
+            logger.warning("External doc crawler unavailable: install beautifulsoup4")
             return False
         return True
 
-    def discover_urls(self) -> List[str]:
+    async def discover_urls(self) -> List[str]:
         """
         Phase 1: Crawl from base URL to discover all documentation pages.
         Uses BFS to find all linked pages within the allowed domain.
@@ -73,49 +71,54 @@ class ExternalDocCrawler:
         to_visit: deque = deque([(self.base_url, 0)])  # (url, depth)
         discovered_urls: List[str] = []
         
-        while to_visit:
-            current_url, depth = to_visit.popleft()
-            
-            if depth > self.max_depth:
-                continue
+        async with httpx.AsyncClient(
+            headers={"User-Agent": self.user_agent, "Accept": "text/html"},
+            timeout=30.0,
+            follow_redirects=True
+        ) as client:
+            while to_visit:
+                current_url, depth = to_visit.popleft()
                 
-            if current_url in visited:
-                continue
-            
-            if len(discovered_urls) >= self.max_pages:
-                logger.info(f"⚠️  Reached max_pages limit ({self.max_pages}), stopping discovery")
-                break
+                if depth > self.max_depth:
+                    continue
+                    
+                if current_url in visited:
+                    continue
                 
-            visited.add(current_url)
-            discovered_urls.append(current_url)
-            logger.debug(f"📄 Discovered [{len(discovered_urls)}/{self.max_pages}]: {current_url} (depth={depth})")
-            
-            # Fetch the page to find more links
-            html = self._fetch(current_url)
-            if not html:
-                continue
+                if len(discovered_urls) >= self.max_pages:
+                    logger.info(f"⚠️  Reached max_pages limit ({self.max_pages}), stopping discovery")
+                    break
+                    
+                visited.add(current_url)
+                discovered_urls.append(current_url)
+                logger.debug(f"📄 Discovered [{len(discovered_urls)}/{self.max_pages}]: {current_url} (depth={depth})")
                 
-            soup = BeautifulSoup(html, "html.parser")
-            links = self._extract_links(soup)
-            
-            for link in links:
-                # Convert relative URLs to absolute
-                absolute_url = urljoin(current_url, link)
-                normalized_url = self._normalize_url(absolute_url)
+                # Fetch the page to find more links
+                html = await self._fetch(client, current_url)
+                if not html:
+                    continue
+                    
+                soup = BeautifulSoup(html, "html.parser")
+                links = self._extract_links(soup)
                 
-                if normalized_url and normalized_url not in visited:
-                    to_visit.append((normalized_url, depth + 1))
-            
-            # Rate limiting
-            if self.delay > 0:
-                time.sleep(self.delay)
+                for link in links:
+                    # Convert relative URLs to absolute
+                    absolute_url = urljoin(current_url, link)
+                    normalized_url = self._normalize_url(absolute_url)
+                    
+                    if normalized_url and normalized_url not in visited:
+                        to_visit.append((normalized_url, depth + 1))
+                
+                # Rate limiting - ASYNC sleep
+                if self.delay > 0:
+                    await asyncio.sleep(self.delay)
         
         logger.info(f"✅ Discovered {len(discovered_urls)} URLs to fetch")
         return discovered_urls
 
-    def fetch_content(self, urls: Optional[List[str]] = None) -> List[ExternalDocument]:
+    async def fetch_content(self, urls: Optional[List[str]] = None) -> List[ExternalDocument]:
         """
-        Phase 2: Fetch full content via DIRECT GET requests ONLY.
+        Phase 2: Fetch full content via ASYNC GET requests.
         
         Args:
             urls: List of URLs to fetch. If None, will discover URLs first.
@@ -127,7 +130,7 @@ class ExternalDocCrawler:
             return []
 
         if urls is None:
-            urls = self.discover_urls()
+            urls = await self.discover_urls()
 
         if not urls:
             logger.warning("No URLs to fetch content for")
@@ -136,43 +139,48 @@ class ExternalDocCrawler:
         documents: List[ExternalDocument] = []
         total = len(urls)
 
-        logger.info(f"🚀 Fetching content for {total} URLs via GET requests...")
+        logger.info(f"🚀 Fetching content for {total} URLs via async GET requests...")
 
-        for i, url in enumerate(urls, 1):
-            logger.info(f"📥 [{i}/{total}] GET {url}")
-            html = self._fetch(url)
-            if not html:
-                logger.warning(f"❌ Failed to fetch content from {url}")
-                continue
+        async with httpx.AsyncClient(
+            headers={"User-Agent": self.user_agent, "Accept": "text/html"},
+            timeout=30.0,
+            follow_redirects=True
+        ) as client:
+            for i, url in enumerate(urls, 1):
+                logger.info(f"📥 [{i}/{total}] GET {url}")
+                html = await self._fetch(client, url)
+                if not html:
+                    logger.warning(f"❌ Failed to fetch content from {url}")
+                    continue
 
-            soup = BeautifulSoup(html, "html.parser")
-            content_node = self._extract_content_node(soup)
-            content_html = content_node.decode() if content_node else html
-            
-            # Extract JSON examples and append them
-            json_examples = self._extract_json_examples(soup)
-            if json_examples:
-                content_html += "\n\n=== JSON EXAMPLES ===\n" + "\n\n".join(json_examples)
-                logger.info(f"   Extracted {len(json_examples)} JSON examples")
-            
-            title = self._extract_title(soup, url)
+                soup = BeautifulSoup(html, "html.parser")
+                content_node = self._extract_content_node(soup)
+                content_html = content_node.decode() if content_node else html
+                
+                # Extract JSON examples and append them
+                json_examples = self._extract_json_examples(soup)
+                if json_examples:
+                    content_html += "\n\n=== JSON EXAMPLES ===\n" + "\n\n".join(json_examples)
+                    logger.info(f"   Extracted {len(json_examples)} JSON examples")
+                
+                title = self._extract_title(soup, url)
 
-            documents.append(ExternalDocument(url=url, title=title, html=content_html))
-            logger.info(f"✅ [{i}/{total}] Fetched: {title}")
+                documents.append(ExternalDocument(url=url, title=title, html=content_html))
+                logger.info(f"✅ [{i}/{total}] Fetched: {title}")
 
-            if self.delay > 0:
-                time.sleep(self.delay)
+                # Rate limiting - ASYNC sleep
+                if self.delay > 0:
+                    await asyncio.sleep(self.delay)
 
         logger.info(f"✅ Content fetching complete: {len(documents)}/{total} pages successfully fetched")
         return documents
 
-    def crawl(self) -> List[ExternalDocument]:
+    async def crawl(self) -> List[ExternalDocument]:
         """
-        Legacy method: Full crawl (discovery + fetching in one pass).
-        Kept for backward compatibility but uses new two-phase approach internally.
+        Full crawl (discovery + fetching in one pass).
         """
-        urls = self.discover_urls()
-        return self.fetch_content(urls)
+        urls = await self.discover_urls()
+        return await self.fetch_content(urls)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -200,26 +208,21 @@ class ExternalDocCrawler:
         normalized = parsed._replace(query="", fragment="").geturl().rstrip("/")
         return normalized
 
-    def _fetch(self, url: str) -> Optional[str]:
-        """Fetch HTML content via direct GET request."""
+    async def _fetch(self, client: httpx.AsyncClient, url: str) -> Optional[str]:
+        """Fetch HTML content via async GET request."""
         try:
-            response = requests.get(
-                url,
-                headers={"User-Agent": self.user_agent, "Accept": "text/html"},
-                timeout=30,
-            )
+            response = await client.get(url)
             if response.status_code == 404:
                 logger.debug(f"Page not found (404): {url}")
                 return None
             if response.status_code != 200:
                 logger.warning(f"External doc crawler HTTP {response.status_code} for {url}")
                 return None
-            response.encoding = response.encoding or "utf-8"
             return response.text
-        except requests.exceptions.Timeout:
+        except httpx.TimeoutException:
             logger.warning(f"Timeout fetching {url}")
             return None
-        except requests.exceptions.RequestException as exc:
+        except httpx.RequestError as exc:
             logger.warning(f"External doc crawler failed to fetch {url}: {exc}")
             return None
         except Exception as exc:  # pragma: no cover - network issues
@@ -270,9 +273,6 @@ class ExternalDocCrawler:
     
     def _extract_json_examples(self, soup) -> List[str]:
         """Extract JSON code examples from HTML with context."""
-        import re
-        import json as json_module
-        
         json_examples = []
         
         # Find all code/pre tags that might contain JSON

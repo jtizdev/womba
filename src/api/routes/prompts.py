@@ -1,8 +1,10 @@
 """
 API routes for prompt configuration management.
 Allows viewing and editing prompt sections through the UI.
+All file I/O operations are async using asyncio.to_thread.
 """
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -46,8 +48,8 @@ class CompanyOverviewRequest(BaseModel):
     content: str
 
 
-def _load_overrides() -> Dict[str, str]:
-    """Load prompt overrides from disk."""
+def _load_overrides_sync() -> Dict[str, str]:
+    """Load prompt overrides from disk (sync)."""
     try:
         if PROMPT_OVERRIDES_FILE.exists():
             with open(PROMPT_OVERRIDES_FILE, 'r', encoding='utf-8') as f:
@@ -57,8 +59,8 @@ def _load_overrides() -> Dict[str, str]:
     return {}
 
 
-def _save_overrides(overrides: Dict[str, str]):
-    """Save prompt overrides to disk."""
+def _save_overrides_sync(overrides: Dict[str, str]):
+    """Save prompt overrides to disk (sync)."""
     try:
         PROMPT_OVERRIDES_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(PROMPT_OVERRIDES_FILE, 'w', encoding='utf-8') as f:
@@ -67,6 +69,16 @@ def _save_overrides(overrides: Dict[str, str]):
     except Exception as e:
         logger.error(f"Failed to save prompt overrides: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save overrides: {str(e)}")
+
+
+async def _load_overrides() -> Dict[str, str]:
+    """Load prompt overrides from disk (async)."""
+    return await asyncio.to_thread(_load_overrides_sync)
+
+
+async def _save_overrides(overrides: Dict[str, str]):
+    """Save prompt overrides to disk (async)."""
+    await asyncio.to_thread(_save_overrides_sync, overrides)
 
 
 def _get_default_content(section_id: str) -> str:
@@ -90,7 +102,7 @@ async def get_prompt_sections():
     Returns default content merged with any overrides.
     """
     try:
-        overrides = _load_overrides()
+        overrides = await _load_overrides()
         
         sections = [
             PromptSection(
@@ -154,7 +166,7 @@ async def get_prompt_sections():
 async def get_company_overview():
     """Get the company overview section specifically."""
     try:
-        overrides = _load_overrides()
+        overrides = await _load_overrides()
         content = overrides.get('company_overview', _get_default_content('company_overview'))
         return {"content": content}
     except Exception as e:
@@ -166,9 +178,9 @@ async def get_company_overview():
 async def update_company_overview(request: CompanyOverviewRequest):
     """Update the company overview section."""
     try:
-        overrides = _load_overrides()
+        overrides = await _load_overrides()
         overrides['company_overview'] = request.content
-        _save_overrides(overrides)
+        await _save_overrides(overrides)
         
         return {"status": "success", "message": "Company overview updated successfully"}
     except Exception as e:
@@ -185,7 +197,7 @@ async def get_full_prompt():
     try:
         # Build a sample prompt to show the structure
         # Note: This is a simplified version for preview purposes
-        overrides = _load_overrides()
+        overrides = await _load_overrides()
         
         sections_order = [
             'system_instruction',
@@ -225,9 +237,9 @@ async def update_section(section_id: str, request: UpdateSectionRequest):
         if section_id not in valid_sections:
             raise HTTPException(status_code=404, detail=f"Section '{section_id}' not found")
         
-        overrides = _load_overrides()
+        overrides = await _load_overrides()
         overrides[section_id] = request.content
-        _save_overrides(overrides)
+        await _save_overrides(overrides)
         
         return {"status": "success", "message": f"Section '{section_id}' updated successfully"}
     except HTTPException:
@@ -242,11 +254,10 @@ async def reset_prompts():
     """Reset all prompts to defaults by clearing overrides."""
     try:
         if PROMPT_OVERRIDES_FILE.exists():
-            PROMPT_OVERRIDES_FILE.unlink()
+            await asyncio.to_thread(PROMPT_OVERRIDES_FILE.unlink)
             logger.info("Prompt overrides cleared, reset to defaults")
         
         return {"status": "success", "message": "All prompts reset to defaults"}
     except Exception as e:
         logger.error(f"Failed to reset prompts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

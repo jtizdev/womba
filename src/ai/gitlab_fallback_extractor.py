@@ -8,8 +8,8 @@ Uses mcp-remote with OAuth authentication via MCP Python client library.
 import re
 import json
 import yaml
-import subprocess
 import asyncio
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from loguru import logger
@@ -53,30 +53,19 @@ class GitLabMCPClient:
                 self.oauth_cache_dir = Path.home() / ".mcp-auth"
             self.oauth_cache_dir.mkdir(parents=True, exist_ok=True)
             
-            # Check if mcp-remote is available
-            try:
-                result = subprocess.run(
-                    ["which", "mcp-remote"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    mcp_remote_path = result.stdout.strip()
-                    logger.debug(f"mcp-remote found at: {mcp_remote_path}")
-                else:
-                    # Try npx as fallback
-                    result = subprocess.run(
-                        ["which", "npx"],
-                        capture_output=True,
-                        text=True,
-                        timeout=5
-                    )
-                    if result.returncode != 0:
-                        logger.warning("Neither mcp-remote nor npx found")
-                        self.mcp_available = False
-                        return
-                    mcp_remote_path = "npx"
+            # Check if mcp-remote is available (sync check at init time is OK)
+            import shutil
+            mcp_remote_path = shutil.which("mcp-remote")
+            if mcp_remote_path:
+                logger.debug(f"mcp-remote found at: {mcp_remote_path}")
+            else:
+                # Try npx as fallback
+                npx_path = shutil.which("npx")
+                if not npx_path:
+                    logger.warning("Neither mcp-remote nor npx found")
+                    self.mcp_available = False
+                    return
+                mcp_remote_path = "npx"
                 
                 self.mcp_remote_path = mcp_remote_path
                 self.mcp_endpoint = "https://gitlab.com/api/v4/mcp"

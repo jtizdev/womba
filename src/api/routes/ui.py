@@ -1,7 +1,9 @@
 """
 API routes for Web UI support (stats, history, config).
+All file I/O operations are async using asyncio.to_thread.
 """
 
+import asyncio
 from typing import List, Optional
 from datetime import datetime, timedelta
 import json
@@ -58,8 +60,9 @@ STATS_FILE = Path("data/stats.json")
 # Ensure data directory exists
 HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-def _load_history() -> List[dict]:
-    """Load history from disk."""
+
+def _load_history_sync() -> List[dict]:
+    """Load history from disk (sync version for startup)."""
     if HISTORY_FILE.exists():
         try:
             with open(HISTORY_FILE, 'r') as f:
@@ -68,16 +71,18 @@ def _load_history() -> List[dict]:
             logger.error(f"Failed to load history: {e}")
     return []
 
-def _save_history(history: List[dict]):
-    """Save history to disk."""
+
+def _save_history_sync(history: List[dict]):
+    """Save history to disk (sync version)."""
     try:
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f, indent=2, default=str)
     except Exception as e:
         logger.error(f"Failed to save history: {e}")
 
-def _load_stats() -> dict:
-    """Load stats from disk."""
+
+def _load_stats_sync() -> dict:
+    """Load stats from disk (sync version for startup)."""
     if STATS_FILE.exists():
         try:
             with open(STATS_FILE, 'r') as f:
@@ -93,17 +98,44 @@ def _load_stats() -> dict:
         "stories_this_week": 0
     }
 
-def _save_stats(stats: dict):
-    """Save stats to disk."""
+
+def _save_stats_sync(stats: dict):
+    """Save stats to disk (sync version)."""
     try:
         with open(STATS_FILE, 'w') as f:
             json.dump(stats, f, indent=2)
     except Exception as e:
         logger.error(f"Failed to save stats: {e}")
 
-# Load from disk on startup
-_history_store = _load_history()
-_stats_cache = _load_stats()
+
+# Async wrappers for file operations
+async def _save_history_async(history: List[dict]):
+    """Save history to disk (async)."""
+    await asyncio.to_thread(_save_history_sync, history)
+
+
+async def _save_stats_async(stats: dict):
+    """Save stats to disk (async)."""
+    await asyncio.to_thread(_save_stats_sync, stats)
+
+
+async def _load_test_plan_from_file(path: Path) -> Optional[dict]:
+    """Load test plan from file (async)."""
+    def _read():
+        with open(path, 'r') as f:
+            return json.load(f)
+    
+    try:
+        if path.exists():
+            return await asyncio.to_thread(_read)
+    except Exception as e:
+        logger.error(f"Failed to load test plan from {path}: {e}")
+    return None
+
+
+# Load from disk on startup (sync is OK at startup)
+_history_store = _load_history_sync()
+_stats_cache = _load_stats_sync()
 
 
 @router.get("/health")
@@ -158,15 +190,11 @@ async def get_history_details(history_id: str):
         # Try to load test plan from file first (for backward compatibility)
         if 'test_plan_file' in item and item['test_plan_file']:
             test_plan_path = Path(item['test_plan_file'])
-            if test_plan_path.exists():
-                try:
-                    with open(test_plan_path, 'r') as f:
-                        test_plan_data = json.load(f)
-                        item['test_plan'] = test_plan_data
-                        logger.info(f"Loaded test plan from {test_plan_path}")
-                        return item
-                except Exception as e:
-                    logger.error(f"Failed to load test plan from {test_plan_path}: {e}")
+            test_plan_data = await _load_test_plan_from_file(test_plan_path)
+            if test_plan_data:
+                item['test_plan'] = test_plan_data
+                logger.info(f"Loaded test plan from {test_plan_path}")
+                return item
         
         # If file doesn't exist or failed, try to load from RAG
         story_key = item.get('story_key')
@@ -202,7 +230,7 @@ async def add_history_item(item: dict):
         item['id'] = f"hist_{len(_history_store) + 1}"
         item['created_at'] = item.get('created_at', datetime.now().isoformat())
         _history_store.append(item)
-        _save_history(_history_store)  # Save to disk
+        await _save_history_async(_history_store)  # Save to disk (async)
         
         # Update stats
         _stats_cache['total_tests'] += item.get('test_count', 0)
@@ -220,7 +248,7 @@ async def add_history_item(item: dict):
         total = len(_history_store)
         success = sum(1 for h in _history_store if h.get('status') == 'success')
         _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
-        _save_stats(_stats_cache)  # Save to disk
+        await _save_stats_async(_stats_cache)  # Save to disk (async)
         
         return {"id": item['id'], "status": "created"}
     except Exception as e:
@@ -358,6 +386,9 @@ def track_test_generation(story_key: str, test_count: int, status: str,
         duration: Duration in seconds
         zephyr_ids: List of Zephyr test case IDs if uploaded
         test_plan_file: Path to the saved test plan JSON file
+    
+    Note: This is a sync function for backward compatibility.
+    For async contexts, use asyncio.to_thread() to call this.
     """
     item = {
         'id': f"hist_{len(_history_store) + 1}",
@@ -371,7 +402,7 @@ def track_test_generation(story_key: str, test_count: int, status: str,
     }
     
     _history_store.append(item)
-    _save_history(_history_store)  # Persist to disk
+    _save_history_sync(_history_store)  # Persist to disk (sync)
     
     # Update stats
     if status == 'success':
@@ -385,7 +416,7 @@ def track_test_generation(story_key: str, test_count: int, status: str,
     total = len(_history_store)
     success = sum(1 for h in _history_store if h.get('status') == 'success')
     _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
-    _save_stats(_stats_cache)  # Persist to disk
+    _save_stats_sync(_stats_cache)  # Persist to disk (sync)
     
     logger.info(f"Tracked test generation: {story_key} ({test_count} tests, {status})")
 
@@ -417,7 +448,7 @@ def update_history_test_count(story_key: str, new_test_count: int):
     
     # Update the test_count
     item['test_count'] = new_test_count
-    _save_history(_history_store)  # Persist to disk
+    _save_history_sync(_history_store)  # Persist to disk
     
     # Update stats: adjust total_tests by the difference
     diff = new_test_count - old_test_count
@@ -437,7 +468,7 @@ def update_history_test_count(story_key: str, new_test_count: int):
         except Exception as e:
             logger.warning(f"Failed to check if history item is from this week: {e}")
         
-        _save_stats(_stats_cache)  # Persist to disk
+        _save_stats_sync(_stats_cache)  # Persist to disk
         logger.info(f"Updated history test_count for {story_key}: {old_test_count} -> {new_test_count}")
     else:
         logger.debug(f"Test count unchanged for {story_key}: {new_test_count}")
@@ -465,7 +496,7 @@ def remove_from_history(story_key: str):
     
     # Remove entries from history
     _history_store = [h for h in _history_store if h.get('story_key') != story_key]
-    _save_history(_history_store)
+    _save_history_sync(_history_store)
     
     # Update stats
     _stats_cache['total_tests'] = max(0, _stats_cache.get('total_tests', 0) - total_tests_to_remove)
@@ -476,6 +507,5 @@ def remove_from_history(story_key: str):
     success = sum(1 for h in _history_store if h.get('status') == 'success')
     _stats_cache['success_rate'] = (success / total * 100) if total > 0 else 100
     
-    _save_stats(_stats_cache)
+    _save_stats_sync(_stats_cache)
     logger.info(f"Removed {len(matching_items)} history entries for {story_key}")
-
