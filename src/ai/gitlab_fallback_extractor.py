@@ -54,7 +54,6 @@ class GitLabMCPClient:
             self.oauth_cache_dir.mkdir(parents=True, exist_ok=True)
             
             # Check if mcp-remote is available (sync check at init time is OK)
-            import shutil
             mcp_remote_path = shutil.which("mcp-remote")
             if mcp_remote_path:
                 logger.debug(f"mcp-remote found at: {mcp_remote_path}")
@@ -66,18 +65,14 @@ class GitLabMCPClient:
                     self.mcp_available = False
                     return
                 mcp_remote_path = "npx"
-                
-                self.mcp_remote_path = mcp_remote_path
-                self.mcp_endpoint = "https://gitlab.com/api/v4/mcp"
-                
-                logger.info(f"GitLab MCP client initialized (OAuth cache: {self.oauth_cache_dir})")
-                logger.info("Using mcp-remote with OAuth authentication")
-                logger.info("Browser will open for OAuth login on first use")
-                self.mcp_available = True
-                
-            except Exception as e:
-                logger.warning(f"Failed to check for mcp-remote: {e}")
-                self.mcp_available = False
+            
+            self.mcp_remote_path = mcp_remote_path
+            self.mcp_endpoint = "https://gitlab.com/api/v4/mcp"
+            
+            logger.info(f"GitLab MCP client initialized (OAuth cache: {self.oauth_cache_dir})")
+            logger.info("Using mcp-remote with OAuth authentication")
+            logger.info("Browser will open for OAuth login on first use")
+            self.mcp_available = True
                 
         except Exception as e:
             logger.error(f"MCP initialization failed: {e}")
