@@ -12,7 +12,7 @@ from src.config.user_config import WombaConfig
 from src.config.settings import settings
 from src.aggregator.story_collector import StoryCollector
 from src.ai.context_indexer import ContextIndexer
-from src.ai.test_plan_generator import TestPlanGenerator
+from src.ai.two_stage_generator import TwoStageGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
 from src.automation.code_generator import TestCodeGenerator
 from src.automation.pr_creator import PRCreator
@@ -130,23 +130,13 @@ class FullWorkflowOrchestrator:
         collector = StoryCollector()
         self.story_data = await collector.collect_story_context(self.story_key)
         
-        # Use two-stage generator if enabled
-        if settings.use_two_stage_generation:
-            logger.info(f"Creating TwoStageGenerator with model: {self.config.ai_model}")
-            from src.ai.two_stage_generator import TwoStageGenerator
-            generator = TwoStageGenerator(
-                api_key=self.config.openai_api_key,
-                model=self.config.ai_model,
-                use_openai=True
-            )
-        else:
-            # Fallback to single-stage generator
-            logger.info(f"Creating TestPlanGenerator with model: {self.config.ai_model}")
-            generator = TestPlanGenerator(
-                api_key=self.config.openai_api_key,
-                model=self.config.ai_model,
-                use_openai=True
-            )
+        # Use two-stage generator (Analysis → Generation)
+        logger.info(f"Creating TwoStageGenerator with model: {self.config.ai_model}")
+        generator = TwoStageGenerator(
+            api_key=self.config.openai_api_key,
+            model=self.config.ai_model,
+            use_openai=True
+        )
         
         self.test_plan = await generator.generate_test_plan(self.story_data)
         

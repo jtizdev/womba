@@ -51,26 +51,41 @@ THINK ABOUT WHAT COULD ACTUALLY BREAK:
 - What would make a customer file a support ticket?
 - What edge cases are LIKELY to happen in production?
 
-=== FORBIDDEN TEST PATTERNS (NEVER write these as standalone tests) ===
+=== FORBIDDEN TEST PATTERNS (NEVER write these - DELETE immediately if you do) ===
 
-VISIBILITY/EXISTENCE TESTS - NOT REAL TESTS:
+FORBIDDEN TEST TITLES (if your test title matches ANY of these patterns, DELETE IT):
+❌ "User opens X page" → Test what's ON the page, not the navigation
+❌ "User clicks X tab" → Test the FUNCTIONALITY of what's in the tab
+❌ "User navigates to X" → Navigation is a STEP, not a test objective
+❌ "X page loads correctly" → This is a precondition, not a test
 ❌ "X is visible/displayed/present/shown" → If you interact with X and it works, X exists
 ❌ "X exists on page" → Test what X DOES, not that it exists
-❌ "Page loads/opens correctly" → This is a precondition, not a test objective
 ❌ "Button/tab/link is clickable" → Test what happens AFTER you click it
 ❌ "Search bar is present" → Test the SEARCH FUNCTIONALITY instead
+❌ "Pagination functionality" → Test viewing LARGE DATASETS - pagination is implicit
+❌ "Sorting works" → Test viewing data SORTED BY [specific field]
+❌ "Filtering works" → Test finding SPECIFIC items using [specific criteria]
 
-GENERIC UI TESTS - NOT HOW HUMANS WRITE TESTS:
-❌ "Pagination functionality works" → Test viewing a LARGE DATASET (50+ items) - pagination is implicit
-❌ "Sorting works" → Test viewing data SORTED BY [specific field] with expected order
-❌ "Filtering works" → Test finding SPECIFIC items using [specific filter criteria]
+REAL-WORLD EXAMPLES OF BAD VS GOOD TITLES:
+❌ BAD: "User opens Policies page from Application tab"
+✅ GOOD: "Application policies list shows linked policies with correct count"
+
+❌ BAD: "Policies tab is displayed under API Mappers"
+✅ GOOD: "Clicking Policies tab shows list of policies using this application"
+
+❌ BAD: "Search bar is present on policies page"
+✅ GOOD: "Search filters policies by name and returns matching results"
+
+❌ BAD: "Paging functionality works correctly"
+✅ GOOD: "Policies list with 50+ items displays across multiple pages"
+
+❌ BAD: "Empty state is displayed when no policies exist"
+✅ GOOD: "Application with no linked policies shows empty state with guidance"
 
 TRANSFORM TRIVIAL TO FUNCTIONAL:
-- "Search bar is present" → "Search filters policies by name and returns matching results"
 - "Tab is visible" → "Clicking Policies tab displays list of policies with correct data"
 - "Button exists" → "Clicking [Button] performs [action] and shows [result]"
-- "Pagination works" → "Policies list displays correctly with 50+ policies across pages"
-- "Empty state displayed" → "When no policies exist, user sees message and can navigate to create one"
+- "Page loads" → Test the CONTENT and FUNCTIONALITY on that page
 
 TEST EFFICIENCY (CRITICAL):
 - DON'T create separate tests for trivial things that are implicitly covered
@@ -119,6 +134,15 @@ FORMATTING RULES:
 - API tests: use exact endpoints from story (GET/POST/PUT/DELETE /path)
 - test_data must be valid JSON with concrete values, no placeholders
 - Only use endpoints/fields mentioned in story or API specs
+
+UI TEST NAVIGATION (MANDATORY FOR ALL UI TESTS):
+- Step 1 of EVERY UI test MUST include the full navigation path
+- Format: "Navigate to [Workspace] → [Menu] → [Page/Item] → [Tab]"
+- Example: "Navigate to Authorization Workspace → Applications → Select 'app-123' → Click 'Policies' tab"
+- PlainID workspaces: Authorization Workspace, Identity Workspace, Orchestration Workspace, Administration Workspace
+- If you don't know the exact path, use: "Navigate to [relevant workspace] → [feature area] → [specific item]"
+- NEVER write just "Navigate to Policies tab" or "Open the Policies page" - ALWAYS include the full path from workspace
+- NEVER write "User opens X page" or "User clicks X" - write the actual navigation instruction
 
 === USE THE PROVIDED CONTEXT ===
 
@@ -175,10 +199,16 @@ OUTPUT FORMAT (JSON):
 === SELF-REVIEW BEFORE SUBMITTING ===
 
 FORBIDDEN PATTERN CHECK (DELETE any tests that match these):
+□ Did I write any "User opens X page" or "User clicks X" tests? → DELETE - test the FUNCTIONALITY
 □ Did I write any "X is visible/displayed/present" tests? → DELETE and test functionality instead
 □ Did I write any "X exists on page" tests? → DELETE and test what X does
 □ Did I write a standalone "Pagination works" test? → DELETE and test with large dataset instead
 □ Did I write a standalone "Search bar is present" test? → DELETE and test search functionality
+
+UI NAVIGATION CHECK (CRITICAL):
+□ Does EVERY UI test have full navigation path in step 1? (Workspace → Menu → Item → Tab)
+□ Did I specify which workspace? (Authorization/Identity/Orchestration/Administration)
+□ No steps say just "Navigate to X tab" without the full path from workspace
 
 PATTERN CHECK (go through each AC):
 □ For each AC that says "different/multiple/various X" → did I test 2+ X values?
@@ -196,6 +226,7 @@ FORMAT CHECK:
 □ Do titles sound like a human QA wrote them, not a machine?
 □ No mechanical patterns like "Verify that X does Y correctly"
 □ No titles say "X is visible/displayed/present/exists"
+□ No titles say "User opens/clicks/navigates"
 □ No titles say "Pagination/paging functionality"
 □ Test data uses concrete values, not placeholders"""
 
@@ -206,41 +237,42 @@ FORMAT CHECK:
 
 COMPACT_EXAMPLE = """
 EXAMPLE - Notice how this test:
-- Has a natural title describing what happens (not "Verify...")
+- Has a natural title describing what happens (not "Verify..." or "User opens...")
+- Step 1 includes FULL NAVIGATION PATH (Workspace → Menu → Item)
 - Explains WHY it matters in the description
 - Uses concrete values from the domain
 - Steps read like instructions to a human
 
 {
-  "title": "Tenant admin sees login audit record after user authenticates via Keycloak",
-  "description": "Login events must be captured in tenant-level audit for compliance. This covers the core audit trail requirement.",
-  "preconditions": "Tenant 'acme-corp' exists with admin user 'john.smith@acme.com' configured",
+  "title": "Application policies list shows linked policies with search functionality",
+  "description": "Users need to see which policies use an application and search through them. This is critical for policy management workflows.",
+  "preconditions": "Application 'app-prod-123' exists with 5 linked policies in Authorization Workspace",
   "steps": [
     {
       "step_number": 1,
-      "action": "Authenticate as john.smith@acme.com using Keycloak IDP with valid credentials",
-      "expected_result": "Login succeeds, user receives access token",
-      "test_data": "{\"tenant\": \"acme-corp\", \"user\": \"john.smith@acme.com\", \"idp\": \"keycloak\"}"
+      "action": "Navigate to Authorization Workspace → Applications → Select 'app-prod-123' → Click 'Policies' tab",
+      "expected_result": "Policies page opens with title 'Policies Using this Application' and list of 5 policies",
+      "test_data": "{\"workspace\": \"Authorization Workspace\", \"applicationId\": \"app-prod-123\", \"expectedPolicyCount\": 5}"
     },
     {
       "step_number": 2,
-      "action": "Navigate to Tenant Administration > Audit Logs",
-      "expected_result": "Audit log page loads showing recent events",
-      "test_data": "{\"expectedPage\": \"tenant-admin/audit\"}"
+      "action": "Enter 'audit' in the search bar and press Enter",
+      "expected_result": "Policy list filters to show only policies containing 'audit' in their name",
+      "test_data": "{\"searchTerm\": \"audit\", \"expectedFilteredCount\": 2}"
     },
     {
       "step_number": 3,
-      "action": "Filter audit log by event type 'LOGIN' and look for john.smith entry",
-      "expected_result": "Login event appears with timestamp, user email, IDP source, and SUCCESS status",
-      "test_data": "{\"filter\": \"LOGIN\", \"expectedUser\": \"john.smith@acme.com\", \"expectedStatus\": \"SUCCESS\"}"
+      "action": "Clear search and verify all 5 policies are shown again",
+      "expected_result": "Full policy list is restored with all 5 policies visible",
+      "test_data": "{\"expectedPolicyCount\": 5}"
     }
   ],
-  "expected_result": "Tenant admins can see login activity in their audit trail for compliance purposes",
-  "priority": "critical",
+  "expected_result": "Users can view and search through policies linked to an application efficiently",
+  "priority": "high",
   "test_type": "functional",
-  "tags": ["AUDIT", "LOGIN", "COMPLIANCE"],
+  "tags": ["POLICIES", "APPLICATIONS", "SEARCH"],
   "automation_candidate": true,
-  "risk_level": "high"
+  "risk_level": "medium"
 }"""
 
 

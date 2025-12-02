@@ -13,8 +13,7 @@ from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from src.ai import prompts_qa_focused
-from src.ai.generation.prompt_builder import PromptBuilder
+from src.ai import prompts_compact, prompts_analysis
 from src.config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -83,14 +82,14 @@ async def _save_overrides(overrides: Dict[str, str]):
 
 def _get_default_content(section_id: str) -> str:
     """Get default content for a prompt section."""
+    # Map to new two-stage prompt system
     section_map = {
-        'system_instruction': prompts_qa_focused.SYSTEM_INSTRUCTION,
-        'reasoning_framework': prompts_qa_focused.REASONING_FRAMEWORK,
-        'generation_guidelines': prompts_qa_focused.GENERATION_GUIDELINES,
-        'few_shot_examples': prompts_qa_focused.FEW_SHOT_EXAMPLES,
-        'company_overview': getattr(prompts_qa_focused, 'COMPANY_OVERVIEW', ''),
-        'rag_grounding': prompts_qa_focused.RAG_GROUNDING_INSTRUCTIONS,
-        'quality_checklist': prompts_qa_focused.QUALITY_CHECKLIST,
+        'system_instruction': prompts_compact.COMPACT_SYSTEM_INSTRUCTION,
+        'stage1_analysis': prompts_analysis.ANALYSIS_SYSTEM_INSTRUCTION,
+        'stage2_generation': prompts_compact.COMPACT_SYSTEM_INSTRUCTION,
+        'few_shot_examples': prompts_compact.COMPACT_EXAMPLE,
+        'output_format': prompts_compact.COMPACT_OUTPUT_FORMAT,
+        'json_schema': prompts_compact.COMPACT_JSON_SCHEMA,
     }
     return section_map.get(section_id, '')
 
@@ -104,26 +103,20 @@ async def get_prompt_sections():
     try:
         overrides = await _load_overrides()
         
+        # Two-stage prompt sections
         sections = [
             PromptSection(
-                id='system_instruction',
-                name='System Instruction',
-                description='Core role definition and critical quality rules for the AI',
-                content=overrides.get('system_instruction', _get_default_content('system_instruction')),
+                id='stage1_analysis',
+                name='Stage 1: Analysis Prompt',
+                description='Analyzes the story, detects patterns, and creates a coverage plan',
+                content=overrides.get('stage1_analysis', _get_default_content('stage1_analysis')),
                 editable=True
             ),
             PromptSection(
-                id='reasoning_framework',
-                name='Reasoning Framework',
-                description='Chain of thought instructions guiding the AI\'s analysis process',
-                content=overrides.get('reasoning_framework', _get_default_content('reasoning_framework')),
-                editable=True
-            ),
-            PromptSection(
-                id='generation_guidelines',
-                name='Generation Guidelines',
-                description='Consolidated rules for test composition, naming, and writing style',
-                content=overrides.get('generation_guidelines', _get_default_content('generation_guidelines')),
+                id='stage2_generation',
+                name='Stage 2: Generation Prompt',
+                description='Generates test cases based on the coverage plan',
+                content=overrides.get('stage2_generation', _get_default_content('stage2_generation')),
                 editable=True
             ),
             PromptSection(
@@ -134,24 +127,10 @@ async def get_prompt_sections():
                 editable=True
             ),
             PromptSection(
-                id='company_overview',
-                name='Company Overview',
-                description='Company-specific context and terminology (customizable per organization)',
-                content=overrides.get('company_overview', _get_default_content('company_overview')),
-                editable=True
-            ),
-            PromptSection(
-                id='rag_grounding',
-                name='RAG Grounding Instructions',
-                description='Instructions for using retrieved context and avoiding hallucinations',
-                content=overrides.get('rag_grounding', _get_default_content('rag_grounding')),
-                editable=True
-            ),
-            PromptSection(
-                id='quality_checklist',
-                name='Quality Checklist',
-                description='Final validation checklist before returning test plan',
-                content=overrides.get('quality_checklist', _get_default_content('quality_checklist')),
+                id='output_format',
+                name='Output Format',
+                description='JSON output format and self-review checklist',
+                content=overrides.get('output_format', _get_default_content('output_format')),
                 editable=True
             ),
         ]
@@ -162,29 +141,27 @@ async def get_prompt_sections():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/company-overview")
-async def get_company_overview():
-    """Get the company overview section specifically."""
+@router.get("/stage1")
+async def get_stage1_prompt():
+    """Get the Stage 1 (Analysis) prompt."""
     try:
         overrides = await _load_overrides()
-        content = overrides.get('company_overview', _get_default_content('company_overview'))
+        content = overrides.get('stage1_analysis', _get_default_content('stage1_analysis'))
         return {"content": content}
     except Exception as e:
-        logger.error(f"Failed to get company overview: {e}")
+        logger.error(f"Failed to get stage1 prompt: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put("/company-overview")
-async def update_company_overview(request: CompanyOverviewRequest):
-    """Update the company overview section."""
+@router.get("/stage2")
+async def get_stage2_prompt():
+    """Get the Stage 2 (Generation) prompt."""
     try:
         overrides = await _load_overrides()
-        overrides['company_overview'] = request.content
-        await _save_overrides(overrides)
-        
-        return {"status": "success", "message": "Company overview updated successfully"}
+        content = overrides.get('stage2_generation', _get_default_content('stage2_generation'))
+        return {"content": content}
     except Exception as e:
-        logger.error(f"Failed to update company overview: {e}")
+        logger.error(f"Failed to get stage2 prompt: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -229,9 +206,8 @@ async def update_section(section_id: str, request: UpdateSectionRequest):
     """Update a specific prompt section."""
     try:
         valid_sections = [
-            'system_instruction', 'reasoning_framework', 'generation_guidelines',
-            'few_shot_examples', 'company_overview',
-            'rag_grounding', 'quality_checklist'
+            'stage1_analysis', 'stage2_generation', 
+            'few_shot_examples', 'output_format'
         ]
         
         if section_id not in valid_sections:

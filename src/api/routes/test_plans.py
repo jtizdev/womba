@@ -12,7 +12,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from src.aggregator.story_collector import StoryCollector
-from src.ai.test_plan_generator import TestPlanGenerator
+from src.ai.two_stage_generator import TwoStageGenerator
 from src.integrations.zephyr_integration import ZephyrIntegration
 from src.models.test_plan import TestPlan
 from src.models.test_case import TestCase
@@ -70,9 +70,9 @@ async def generate_test_plan(request: GenerateTestPlanRequest):
         collector = StoryCollector()
         context = await collector.collect_story_context(request.issue_key)
 
-        # Step 2: Generate test plan with AI
-        logger.info("Step 2: Generating test plan with AI...")
-        generator = TestPlanGenerator()
+        # Step 2: Generate test plan with AI (Two-Stage: Analysis → Generation)
+        logger.info("Step 2: Generating test plan with AI (Two-Stage)...")
+        generator = TwoStageGenerator()
         test_plan = await generator.generate_test_plan(context)
 
         logger.info(
