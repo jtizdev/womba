@@ -149,15 +149,31 @@ class DocumentIndexer:
             ids: List of document IDs
             batch_size: Batch size for indexing
         """
-        total = len(doc_texts)
+        # Deduplicate by ID (keep first occurrence)
+        seen_ids = set()
+        deduped_docs = []
+        deduped_meta = []
+        deduped_ids = []
+        
+        for doc, meta, doc_id in zip(doc_texts, metadatas, ids):
+            if doc_id not in seen_ids:
+                seen_ids.add(doc_id)
+                deduped_docs.append(doc)
+                deduped_meta.append(meta)
+                deduped_ids.append(doc_id)
+        
+        if len(deduped_ids) < len(ids):
+            logger.debug(f"Deduplicated {len(ids)} -> {len(deduped_ids)} Jira stories")
+        
+        total = len(deduped_docs)
         logger.info(f"📋 Indexing {total} Jira stories (with upsert logic)")
         
         try:
-            normalized_metadatas = [self._normalize_metadata(meta) for meta in metadatas]
+            normalized_metadatas = [self._normalize_metadata(meta) for meta in deduped_meta]
             for i in range(0, total, batch_size):
-                batch_docs = doc_texts[i:i + batch_size]
+                batch_docs = deduped_docs[i:i + batch_size]
                 batch_meta = normalized_metadatas[i:i + batch_size]
-                batch_ids = ids[i:i + batch_size]
+                batch_ids = deduped_ids[i:i + batch_size]
                 
                 await self.store.add_documents(
                     collection_name=self.store.JIRA_ISSUES_COLLECTION,

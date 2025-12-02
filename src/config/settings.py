@@ -187,6 +187,15 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         description="Model to use for AI-based chunk summarization."
     )
+    
+    # Two-Stage Generation Configuration
+    use_two_stage_generation: bool = Field(
+        default=True,
+        description="Enable two-stage test generation. "
+                    "Stage 1: Analyze story and detect patterns. "
+                    "Stage 2: Generate tests from coverage plan. "
+                    "This improves pattern detection and coverage completeness."
+    )
 
 
 # Global settings instance

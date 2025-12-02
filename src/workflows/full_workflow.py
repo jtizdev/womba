@@ -103,13 +103,24 @@ class FullWorkflowOrchestrator:
         collector = StoryCollector()
         self.story_data = await collector.collect_story_context(self.story_key)
         
-        # Generate test plan using config's API key
-        logger.info(f"Creating TestPlanGenerator with model: {self.config.ai_model}")
-        generator = TestPlanGenerator(
-            api_key=self.config.openai_api_key,
-            model=self.config.ai_model,
-            use_openai=True
-        )
+        # Use two-stage generator if enabled
+        if settings.use_two_stage_generation:
+            logger.info(f"Creating TwoStageGenerator with model: {self.config.ai_model}")
+            from src.ai.two_stage_generator import TwoStageGenerator
+            generator = TwoStageGenerator(
+                api_key=self.config.openai_api_key,
+                model=self.config.ai_model,
+                use_openai=True
+            )
+        else:
+            # Fallback to single-stage generator
+            logger.info(f"Creating TestPlanGenerator with model: {self.config.ai_model}")
+            generator = TestPlanGenerator(
+                api_key=self.config.openai_api_key,
+                model=self.config.ai_model,
+                use_openai=True
+            )
+        
         self.test_plan = await generator.generate_test_plan(self.story_data)
         
         logger.info(f"Generated {len(self.test_plan.test_cases)} test cases")

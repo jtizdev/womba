@@ -51,10 +51,32 @@ THINK ABOUT WHAT COULD ACTUALLY BREAK:
 - What would make a customer file a support ticket?
 - What edge cases are LIKELY to happen in production?
 
+=== FORBIDDEN TEST PATTERNS (NEVER write these as standalone tests) ===
+
+VISIBILITY/EXISTENCE TESTS - NOT REAL TESTS:
+❌ "X is visible/displayed/present/shown" → If you interact with X and it works, X exists
+❌ "X exists on page" → Test what X DOES, not that it exists
+❌ "Page loads/opens correctly" → This is a precondition, not a test objective
+❌ "Button/tab/link is clickable" → Test what happens AFTER you click it
+❌ "Search bar is present" → Test the SEARCH FUNCTIONALITY instead
+
+GENERIC UI TESTS - NOT HOW HUMANS WRITE TESTS:
+❌ "Pagination functionality works" → Test viewing a LARGE DATASET (50+ items) - pagination is implicit
+❌ "Sorting works" → Test viewing data SORTED BY [specific field] with expected order
+❌ "Filtering works" → Test finding SPECIFIC items using [specific filter criteria]
+
+TRANSFORM TRIVIAL TO FUNCTIONAL:
+- "Search bar is present" → "Search filters policies by name and returns matching results"
+- "Tab is visible" → "Clicking Policies tab displays list of policies with correct data"
+- "Button exists" → "Clicking [Button] performs [action] and shows [result]"
+- "Pagination works" → "Policies list displays correctly with 50+ policies across pages"
+- "Empty state displayed" → "When no policies exist, user sees message and can navigate to create one"
+
 TEST EFFICIENCY (CRITICAL):
 - DON'T create separate tests for trivial things that are implicitly covered
   Bad: "Admin can access audit logs" (trivial - all tests require admin access)
   Bad: "Login requirements are met" (duplicate of successful login test)
+  Bad: "Policies tab is displayed" (trivial - if you click it and it works, it exists)
 - DO combine related scenarios into comprehensive tests
 - A good test covers MULTIPLE assertions, not just one
 - Ask yourself: "Would a real QA create a separate test for this, or just add an assertion?"
@@ -72,19 +94,28 @@ AC COVERAGE:
 - But DON'T create redundant tests - combine where it makes sense
 
 WRITING STYLE:
-- Test titles describe WHAT HAPPENS, not what you're testing
-  Good: "Audit log shows login event after user authenticates successfully"
-  Good: "Root account login creates audit record with admin flag"
-  Bad: "Verify audit log displays correctly"
-  Bad: "Test login with different IDP"
-  Bad: "Validate behavior for login with root account"
+- Test titles should sound like a human QA engineer wrote them, not a machine
+- Write titles that describe the TEST OBJECTIVE naturally
+  
+  Good (natural, human-sounding):
+  - "Validate policy list search works"
+  - "Search filters policies by name correctly"
+  - "Audit log captures login events from Keycloak"
+  - "Root account login creates admin-flagged audit record"
+  
+  Bad (mechanical, AI-sounding):
+  - "Verify that the audit log displays correctly" (too robotic)
+  - "Test login with different IDP" (sounds like a task, not a test)
+  - "Check search functionality filters policies" (mechanical prefix + gerund)
+  - "Ensure pagination works correctly" (vague, what specifically?)
+
+- Using "Validate" or "Verify" is FINE when it sounds natural
+- The problem is MECHANICAL patterns like "Verify that X does Y correctly"
 - Steps read like instructions to a human tester
 - Use concrete values from the story/PRD (real tenant IDs, user names)
 - Descriptions explain WHY this test matters
 
 FORMATTING RULES:
-- NEVER start titles with: "Verify", "Validate", "Test", "Check", "Ensure"
-  Even if the AC says "Validate X" or "Test Y", rephrase the title!
 - API tests: use exact endpoints from story (GET/POST/PUT/DELETE /path)
 - test_data must be valid JSON with concrete values, no placeholders
 - Only use endpoints/fields mentioned in story or API specs
@@ -143,6 +174,12 @@ OUTPUT FORMAT (JSON):
 
 === SELF-REVIEW BEFORE SUBMITTING ===
 
+FORBIDDEN PATTERN CHECK (DELETE any tests that match these):
+□ Did I write any "X is visible/displayed/present" tests? → DELETE and test functionality instead
+□ Did I write any "X exists on page" tests? → DELETE and test what X does
+□ Did I write a standalone "Pagination works" test? → DELETE and test with large dataset instead
+□ Did I write a standalone "Search bar is present" test? → DELETE and test search functionality
+
 PATTERN CHECK (go through each AC):
 □ For each AC that says "different/multiple/various X" → did I test 2+ X values?
 □ For each AC that mentions a specific user type → did I test with that user?
@@ -153,9 +190,13 @@ QUALITY CHECK:
 □ Are there redundant tests? → REMOVE them, add as assertions instead
 □ Are there trivial standalone tests? → FOLD into other tests
 □ Did I think about what could BREAK, not just "cover ACs"?
+□ Would a real QA engineer create each test, or just add an assertion to another test?
 
 FORMAT CHECK:
-□ No titles start with "Verify/Validate/Check/Ensure/Test"
+□ Do titles sound like a human QA wrote them, not a machine?
+□ No mechanical patterns like "Verify that X does Y correctly"
+□ No titles say "X is visible/displayed/present/exists"
+□ No titles say "Pagination/paging functionality"
 □ Test data uses concrete values, not placeholders"""
 
 
@@ -546,4 +587,265 @@ COMPACT_JSON_SCHEMA = {
         "additionalProperties": False
     }
 }
+
+
+# ============================================================================
+# STAGE 2: GENERATION PROMPT (Takes CoveragePlan from Stage 1)
+# ============================================================================
+
+STAGE2_SYSTEM_INSTRUCTION = """You are a senior QA engineer creating test cases from a coverage plan.
+
+A previous analysis has already identified:
+- Pattern matches (DIFFERENT_X, SPECIFIC_USER, NAMED_FEATURE, HIDDEN_VISIBLE)
+- PRD requirements to test
+- API endpoints to cover
+- Existing tests to avoid duplicating
+- A planned test structure
+
+YOUR JOB: Convert each planned test into a complete, detailed test case.
+
+=== FORBIDDEN TEST PATTERNS (NEVER write these) ===
+
+VISIBILITY/EXISTENCE TESTS - DELETE IMMEDIATELY IF YOU SEE THESE:
+❌ "X is visible/displayed/present/shown" → Test what X DOES, not that it exists
+❌ "Empty state message is displayed" → Test what user can DO from empty state
+❌ "Tab is displayed" → Test what happens when you CLICK the tab
+
+BANNED WORDS IN TEST TITLES (will be rejected):
+❌ "pagination" or "paging" → NEVER use these words in titles
+❌ "empty state" → NEVER use this phrase in titles
+❌ "is displayed" or "is visible" → NEVER use these phrases
+
+WHAT TO WRITE INSTEAD:
+- Instead of "Verify paging" → "Policy list handles 50+ items correctly"
+- Instead of "Empty state is displayed" → "User can create policy when none exist"
+- Instead of "Pagination functionality" → "Large policy list loads correctly"
+
+=== MANDATORY REQUIREMENTS ===
+
+1. EVERY planned test in the coverage plan MUST become a real test case
+2. EVERY pattern match MUST be covered by at least one test
+3. EVERY PRD requirement MUST be verified in a test
+4. DO NOT create tests that overlap with existing tests listed
+
+=== WRITING STYLE ===
+
+- Test titles should sound like a human QA engineer wrote them
+  
+  Good (natural):
+  - "Validate policy list search works"
+  - "Audit log captures login events from Keycloak"
+  - "Root account login creates admin-flagged audit record"
+  
+  Bad (mechanical/AI-sounding):
+  - "Verify that audit log displays correctly" (robotic)
+  - "Test login with different IDP" (sounds like a task)
+  - "Empty state message is displayed" → FORBIDDEN
+  - "Pagination displays correctly" → FORBIDDEN
+  
+- Using "Validate" or "Verify" is FINE when natural (e.g., "Validate search works")
+- NEVER use "is visible/displayed/present" in titles
+- NEVER use "Pagination/Paging functionality" as a test title
+- Steps read like instructions to a human tester
+- Use concrete values from the story/PRD
+- Descriptions explain WHY this test matters
+
+=== EFFICIENCY ===
+
+- DON'T create separate tests for trivial things (e.g., "admin can access X")
+- DO combine related scenarios into comprehensive tests
+- A good test covers MULTIPLE assertions"""
+
+
+def build_stage2_prompt(
+    story_key: str,
+    story_title: str,
+    story_description: str,
+    acceptance_criteria: List[str],
+    coverage_plan: Dict[str, Any],
+    confluence_docs: Optional[List[Dict[str, Any]]] = None,
+    swagger_docs: Optional[List[Dict[str, Any]]] = None,
+    api_specifications: Optional[List[Dict[str, Any]]] = None
+) -> str:
+    """
+    Build Stage 2 generation prompt using the CoveragePlan from Stage 1.
+    
+    This prompt is focused on GENERATING tests from the analysis,
+    not analyzing the story again.
+    
+    Args:
+        story_key: Jira story key
+        story_title: Story summary
+        story_description: Full story description
+        acceptance_criteria: List of ACs
+        coverage_plan: CoveragePlan dict from Stage 1 analysis
+        confluence_docs: PRD/Confluence documents
+        swagger_docs: Swagger/API documentation
+        api_specifications: API specs from story enrichment
+        
+    Returns:
+        Complete Stage 2 generation prompt
+    """
+    sections = []
+    
+    # Section 1: System instruction
+    sections.append(STAGE2_SYSTEM_INSTRUCTION)
+    logger.info("[STAGE2 PROMPT] Added system instruction")
+    
+    # Section 2: Coverage Plan from Stage 1
+    coverage_section = _build_coverage_plan_section(coverage_plan)
+    sections.append(coverage_section)
+    logger.info("[STAGE2 PROMPT] Added coverage plan section")
+    
+    # Section 3: Story context (abbreviated)
+    story_section = f"""
+============================================================
+STORY CONTEXT
+============================================================
+
+Story: {story_key} - {story_title}
+
+Description (abbreviated):
+{story_description[:2000] if len(story_description) > 2000 else story_description}
+
+--- ACCEPTANCE CRITERIA ---
+"""
+    for i, ac in enumerate(acceptance_criteria, 1):
+        story_section += f"AC #{i}: {ac}\n"
+    
+    sections.append(story_section)
+    logger.info(f"[STAGE2 PROMPT] Added story section with {len(acceptance_criteria)} ACs")
+    
+    # Section 4: API specs for exact endpoints
+    if swagger_docs or api_specifications:
+        api_section = "\n--- API ENDPOINTS (Use EXACT paths) ---\n"
+        if swagger_docs:
+            for doc in swagger_docs[:3]:
+                service = doc.get('service', 'Unknown')
+                content = doc.get('content', '')[:1000]
+                api_section += f"📡 {service}:\n{content}\n\n"
+        if api_specifications:
+            for spec in api_specifications[:10]:
+                method = spec.get('method', 'GET')
+                path = spec.get('path', '')
+                api_section += f"  {method} {path}\n"
+        sections.append(api_section)
+        logger.info("[STAGE2 PROMPT] Added API section")
+    
+    # Section 5: PRD for concrete values
+    if confluence_docs:
+        prd_section = "\n--- PRD/CONFLUENCE (For concrete values) ---\n"
+        for doc in confluence_docs[:2]:
+            title = doc.get('title', 'Untitled')
+            content = doc.get('qa_summary') or doc.get('summary', '')
+            prd_section += f"📄 {title}:\n{content[:1500]}\n\n"
+        sections.append(prd_section)
+        logger.info("[STAGE2 PROMPT] Added PRD section")
+    
+    # Section 6: Output format
+    sections.append(f"\n--- OUTPUT FORMAT ---\n{COMPACT_OUTPUT_FORMAT}")
+    logger.info("[STAGE2 PROMPT] Added output format")
+    
+    # Section 7: Example
+    sections.append(f"\n--- EXAMPLE ---\n{COMPACT_EXAMPLE}")
+    logger.info("[STAGE2 PROMPT] Added example")
+    
+    prompt = "\n\n".join(sections)
+    logger.info(f"[STAGE2 PROMPT] Total length: {len(prompt)} chars, {len(prompt.split())} words")
+    
+    return prompt
+
+
+def _build_coverage_plan_section(coverage_plan: Dict[str, Any]) -> str:
+    """Build the coverage plan section from Stage 1 analysis."""
+    parts = []
+    
+    parts.append("=" * 60)
+    parts.append("COVERAGE PLAN (From Stage 1 Analysis)")
+    parts.append("=" * 60)
+    parts.append("")
+    parts.append("⚠️ YOU MUST CREATE A TEST FOR EACH PLANNED TEST BELOW")
+    parts.append("⚠️ YOU MUST COVER ALL PATTERN MATCHES AND PRD REQUIREMENTS")
+    parts.append("")
+    
+    # Analysis reasoning
+    if coverage_plan.get('analysis_reasoning'):
+        parts.append("--- ANALYSIS SUMMARY ---")
+        parts.append(coverage_plan['analysis_reasoning'])
+        parts.append("")
+    
+    # Pattern matches
+    pattern_matches = coverage_plan.get('pattern_matches', [])
+    if pattern_matches:
+        parts.append(f"--- PATTERN MATCHES ({len(pattern_matches)} patterns) ---")
+        parts.append("Each pattern below MUST be covered by at least one test:")
+        parts.append("")
+        for pm in pattern_matches:
+            ac_num = pm.get('ac_number', '?')
+            pattern_type = pm.get('pattern_type', 'UNKNOWN')
+            matched_text = pm.get('matched_text', '')
+            requirement = pm.get('requirement', '')
+            parts.append(f"  ⚡ [{pattern_type}] AC #{ac_num}: \"{matched_text}\"")
+            parts.append(f"     → Requirement: {requirement}")
+        parts.append("")
+    
+    # PRD requirements
+    prd_requirements = coverage_plan.get('prd_requirements', [])
+    if prd_requirements:
+        parts.append(f"--- PRD REQUIREMENTS ({len(prd_requirements)} items) ---")
+        parts.append("Each PRD requirement MUST be verified in a test:")
+        parts.append("")
+        for prd in prd_requirements:
+            source = prd.get('source', 'PRD')
+            requirement = prd.get('requirement', '')
+            test_needed = prd.get('test_needed', '')
+            parts.append(f"  📋 [{source}] {requirement}")
+            parts.append(f"     → Test needed: {test_needed}")
+        parts.append("")
+    
+    # API coverage
+    api_coverage = coverage_plan.get('api_coverage', [])
+    if api_coverage:
+        parts.append(f"--- API COVERAGE ({len(api_coverage)} endpoints) ---")
+        for api in api_coverage:
+            endpoint = api.get('endpoint', '')
+            must_test = "MUST TEST" if api.get('must_test', True) else "optional"
+            parts.append(f"  📡 {endpoint} ({must_test})")
+        parts.append("")
+    
+    # Existing test overlap
+    existing_overlap = coverage_plan.get('existing_test_overlap', [])
+    if existing_overlap:
+        parts.append(f"--- EXISTING TESTS TO SKIP ({len(existing_overlap)} items) ---")
+        parts.append("DO NOT create tests that duplicate these:")
+        parts.append("")
+        for overlap in existing_overlap:
+            name = overlap.get('existing_test_name', '')
+            reason = overlap.get('skip_reason', '')
+            parts.append(f"  ❌ {name}")
+            parts.append(f"     → {reason}")
+        parts.append("")
+    
+    # Planned tests
+    test_plan = coverage_plan.get('test_plan', [])
+    if test_plan:
+        parts.append(f"--- PLANNED TESTS ({len(test_plan)} tests) ---")
+        parts.append("Create a detailed test case for EACH of these:")
+        parts.append("")
+        for i, test in enumerate(test_plan, 1):
+            idea = test.get('test_idea', '')
+            covers_acs = test.get('covers_acs', [])
+            covers_patterns = test.get('covers_patterns', [])
+            covers_prd = test.get('covers_prd', False)
+            priority = test.get('priority', 'high')
+            api_endpoints = test.get('api_endpoints', [])
+            
+            parts.append(f"  {i}. {idea}")
+            parts.append(f"     ACs: {covers_acs}, Patterns: {covers_patterns}, PRD: {covers_prd}")
+            parts.append(f"     Priority: {priority}, APIs: {api_endpoints}")
+        parts.append("")
+    
+    parts.append("=" * 60)
+    
+    return "\n".join(parts)
 
